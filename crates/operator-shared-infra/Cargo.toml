@@ -1,0 +1,19 @@
+[package]
+name = "operator-shared-infra"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Operator: shared bounded context — infrastructure adapters and DTO/domain mappers."
+
+[lints]
+workspace = true
+
+[dependencies]
+operator-shared-application.workspace = true
+operator-shared-contract.workspace = true
+operator-shared-domain.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

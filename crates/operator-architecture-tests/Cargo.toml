@@ -1,0 +1,16 @@
+[package]
+name = "operator-architecture-tests"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Operator: architectural rule enforcement (no kernel deps, 1 file = 1 class, etc.)."
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]

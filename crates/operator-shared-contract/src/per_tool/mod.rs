@@ -1,0 +1,9 @@
+pub mod ask_arguments_dto;
+pub mod forward_arguments_dto;
+pub mod goto_arguments_dto;
+pub mod inspect_arguments_dto;
+pub mod near_arguments_dto;
+pub mod rewind_arguments_dto;
+pub mod trace_arguments_dto;
+pub mod wake_arguments_dto;
+pub mod write_memory_arguments_dto;
