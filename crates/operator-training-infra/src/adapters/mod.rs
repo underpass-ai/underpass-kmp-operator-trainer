@@ -1,4 +1,5 @@
 pub mod composite_policy_evaluator;
+pub mod filesystem_trajectory_source;
 pub mod jsonl_predictions_reader_adapter;
 pub mod jsonl_sft_dataset_writer;
 pub mod process_predictor_invoker;
