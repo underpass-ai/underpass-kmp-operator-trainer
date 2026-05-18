@@ -47,17 +47,20 @@ impl ReplayReport {
             .count()
     }
 
-    /// Fraction of attempted tool calls that succeeded. Returns `0.0`
-    /// when no tool call was attempted (every prediction was Stop or
-    /// Escalate).
-    pub fn tool_call_success_rate(&self) -> f64 {
+    /// Fraction of attempted tool calls that succeeded.
+    ///
+    /// Returns `None` when no tool call was attempted (every prediction
+    /// was `Stop` or `Escalate`). The previous `f64` API returned `0.0`
+    /// in that case, which was indistinguishable from "every attempt
+    /// failed"; callers now match on `Option` and decide the display
+    /// convention explicitly.
+    #[allow(clippy::cast_precision_loss)]
+    pub fn tool_call_success_rate(&self) -> Option<f64> {
         let attempted = self.successful_tool_calls() + self.failed_tool_calls();
         if attempted == 0 {
-            0.0
+            None
         } else {
-            #[allow(clippy::cast_precision_loss)]
-            let rate = self.successful_tool_calls() as f64 / attempted as f64;
-            rate
+            Some(self.successful_tool_calls() as f64 / attempted as f64)
         }
     }
 }
@@ -136,17 +139,17 @@ mod tests {
         assert_eq!(report.successful_tool_calls(), 1);
         assert_eq!(report.failed_tool_calls(), 1);
         assert_eq!(report.stop_or_escalate(), 1);
-        assert!((report.tool_call_success_rate() - 0.5).abs() < f64::EPSILON);
+        assert!((report.tool_call_success_rate().unwrap() - 0.5).abs() < f64::EPSILON);
     }
 
     #[test]
-    fn success_rate_is_zero_when_no_tool_call_attempted() {
+    fn success_rate_is_none_when_no_tool_call_attempted() {
         let executions = vec![ReplayExecution::new(
             id("t:1"),
             stop_action(),
             ReplayOutcome::NoToolCall,
         )];
         let report = ReplayReport::new(executions).unwrap();
-        assert!(report.tool_call_success_rate().abs() < f64::EPSILON);
+        assert!(report.tool_call_success_rate().is_none());
     }
 }

@@ -1,16 +1,23 @@
-//! Stub `KmpMcpClient` for tests. Two flavours:
+//! Stub `KmpMcpClient` for tests. Three flavours:
 //!
 //! - `InMemoryKmpMcpClient::ok()` returns canned successful outcomes
 //!   for every tool. Inputs are ignored beyond compile-time typing.
 //! - `InMemoryKmpMcpClient::always_failing(reason)` returns a
-//!   `KmpClientError` derived from the supplied failure mode.
+//!   `KmpClientError` derived from the supplied failure mode for
+//!   every tool.
+//! - `InMemoryKmpMcpClient::failing_tools(tools, mode)` lets a test
+//!   pin which tools fail and which succeed in the same run; the rest
+//!   return the canned successful outcome.
 //!
 //! The real MCP JSON-RPC client lives in a future PR. This stub keeps
 //! the application use case testable end-to-end without a running
 //! kernel.
 
+use std::collections::BTreeSet;
+
 use operator_replay_application::error::kmp_client_error::KmpClientError;
 use operator_replay_application::ports::kmp_mcp_client::KmpMcpClient;
+use operator_shared_domain::tool::kernel_tool::KernelTool;
 use operator_shared_domain::tool_arguments::ask_arguments::AskArguments;
 use operator_shared_domain::tool_arguments::forward_arguments::ForwardArguments;
 use operator_shared_domain::tool_arguments::goto_arguments::GotoArguments;
@@ -40,34 +47,50 @@ pub enum FailureMode {
     MalformedResponse,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Mode {
-    Ok,
-    AlwaysFailing(FailureMode),
-}
-
 #[derive(Debug)]
 pub struct InMemoryKmpMcpClient {
-    mode: Mode,
+    failing_tools: BTreeSet<KernelTool>,
+    failure_mode: FailureMode,
 }
 
 impl InMemoryKmpMcpClient {
+    /// Every tool returns the canned successful outcome.
     pub fn ok() -> Self {
-        Self { mode: Mode::Ok }
-    }
-
-    pub fn always_failing(failure_mode: FailureMode) -> Self {
         Self {
-            mode: Mode::AlwaysFailing(failure_mode),
+            failing_tools: BTreeSet::new(),
+            // failure_mode is irrelevant when failing_tools is empty;
+            // any default works.
+            failure_mode: FailureMode::Transport,
         }
     }
 
-    fn fail(&self, tool: &'static str) -> KmpClientError {
-        let Mode::AlwaysFailing(failure) = self.mode else {
-            unreachable!("ok mode does not fail");
-        };
-        let message = "stub adapter configured to always fail".to_string();
-        match failure {
+    /// Every tool returns the configured failure.
+    pub fn always_failing(failure_mode: FailureMode) -> Self {
+        Self {
+            failing_tools: KernelTool::ALL.iter().copied().collect(),
+            failure_mode,
+        }
+    }
+
+    /// Only the listed tools fail (with the configured mode); the
+    /// rest return the canned successful outcome.
+    pub fn failing_tools(
+        tools: impl IntoIterator<Item = KernelTool>,
+        failure_mode: FailureMode,
+    ) -> Self {
+        Self {
+            failing_tools: tools.into_iter().collect(),
+            failure_mode,
+        }
+    }
+
+    fn should_fail(&self, tool: KernelTool) -> bool {
+        self.failing_tools.contains(&tool)
+    }
+
+    fn failure_for(&self, tool: &'static str) -> KmpClientError {
+        let message = "stub adapter configured to fail this tool".to_string();
+        match self.failure_mode {
             FailureMode::Transport => KmpClientError::Transport {
                 adapter: "in_memory_kmp_mcp_client",
                 tool,
@@ -90,15 +113,15 @@ fn surfaced_ref() -> MemoryRef {
 
 impl KmpMcpClient for InMemoryKmpMcpClient {
     fn wake(&self, _args: &WakeArguments) -> Result<WakeOutcome, KmpClientError> {
-        if matches!(self.mode, Mode::AlwaysFailing(_)) {
-            return Err(self.fail("kernel_wake"));
+        if self.should_fail(KernelTool::Wake) {
+            return Err(self.failure_for("kernel_wake"));
         }
         Ok(WakeOutcome::new(summary("stub wake"), vec![surfaced_ref()]))
     }
 
     fn ask(&self, _args: &AskArguments) -> Result<AskOutcome, KmpClientError> {
-        if matches!(self.mode, Mode::AlwaysFailing(_)) {
-            return Err(self.fail("kernel_ask"));
+        if self.should_fail(KernelTool::Ask) {
+            return Err(self.failure_for("kernel_ask"));
         }
         Ok(AskOutcome::new(
             summary("stub ask"),
@@ -108,22 +131,22 @@ impl KmpMcpClient for InMemoryKmpMcpClient {
     }
 
     fn near(&self, _args: &NearArguments) -> Result<NearOutcome, KmpClientError> {
-        if matches!(self.mode, Mode::AlwaysFailing(_)) {
-            return Err(self.fail("kernel_near"));
+        if self.should_fail(KernelTool::Near) {
+            return Err(self.failure_for("kernel_near"));
         }
         Ok(NearOutcome::new(summary("stub near"), vec![surfaced_ref()]))
     }
 
     fn goto(&self, _args: &GotoArguments) -> Result<GotoOutcome, KmpClientError> {
-        if matches!(self.mode, Mode::AlwaysFailing(_)) {
-            return Err(self.fail("kernel_goto"));
+        if self.should_fail(KernelTool::Goto) {
+            return Err(self.failure_for("kernel_goto"));
         }
         Ok(GotoOutcome::new(summary("stub goto"), vec![surfaced_ref()]))
     }
 
     fn rewind(&self, _args: &RewindArguments) -> Result<RewindOutcome, KmpClientError> {
-        if matches!(self.mode, Mode::AlwaysFailing(_)) {
-            return Err(self.fail("kernel_rewind"));
+        if self.should_fail(KernelTool::Rewind) {
+            return Err(self.failure_for("kernel_rewind"));
         }
         Ok(RewindOutcome::new(
             summary("stub rewind"),
@@ -132,8 +155,8 @@ impl KmpMcpClient for InMemoryKmpMcpClient {
     }
 
     fn forward(&self, _args: &ForwardArguments) -> Result<ForwardOutcome, KmpClientError> {
-        if matches!(self.mode, Mode::AlwaysFailing(_)) {
-            return Err(self.fail("kernel_forward"));
+        if self.should_fail(KernelTool::Forward) {
+            return Err(self.failure_for("kernel_forward"));
         }
         Ok(ForwardOutcome::new(
             summary("stub forward"),
@@ -142,8 +165,8 @@ impl KmpMcpClient for InMemoryKmpMcpClient {
     }
 
     fn trace(&self, _args: &TraceArguments) -> Result<TraceOutcome, KmpClientError> {
-        if matches!(self.mode, Mode::AlwaysFailing(_)) {
-            return Err(self.fail("kernel_trace"));
+        if self.should_fail(KernelTool::Trace) {
+            return Err(self.failure_for("kernel_trace"));
         }
         Ok(TraceOutcome::new(
             summary("stub trace"),
@@ -152,8 +175,8 @@ impl KmpMcpClient for InMemoryKmpMcpClient {
     }
 
     fn inspect(&self, _args: &InspectArguments) -> Result<InspectOutcome, KmpClientError> {
-        if matches!(self.mode, Mode::AlwaysFailing(_)) {
-            return Err(self.fail("kernel_inspect"));
+        if self.should_fail(KernelTool::Inspect) {
+            return Err(self.failure_for("kernel_inspect"));
         }
         Ok(InspectOutcome::new(
             summary("stub inspect"),
@@ -168,8 +191,8 @@ impl KmpMcpClient for InMemoryKmpMcpClient {
         &self,
         _args: &WriteMemoryArguments,
     ) -> Result<WriteMemoryOutcome, KmpClientError> {
-        if matches!(self.mode, Mode::AlwaysFailing(_)) {
-            return Err(self.fail("kernel_write_memory"));
+        if self.should_fail(KernelTool::WriteMemory) {
+            return Err(self.failure_for("kernel_write_memory"));
         }
         Ok(WriteMemoryOutcome::new(
             summary("stub write"),
@@ -193,11 +216,28 @@ mod tests {
     }
 
     #[test]
-    fn failing_mode_returns_configured_failure() {
+    fn always_failing_returns_configured_failure_for_every_tool() {
         let client = InMemoryKmpMcpClient::always_failing(FailureMode::Transport);
         let err = client
             .wake(&WakeArguments::new(AboutId::parse("about:1").unwrap()))
             .unwrap_err();
         assert!(matches!(err, KmpClientError::Transport { tool, .. } if tool == "kernel_wake"));
+    }
+
+    #[test]
+    fn failing_tools_succeeds_for_unlisted_tools() {
+        let client =
+            InMemoryKmpMcpClient::failing_tools([KernelTool::Inspect], FailureMode::Protocol);
+        // Wake is not in the failing set, so it succeeds.
+        assert!(
+            client
+                .wake(&WakeArguments::new(AboutId::parse("about:1").unwrap()))
+                .is_ok()
+        );
+        // Inspect is in the set, so it fails with Protocol.
+        let err = client
+            .inspect(&InspectArguments::new(MemoryRef::parse("node:1").unwrap()))
+            .unwrap_err();
+        assert!(matches!(err, KmpClientError::Protocol { tool, .. } if tool == "kernel_inspect"));
     }
 }

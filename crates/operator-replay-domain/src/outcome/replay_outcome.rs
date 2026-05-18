@@ -25,10 +25,6 @@ pub enum ReplayOutcome {
 }
 
 impl ReplayOutcome {
-    pub fn is_success(&self) -> bool {
-        matches!(self, Self::ToolSucceeded(_) | Self::NoToolCall)
-    }
-
     pub fn is_tool_call_success(&self) -> bool {
         matches!(self, Self::ToolSucceeded(_))
     }
@@ -41,6 +37,11 @@ impl ReplayOutcome {
         matches!(self, Self::NoToolCall)
     }
 
+    /// `KernelTool` associated with this outcome, or `None` when no
+    /// tool call was attempted (Stop / Escalate). The full predicted
+    /// action — including which non-tool-call variant — is available
+    /// on `ReplayExecution::predicted_action()` if the caller needs
+    /// it.
     pub fn tool(&self) -> Option<KernelTool> {
         match self {
             Self::ToolSucceeded(outcome) => Some(outcome.tool()),

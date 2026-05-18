@@ -122,6 +122,30 @@ impl<C: KmpMcpClient> ExecuteReplayUseCase<C> {
     }
 }
 
+/// Translates an adapter-layer `KmpClientError` (application crate)
+/// into the domain-layer `ReplayFailureReason` (replay-domain crate)
+/// that the report carries.
+///
+/// **There are three parallel enums for the same four failure
+/// categories**:
+/// - `KmpClientError`
+///   (`operator-replay-application::error::kmp_client_error`) — the
+///   adapter-facing error with full context (adapter name, tool name,
+///   message). This is what implementations of `KmpMcpClient` raise.
+/// - `ReplayFailureReason`
+///   (`operator-replay-domain::outcome::replay_failure_reason`) — the
+///   categorical reason recorded in a `ReplayReport`. No payload, just
+///   the bucket.
+/// - `FailureMode`
+///   (`operator-replay-infra::adapters::in_memory_kmp_mcp_client`) —
+///   test-fixture configuration for the in-memory stub.
+///
+/// The match below is exhaustive on `KmpClientError`, so adding a new
+/// variant there is a compile-time error here. Add the corresponding
+/// `ReplayFailureReason` variant (and the matching `FailureMode`
+/// fixture branch) in lockstep when that happens. Each enum belongs to
+/// its layer; the three-way split is intentional per the bounded
+/// context rules in `docs/architecture/operator/00-principles.md`.
 fn reason_from(error: &KmpClientError) -> ReplayFailureReason {
     match error {
         KmpClientError::Transport { .. } => ReplayFailureReason::Transport,
