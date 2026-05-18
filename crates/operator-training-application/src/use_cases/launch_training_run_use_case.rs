@@ -90,7 +90,7 @@ mod tests {
         let id = TrainingRunId::parse("run:1").unwrap();
         let provenance = DatasetProvenance::new(
             DatasetSource::parse("src").unwrap(),
-            ContentHash::parse("sha256:x").unwrap(),
+            ContentHash::parse("sha256:abc").unwrap(),
             PositiveCount::parse(1, "trajectory_count").unwrap(),
             TaskFamilyDistribution::new(vec![]).unwrap(),
         )

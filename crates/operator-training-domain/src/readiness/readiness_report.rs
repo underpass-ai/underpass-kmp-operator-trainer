@@ -2,6 +2,17 @@
 //! check on the report passed. Refuses to be built from an empty
 //! gate list: a run with zero gates is a configuration smell, not a
 //! healthy default.
+//!
+//! ## Verdict surface
+//!
+//! `is_ready()` is the single verdict surface today. Callers that
+//! want to pass the verdict around without the full report (e.g.,
+//! to log it as a flat enum, to serialise it separately, or to use
+//! it as a routing key) should reify a `ReadinessVerdict` value
+//! object alongside this aggregate. That refactor is intentionally
+//! deferred until a real second consumer surfaces — adding it now
+//! would be speculative API growth, and `is_ready()` is the same
+//! semantics anyway.
 
 use crate::errors::training_domain_error::TrainingDomainError;
 use crate::errors::training_result::TrainingResult;

@@ -53,7 +53,7 @@ mod tests {
             .collect();
         DatasetProvenance::new(
             DatasetSource::parse("src").unwrap(),
-            ContentHash::parse("sha256:x").unwrap(),
+            ContentHash::parse("sha256:abc").unwrap(),
             PositiveCount::parse(count, "trajectory_count").unwrap(),
             TaskFamilyDistribution::new(entries).unwrap(),
         )

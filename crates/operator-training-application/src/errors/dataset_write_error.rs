@@ -12,17 +12,11 @@ pub enum DatasetWriteError {
         message: String,
     },
 
-    /// The adapter wrote bytes but content hashing failed.
-    #[error("dataset writer '{adapter}' could not hash content: {message}")]
-    HashingFailure {
-        adapter: &'static str,
-        message: String,
-    },
-
     /// The adapter could not compute a derived value object from the
     /// written content (e.g., the trajectory count overflows a
-    /// `PositiveCount`). Use this when the failure is shape-level,
-    /// not transport-level.
+    /// `PositiveCount`, a `ContentHash` rejects the produced digest,
+    /// or a `TaskFamilyDistribution` rejects a duplicate). Use this
+    /// when the failure is shape-level, not transport-level.
     #[error("dataset writer '{adapter}' derived value error: {message}")]
     DerivedValueFailure {
         adapter: &'static str,

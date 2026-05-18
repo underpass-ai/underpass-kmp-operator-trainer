@@ -128,7 +128,9 @@ fn write_to_unwritable_path_surfaces_write_failure() {
             assert_eq!(adapter, "jsonl_sft_dataset_writer");
             assert!(message.contains("create") || message.contains("No such file"));
         }
-        other => panic!("expected WriteFailure, got {other:?}"),
+        operator_training_application::errors::dataset_write_error::DatasetWriteError::DerivedValueFailure { .. } => {
+            panic!("expected WriteFailure, got DerivedValueFailure");
+        }
     }
 }
 
@@ -145,7 +147,9 @@ fn empty_trajectory_list_yields_derived_value_failure() {
             assert_eq!(adapter, "jsonl_sft_dataset_writer");
             assert!(message.contains("trajectory_count"));
         }
-        other => panic!("expected DerivedValueFailure, got {other:?}"),
+        operator_training_application::errors::dataset_write_error::DatasetWriteError::WriteFailure { .. } => {
+            panic!("expected DerivedValueFailure, got WriteFailure");
+        }
     }
     // file may exist as zero-length; clean up.
     fs::remove_file(&path).ok();

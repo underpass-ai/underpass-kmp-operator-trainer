@@ -10,9 +10,18 @@
 //! - `completion` is `serde_json::to_string(&OperatorActionDto)` —
 //!   the JSON encoding of the target action.
 //!
-//! The bytes written to disk are SHA-256-hashed in flight and the
-//! per-task-family distribution is built from the same trajectories,
-//! so the returned `DatasetWriteOutcome` is self-consistent.
+//! Format contract:
+//!
+//! - Output is **always newline-terminated**: even the last record is
+//!   followed by a `\n`. Consumers that split on lines see N records
+//!   for N trajectories with no trailing-empty-line surprise.
+//! - Bytes written to disk are SHA-256-hashed in flight and the
+//!   per-task-family distribution is built from the same trajectories,
+//!   so the returned `DatasetWriteOutcome` is self-consistent.
+//! - After the last write the writer calls `flush` *and* `sync_all`
+//!   so the bytes are durable on the underlying storage, not just
+//!   buffered in the OS page cache. Callers can rely on the file
+//!   surviving a power loss the moment `write` returns `Ok`.
 
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -101,6 +110,21 @@ impl DatasetWriter for JsonlSftDatasetWriter {
             .map_err(|err| DatasetWriteError::WriteFailure {
                 adapter: ADAPTER,
                 message: format!("flush: {err}"),
+            })?;
+        // `flush` only drains the user-space buffer into the OS page
+        // cache; `sync_all` is what guarantees the bytes are on disk.
+        // We extract the inner `File` so we can call `sync_all` on it
+        // directly — `BufWriter` has no equivalent.
+        let file = writer
+            .into_inner()
+            .map_err(|err| DatasetWriteError::WriteFailure {
+                adapter: ADAPTER,
+                message: format!("unwrap BufWriter: {}", err.error()),
+            })?;
+        file.sync_all()
+            .map_err(|err| DatasetWriteError::WriteFailure {
+                adapter: ADAPTER,
+                message: format!("sync_all: {err}"),
             })?;
 
         let digest = hasher.finalize();

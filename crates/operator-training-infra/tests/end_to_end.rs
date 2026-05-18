@@ -193,3 +193,76 @@ fn unready_manifest_is_persisted_before_run_is_refused() {
     fs::remove_file(&dataset_path).ok();
     fs::remove_file(&manifest_path).ok();
 }
+
+#[test]
+fn mixed_gate_outcomes_are_persisted_and_refuse_the_run() {
+    // Three gates: trajectory count (passes), task family coverage
+    // (passes), evaluation pass rate (fails: empty report → rate 0).
+    let dataset_path = tmp("mixed-ds", "jsonl");
+    let manifest_path = tmp("mixed-mf", "toml");
+
+    let source = VecTrajectorySource {
+        trajectories: vec![
+            inspect_trajectory("traj:1", "read.inspect", "node:1"),
+            inspect_trajectory("traj:2", "read.ask", "node:2"),
+        ],
+    };
+    let dataset_writer = JsonlSftDatasetWriter::new(&dataset_path);
+    let manifest_writer = TomlManifestWriter::new(&manifest_path);
+    let use_case = BuildTrainingRunUseCase::new(source, dataset_writer, manifest_writer);
+
+    let request = BuildTrainingRunRequest::new(
+        TrainingRunId::parse("run:mixed").unwrap(),
+        TrainerTarget::new(
+            TrainerCommand::parse("sft-trainer").unwrap(),
+            BaseModelId::parse("base").unwrap(),
+            OutputDirectory::parse("out").unwrap(),
+        ),
+        DatasetSource::parse("synthetic-run:test").unwrap(),
+        vec![
+            ReadinessGate::MinimumTrajectories(PositiveCount::parse(1, "x").unwrap()),
+            ReadinessGate::MinimumTaskFamilyCoverage(PositiveCount::parse(2, "x").unwrap()),
+            ReadinessGate::MinimumEvaluationPassRate(PassRatePercent::parse(0.5).unwrap()),
+        ],
+        EvaluationReport::from_outcomes(Vec::new()),
+    );
+
+    let err = use_case
+        .execute(&request)
+        .expect_err("partial readiness must refuse run");
+    assert!(matches!(
+        err,
+        operator_training_application::errors::training_application_error::TrainingApplicationError::Domain(
+            operator_training_domain::errors::training_domain_error::TrainingDomainError::NotReady {
+                failed: 1,
+                total: 3,
+                ..
+            }
+        )
+    ));
+
+    let manifest_body = fs::read_to_string(&manifest_path).expect("manifest readable");
+    let manifest_parsed: toml::Value = toml::from_str(&manifest_body).expect("valid toml");
+    assert_eq!(
+        manifest_parsed["readiness"]["overall"].as_str(),
+        Some("not_ready")
+    );
+    let gates = manifest_parsed["readiness"]["gate"]
+        .as_array()
+        .expect("gate array");
+    assert_eq!(gates.len(), 3, "all gates surface in the manifest");
+    let statuses: Vec<&str> = gates
+        .iter()
+        .map(|g| g["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(statuses, vec!["passed", "passed", "failed"]);
+    assert!(
+        gates[2]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("exact_match_rate")
+    );
+
+    fs::remove_file(&dataset_path).ok();
+    fs::remove_file(&manifest_path).ok();
+}
