@@ -471,6 +471,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "operator-training-application"
+version = "0.1.0"
+dependencies = [
+ "operator-evaluation-domain",
+ "operator-shared-domain",
+ "operator-training-domain",
+ "thiserror",
+]
+
+[[package]]
 name = "operator-training-domain"
 version = "0.1.0"
 dependencies = [

@@ -15,8 +15,7 @@ trainer wired through a CLI adapter in `training-infra` (PR C). See
 ```
 operator-training-domain       value objects, readiness gates,
                                TrainingManifest, TrainingRun aggregate
-                               (this PR)
-operator-training-application  use cases + ports (PR B, pending)
+operator-training-application  use cases + ports (this PR)
 operator-training-infra        JSONL dataset writer, TOML manifest
                                writer, CLI trainer invoker (PR C,
                                pending)
@@ -124,20 +123,78 @@ shared and evaluation domain types respectively.
   `DistributionTotalMismatch`).
 - `errors/training_result.rs` — `TrainingResult<T>` alias.
 
+## Application map
+
+### Ports (`training-application/src/ports/`)
+
+- `trajectory_source.rs` — `TrajectorySource` trait. `fetch_all() ->
+  Vec<TrainingTrajectory>`. Adapters in `training-infra` cover
+  filesystem, network, synthetic-handoff, in-memory test fixtures.
+- `dataset_writer.rs` — `DatasetWriter` trait. `write(trajectories) ->
+  DatasetWriteOutcome`. Writes whatever format the adapter targets
+  (JSONL SFT first; DPO / raw / parquet land as additional adapters).
+- `dataset_write_outcome.rs` — `DatasetWriteOutcome`: `content_hash` +
+  `trajectory_count` + `distribution`. The use case turns this into a
+  `DatasetProvenance`; the writer never sees the provenance type.
+- `manifest_writer.rs` — `ManifestWriter` trait. `write(&manifest) ->
+  ()`. TOML adapter ships in PR C.
+- `trainer_invoker.rs` — `TrainerInvoker` trait. `invoke(&target) ->
+  TrainerInvocationOutcome`. Adapters wrap external trainer binaries;
+  no in-process trainer.
+- `trainer_invocation_outcome.rs` — `TrainerInvocationOutcome` closed
+  enum: `Success { exit_code }` | `Failed { exit_code: Option<i32> }`
+  (signal-killed processes have `None`).
+
+### Errors (`training-application/src/errors/`)
+
+Each port has its own adapter-agnostic error type
+(`TrajectorySourceError`, `DatasetWriteError`, `ManifestWriteError`,
+`TrainerInvokerError`). The use cases flatten them into
+`TrainingApplicationError`, which also wraps `TrainingDomainError`
+transparently via `#[from]`. `TrainingApplicationResult<T>` is the
+alias every use case returns.
+
+### Use cases (`training-application/src/use_cases/`)
+
+- `evaluate_readiness_use_case.rs` — pure: runs every `ReadinessGate`
+  against `DatasetProvenance` + `EvaluationReport`, collects the
+  `ReadinessCheck`s into a `ReadinessReport`. No ports.
+- `assemble_manifest_use_case.rs` — pure: composes a
+  `TrainingManifest` from `(run_id, provenance, trainer_target,
+  readiness)`. No ports.
+- `build_training_run_request.rs` — input DTO for the build use case.
+  Groups `(run_id, trainer_target, dataset_source, gates, evaluation)`
+  so callers do not thread five positional arguments through.
+- `build_training_run_use_case.rs` — top-level orchestration. Reads
+  trajectories from the `TrajectorySource`, writes them via the
+  `DatasetWriter`, builds `DatasetProvenance` from the writer's
+  `DatasetWriteOutcome`, evaluates readiness, assembles the manifest,
+  **writes the manifest first** (so an unready manifest is on disk
+  for diagnostics), then constructs the `TrainingRun`. Returns either
+  the ready run or surfaces `TrainingDomainError::NotReady` /
+  `ManifestRunIdMismatch` from `TrainingRun::new`.
+- `launch_training_run_use_case.rs` — wraps the `TrainerInvoker`
+  call. The run aggregate root guarantees readiness, so there is
+  nothing to check domain-side; the use case just forwards the
+  manifest's `TrainerTarget` to the invoker and returns its outcome.
+
 ## Test coverage
 
-28 unit tests in `training-domain` covering: empty/duplicate refusals
-in `TaskFamilyDistribution`, provenance distribution-total mismatch,
-each `ReadinessGate` variant's evaluation, `ReadinessReport`
-construction invariants, `TrainingRun` refusal for unready manifests
-and mismatched ids, and round-trip of every value-object parser.
+- **`training-domain`**: 28 unit tests covering empty/duplicate
+  refusals in `TaskFamilyDistribution`, provenance distribution-total
+  mismatch, every `ReadinessGate` variant's evaluation,
+  `ReadinessReport` construction invariants, `TrainingRun` refusal
+  for unready manifests and mismatched ids, and round-trip of every
+  value-object parser.
+- **`training-application`**: 10 unit tests using inline trait test
+  doubles (stub trajectory source, stub dataset writer, recording &
+  failing manifest writers, recording & failing trainer invokers).
+  Covers happy path of `BuildTrainingRunUseCase`, every port-error
+  propagation path, the "unready manifest written before run refused"
+  contract, and `LaunchTrainingRunUseCase` happy + failure paths.
 
 ## Pending for later passes
 
-- **PR B — `training-application`**: `AssembleManifest`,
-  `EvaluateReadiness`, `BuildTrainingRun` use cases and the ports
-  (`TrajectorySource`, `EvaluationReportRepository`, `DatasetWriter`,
-  `ManifestWriter`, `TrainerInvoker`).
 - **PR C — `training-infra`**: filesystem JSONL dataset writer
   (`{ "prompt": <visible_state_text>, "completion": <action_json> }`
   per ADR 0012 §3), TOML manifest writer, `std::process::Command`
