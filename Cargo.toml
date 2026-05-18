@@ -16,6 +16,7 @@ members = [
     "crates/operator-replay-infra",
     "crates/operator-training-domain",
     "crates/operator-training-application",
+    "crates/operator-training-infra",
 ]
 
 [workspace.package]
@@ -41,11 +42,14 @@ operator-replay-domain = { path = "crates/operator-replay-domain" }
 operator-replay-infra = { path = "crates/operator-replay-infra" }
 operator-training-domain = { path = "crates/operator-training-domain" }
 operator-training-application = { path = "crates/operator-training-application" }
+operator-training-infra = { path = "crates/operator-training-infra" }
 
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 thiserror = "2.0.9"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json"] }
+sha2 = "0.10"
+toml = "0.8"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
