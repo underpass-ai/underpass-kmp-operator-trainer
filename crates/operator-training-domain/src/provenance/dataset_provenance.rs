@@ -1,7 +1,23 @@
 //! Provenance of a training dataset: where it came from, its content
 //! hash, the number of trajectories it contains, and the distribution
-//! across task families. The constructor refuses to build a value that
-//! contradicts itself (distribution total != trajectory count).
+//! across task families.
+//!
+//! ## Distribution contract
+//!
+//! The distribution is intentionally allowed to be **empty**, meaning
+//! "the caller has not computed per-family counts for this dataset".
+//! When the distribution is non-empty, its total **must** equal
+//! `trajectory_count` — the constructor refuses to build a value that
+//! contradicts itself.
+//!
+//! Callers that want a "no distribution" provenance pass
+//! `TaskFamilyDistribution::new(vec![])`. Callers that want a
+//! "distribution known and consistent" provenance pass a non-empty
+//! distribution whose `total()` matches `trajectory_count`. There is
+//! no third state.
+//!
+//! Use `has_distribution()` to discriminate at consumer sites instead
+//! of inspecting `distribution().family_count() > 0` by hand.
 
 use operator_shared_domain::value_objects::positive_count::PositiveCount;
 
@@ -59,6 +75,14 @@ impl DatasetProvenance {
     pub fn distribution(&self) -> &TaskFamilyDistribution {
         &self.distribution
     }
+
+    /// `true` iff the per-task-family distribution has been computed
+    /// for this dataset. When `false`, `distribution()` returns an
+    /// empty (but legal) value and gates that depend on coverage
+    /// (e.g., `MinimumTaskFamilyCoverage`) will report zero.
+    pub fn has_distribution(&self) -> bool {
+        self.distribution.family_count() > 0
+    }
 }
 
 #[cfg(test)]
@@ -107,6 +131,17 @@ mod tests {
         let ok = provenance(10, distribution).expect("empty distribution must be allowed");
         assert_eq!(ok.trajectory_count().as_usize(), 10);
         assert_eq!(ok.distribution().family_count(), 0);
+        assert!(
+            !ok.has_distribution(),
+            "empty distribution means has_distribution() is false"
+        );
+    }
+
+    #[test]
+    fn has_distribution_is_true_when_non_empty() {
+        let distribution = TaskFamilyDistribution::new(vec![entry("read.inspect", 10)]).unwrap();
+        let ok = provenance(10, distribution).unwrap();
+        assert!(ok.has_distribution());
     }
 
     #[test]

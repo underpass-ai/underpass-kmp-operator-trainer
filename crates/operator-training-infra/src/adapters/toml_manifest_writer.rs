@@ -66,6 +66,15 @@ impl ManifestWriter for TomlManifestWriter {
                 adapter: ADAPTER,
                 message: format!("flush: {err}"),
             })?;
+        // `flush` only drains user-space buffers; `sync_all` is what
+        // guarantees the manifest survives a power loss. Callers can
+        // rely on this method returning Ok meaning the bytes are on
+        // disk.
+        file.sync_all()
+            .map_err(|err| ManifestWriteError::WriteFailure {
+                adapter: ADAPTER,
+                message: format!("sync_all: {err}"),
+            })?;
         Ok(())
     }
 }

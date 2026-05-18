@@ -4,6 +4,11 @@
 //! `TrainerInvocationOutcome`. stdout / stderr are inherited from the
 //! parent: this adapter does not parse trainer logs.
 //!
+//! **stdin is explicitly redirected to `/dev/null`** so the trainer
+//! cannot block waiting for input the parent never sends — production
+//! callers can always launch this adapter from a script context
+//! without prearranging an input pipe.
+//!
 //! Command line:
 //!
 //! ```text
@@ -12,8 +17,15 @@
 //!
 //! Extra arguments / environment variables are deferred to a follow-up
 //! PR introducing a richer `TrainerTarget`.
+//!
+//! Note: the integration tests in `tests/process_trainer_invoker.rs`
+//! serialise their write-chmod-exec triples behind a global mutex
+//! (`EXEC_LOCK`) to dodge a parallel-execution `ETXTBSY` race on tmpfs
+//! / CI filesystems. The race is in the test harness, not in this
+//! adapter; do not remove the mutex without re-validating CI under
+//! parallel test execution.
 
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use operator_training_application::errors::trainer_invoker_error::TrainerInvokerError;
 use operator_training_application::ports::trainer_invocation_outcome::TrainerInvocationOutcome;
@@ -38,6 +50,7 @@ impl TrainerInvoker for ProcessTrainerInvoker {
     ) -> Result<TrainerInvocationOutcome, TrainerInvokerError> {
         let mut command = Command::new(target.command().as_str());
         command
+            .stdin(Stdio::null())
             .arg("--base-model")
             .arg(target.base_model().as_str())
             .arg("--output-dir")

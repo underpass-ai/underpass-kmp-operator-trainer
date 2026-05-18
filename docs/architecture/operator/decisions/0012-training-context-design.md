@@ -107,38 +107,46 @@ what a trainer reads**; pushing formatting downstream re-creates the
 
 ### 4. Manifest writer emits TOML
 
-The manifest is a single TOML file alongside the JSONL dataset:
+The manifest is a single TOML file alongside the JSONL dataset.
+The v1 shape exactly mirrors `TrainingManifest` — no extra metadata
+fields. Run timestamps and dataset filesystem paths are surface
+concerns of the caller, not of the domain model; if they become
+necessary they will be added to `TrainingManifest` in a tracked
+follow-up PR with this ADR amended.
 
 ```toml
 [run]
-id          = "run:2026-05-18:read-only-baseline"
-created_at  = "2026-05-18T19:42:00Z"
+id = "run:2026-05-18:read-only-baseline"
 
 [dataset]
-content_hash       = "sha256:..."
-trajectory_count   = 1024
-path               = "dataset.jsonl"
+source           = "synthetic-run:2026-05-18"
+content_hash     = "sha256:0123456789abcdef..."
+trajectory_count = 1024
 
 [dataset.task_family_distribution]
-"read.inspect"     = 256
-"read.ask"         = 256
-"read.wake"        = 256
-"read.near"        = 256
+"read.inspect" = 256
+"read.ask"     = 256
+"read.wake"    = 256
+"read.near"    = 256
 
 [readiness]
-overall            = "ready"
+overall = "ready"
 
 [[readiness.gate]]
 kind   = "minimum_trajectories"
-target = 512
-actual = 1024
+target = "512"
 status = "passed"
 
 [trainer_target]
-command       = "sft-trainer"
-base_model    = "Qwen/Qwen2.5-1.5B-Instruct"
-output_dir    = "out/run:2026-05-18:read-only-baseline"
+command          = "sft-trainer"
+base_model       = "Qwen/Qwen2.5-1.5B-Instruct"
+output_directory = "out/run:2026-05-18:read-only-baseline"
 ```
+
+Note that `target` is rendered as a string so a single TOML table can
+hold gates with heterogeneous targets (`PositiveCount` vs.
+`PassRatePercent`) without `untagged` enum acrobatics. Failed gates
+add a `reason = "..."` field captured verbatim from the domain.
 
 TOML beats JSON for manifests because (a) it is the format the
 operator workspace already uses for `Cargo.toml`, (b) it round-trips

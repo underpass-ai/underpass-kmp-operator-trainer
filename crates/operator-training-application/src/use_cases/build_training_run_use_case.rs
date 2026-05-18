@@ -199,7 +199,7 @@ mod tests {
 
     fn write_outcome(count: usize) -> DatasetWriteOutcome {
         DatasetWriteOutcome::new(
-            ContentHash::parse("sha256:x").unwrap(),
+            ContentHash::parse("sha256:abc").unwrap(),
             PositiveCount::parse(count, "trajectory_count").unwrap(),
             TaskFamilyDistribution::new(vec![]).unwrap(),
         )
