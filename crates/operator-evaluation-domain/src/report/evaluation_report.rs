@@ -60,13 +60,12 @@ impl EvaluationReport {
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn rate(numerator: usize, denominator: usize) -> f64 {
     if denominator == 0 {
         0.0
     } else {
-        #[allow(clippy::cast_precision_loss)]
-        let value = numerator as f64 / denominator as f64;
-        value
+        numerator as f64 / denominator as f64
     }
 }
 

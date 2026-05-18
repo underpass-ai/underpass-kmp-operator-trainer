@@ -8,6 +8,9 @@ pub enum SyntheticDomainError {
     #[error("synthetic blueprint must contain at least one case")]
     EmptyBlueprint,
 
+    #[error("synthetic dataset must contain at least one trajectory")]
+    EmptyDataset,
+
     #[error("synthetic case '{case_id}' has duplicate occurrences in the blueprint")]
     DuplicateCase { case_id: String },
 

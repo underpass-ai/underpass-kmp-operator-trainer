@@ -24,7 +24,7 @@ fn generates_a_full_coverage_dataset_with_in_memory_adapter() {
     let report = use_case.execute(&blueprint).unwrap();
 
     let expected_trajectories = KmpMcpCapability::ALL.len() * 2;
-    assert_eq!(report.dataset().len(), expected_trajectories);
+    assert_eq!(report.dataset().trajectories().len(), expected_trajectories);
     assert_eq!(report.total_generated().as_usize(), expected_trajectories);
     assert_eq!(report.case_metrics().len(), KmpMcpCapability::ALL.len());
     assert!(report.every_case_satisfies_minimum());
