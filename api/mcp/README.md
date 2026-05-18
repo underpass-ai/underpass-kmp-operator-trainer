@@ -18,8 +18,9 @@ The kernel exposes two distinct surfaces:
   `rehydration-kernel/crates/rehydration-mcp/src/protocol.rs`.
   Operations are operator-shaped: `kernel_wake`, `kernel_ask`,
   `kernel_near`, `kernel_goto`, `kernel_rewind`, `kernel_forward`,
-  `kernel_trace`, `kernel_inspect`, `kernel_write_memory`,
-  `kernel_ingest`.
+  `kernel_trace`, `kernel_inspect`, `kernel_write_memory`. The kernel
+  also exposes `kernel_ingest`, which lives outside Operator's
+  first-pass tool surface and is not modelled in `KernelTool`.
 
 The Operator product is built around the operator-shaped surface (see
 the `KernelTool` enum in `operator-shared-domain`). Talking gRPC
@@ -85,7 +86,7 @@ renamed, or its input/output keys change):
 
 | Date | Kernel SHA | Notes |
 | --- | --- | --- |
-| 2026-05-18 | `fc279eae448b` | Initial snapshot of all 9 read+write response fixtures (plus ingest) for the per-tool mappers in `operator-replay-infra::mappers`. |
+| 2026-05-18 | `fc279eae448b` | Initial snapshot of the 9 response fixtures for tools modelled in `KernelTool`, used by the per-tool mappers in `operator-replay-infra::mappers`. `kernel_ingest` is intentionally not vendored — it is outside Operator's first-pass surface. |
 
 ## Where MCP fits in the dependency graph
 

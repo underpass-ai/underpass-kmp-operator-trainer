@@ -40,7 +40,7 @@ const KNOWN_EXCEPTIONS: &[(&str, &str)] = &[
     ),
     (
         "jsonrpc/tools_call_response.rs",
-        "ToolsCallResponse / Result / Content / JsonRpcError are intrinsically paired JSON-RPC envelope DTOs",
+        "ToolsCallResponse / Result / Content / EnvelopeViolation are intrinsically paired JSON-RPC envelope DTOs (JsonRpcError lives in its own file)",
     ),
 ];
 

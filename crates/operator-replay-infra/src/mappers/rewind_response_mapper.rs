@@ -78,4 +78,17 @@ mod tests {
         assert!(outcome.summary().as_str().contains("Denver"));
         assert_eq!(outcome.entry_refs().len(), 1);
     }
+
+    #[test]
+    fn missing_summary_fails() {
+        let value: Value = serde_json::json!({"entries": []});
+        let err = RewindResponseMapper::to_outcome(&value).unwrap_err();
+        assert!(matches!(
+            err,
+            MappingError::MissingField {
+                tool: "rewind",
+                field: "summary"
+            }
+        ));
+    }
 }

@@ -89,4 +89,49 @@ mod tests {
         assert!(outcome.dry_run());
         assert_eq!(outcome.generated_refs().len(), 2);
     }
+
+    #[test]
+    fn missing_summary_fails() {
+        let value: Value = serde_json::json!({"accepted": true, "dry_run": false});
+        let err = WriteMemoryResponseMapper::to_outcome(&value).unwrap_err();
+        assert!(matches!(
+            err,
+            MappingError::MissingField {
+                tool: "write_memory",
+                field: "summary"
+            }
+        ));
+    }
+
+    #[test]
+    fn missing_accepted_fails() {
+        let value: Value = serde_json::json!({"summary": "x", "dry_run": false});
+        let err = WriteMemoryResponseMapper::to_outcome(&value).unwrap_err();
+        assert!(matches!(
+            err,
+            MappingError::MissingField {
+                tool: "write_memory",
+                field: "accepted"
+            }
+        ));
+    }
+
+    #[test]
+    fn generated_refs_with_non_string_fails() {
+        let value: Value = serde_json::json!({
+            "summary": "x",
+            "accepted": true,
+            "dry_run": false,
+            "generated_refs": [42],
+        });
+        let err = WriteMemoryResponseMapper::to_outcome(&value).unwrap_err();
+        assert!(matches!(
+            err,
+            MappingError::WrongType {
+                tool: "write_memory",
+                field: "generated_refs[]",
+                expected: "string"
+            }
+        ));
+    }
 }

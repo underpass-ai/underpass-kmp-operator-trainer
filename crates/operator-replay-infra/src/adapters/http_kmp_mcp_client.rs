@@ -4,6 +4,16 @@
 //! through a JSON-RPC `tools/call` envelope, and this adapter speaks
 //! that wire format directly.
 //!
+//! Tool names are sourced from `KernelTool::as_str()` in
+//! `operator-shared-domain` — that enum is the single source of truth
+//! for the wire identifier of each tool. The adapter never types a
+//! tool name as a string literal.
+//!
+//! Envelope validation enforced per JSON-RPC 2.0 §5.1 (see
+//! `ToolsCallResponse::validate`): `jsonrpc` must be `"2.0"`, `id`
+//! must match the request id, and exactly one of `result` / `error`
+//! must be present.
+//!
 //! Known impedance gaps between our domain `ToolArguments` and the
 //! kernel's MCP request schema (documented inline next to each tool):
 //! - `kernel_ask` requires `about`; our `AskArguments` carries only
@@ -12,17 +22,20 @@
 //!   domain change to introduce `about` lives in a follow-up PR.
 //! - `kernel_near` / `goto` / `rewind` / `forward` use a temporal
 //!   anchor shape (`time` / `sequence` / `ref`) that our domain
-//!   models structurally. We send the memory ref under the anchor key
-//!   each tool's schema names (`around`/`at`/`from`).
+//!   models structurally via `Cursor` / `TemporalCursor`. We send
+//!   each cursor variant under the anchor key the schema names
+//!   (`around` / `at` / `from`).
 //!
 //! The mapper unit tests fixture-validate the response shape; this
-//! adapter's mock-server integration test exercises the request /
+//! adapter's mock-server integration tests exercise the request /
 //! response round trip end to end.
 
 use std::time::Duration;
 
 use operator_replay_application::error::kmp_client_error::KmpClientError;
 use operator_replay_application::ports::kmp_mcp_client::KmpMcpClient;
+use operator_shared_domain::cursor::cursor::Cursor;
+use operator_shared_domain::tool::kernel_tool::KernelTool;
 use operator_shared_domain::tool_arguments::ask_arguments::AskArguments;
 use operator_shared_domain::tool_arguments::forward_arguments::ForwardArguments;
 use operator_shared_domain::tool_arguments::goto_arguments::GotoArguments;
@@ -46,7 +59,7 @@ use serde_json::{Value, json};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::jsonrpc::tools_call_request::ToolsCallRequest;
-use crate::jsonrpc::tools_call_response::ToolsCallResponse;
+use crate::jsonrpc::tools_call_response::{EnvelopeViolation, ToolsCallResponse};
 use crate::mappers::ask_response_mapper::AskResponseMapper;
 use crate::mappers::forward_response_mapper::ForwardResponseMapper;
 use crate::mappers::goto_response_mapper::GotoResponseMapper;
@@ -101,40 +114,69 @@ impl HttpKmpMcpClient {
         self.next_id.fetch_add(1, Ordering::Relaxed)
     }
 
-    fn call_tool(&self, tool: &'static str, arguments: Value) -> Result<Value, KmpClientError> {
-        let request = ToolsCallRequest::new(self.next_id(), tool, arguments);
+    fn call_tool(&self, tool: KernelTool, arguments: Value) -> Result<Value, KmpClientError> {
+        let wire = tool.as_str();
+        let request_id = self.next_id();
+        let request = ToolsCallRequest::new(request_id, wire, arguments);
         let response = self.client.post(&self.endpoint).json(&request).send();
         let response = response.map_err(|err| KmpClientError::Transport {
             adapter: ADAPTER,
-            tool,
+            tool: wire,
             message: err.to_string(),
         })?;
         if !response.status().is_success() {
             return Err(KmpClientError::Protocol {
-                tool,
+                tool: wire,
                 message: format!("server returned HTTP status {}", response.status()),
             });
         }
         let envelope: ToolsCallResponse =
             response.json().map_err(|err| KmpClientError::Protocol {
-                tool,
+                tool: wire,
                 message: format!("invalid JSON-RPC envelope: {err}"),
             })?;
+        if let Err(violation) = envelope.validate(request_id) {
+            return Err(KmpClientError::Protocol {
+                tool: wire,
+                message: render_envelope_violation(&violation),
+            });
+        }
         if let Some(error) = envelope.error.as_ref() {
             return Err(KmpClientError::Protocol {
-                tool,
+                tool: wire,
                 message: format!("JSON-RPC error {}: {}", error.code, error.message),
             });
         }
         envelope
             .structured_content()
-            .map_err(|message| KmpClientError::MalformedResponse { tool, message })
+            .map_err(|message| KmpClientError::MalformedResponse {
+                tool: wire,
+                message,
+            })
     }
 }
 
-fn into_kmp_client_error(tool: &'static str, err: &MappingError) -> KmpClientError {
+fn render_envelope_violation(violation: &EnvelopeViolation) -> String {
+    match violation {
+        EnvelopeViolation::WrongJsonRpcVersion { actual } => {
+            format!("jsonrpc field is '{actual}', expected '2.0'")
+        }
+        EnvelopeViolation::MissingId => "JSON-RPC response missing id".to_string(),
+        EnvelopeViolation::IdMismatch { expected, actual } => {
+            format!("JSON-RPC id mismatch: request id was {expected}, response id is {actual}")
+        }
+        EnvelopeViolation::ResultAndErrorBothPresent => {
+            "JSON-RPC response carries both result and error".to_string()
+        }
+        EnvelopeViolation::NeitherResultNorError => {
+            "JSON-RPC response carries neither result nor error".to_string()
+        }
+    }
+}
+
+fn into_kmp_client_error(tool: KernelTool, err: &MappingError) -> KmpClientError {
     KmpClientError::MalformedResponse {
-        tool,
+        tool: tool.as_str(),
         message: err.to_string(),
     }
 }
@@ -159,8 +201,23 @@ fn near_request_arguments(args: &NearArguments) -> Value {
     })
 }
 
-fn goto_request_arguments(_args: &GotoArguments) -> Value {
-    json!({ "at": {} })
+fn goto_request_arguments(args: &GotoArguments) -> Value {
+    json!({ "at": cursor_to_anchor_json(args.cursor()) })
+}
+
+fn cursor_to_anchor_json(cursor: &Cursor) -> Value {
+    match cursor {
+        Cursor::Ref(c) => json!({ "ref": c.target().as_str() }),
+        Cursor::Around(c) => json!({ "ref": c.anchor().as_str() }),
+        Cursor::Temporal(c) => json!({
+            "key": c.key().as_str(),
+            "anchor": c.anchor().as_str(),
+        }),
+        Cursor::Trace(c) => json!({
+            "from": c.from().as_str(),
+            "to": c.to().as_str(),
+        }),
+    }
 }
 
 fn rewind_request_arguments(args: &RewindArguments) -> Value {
@@ -208,60 +265,62 @@ fn write_memory_request_arguments(args: &WriteMemoryArguments) -> Value {
 
 impl KmpMcpClient for HttpKmpMcpClient {
     fn wake(&self, args: &WakeArguments) -> Result<WakeOutcome, KmpClientError> {
-        let structured = self.call_tool("kernel_wake", wake_request_arguments(args))?;
+        let structured = self.call_tool(KernelTool::Wake, wake_request_arguments(args))?;
         WakeResponseMapper::to_outcome(&structured)
-            .map_err(|e| into_kmp_client_error("kernel_wake", &e))
+            .map_err(|e| into_kmp_client_error(KernelTool::Wake, &e))
     }
 
     fn ask(&self, args: &AskArguments) -> Result<AskOutcome, KmpClientError> {
-        let structured = self.call_tool("kernel_ask", ask_request_arguments(args))?;
+        let structured = self.call_tool(KernelTool::Ask, ask_request_arguments(args))?;
         AskResponseMapper::to_outcome(&structured)
-            .map_err(|e| into_kmp_client_error("kernel_ask", &e))
+            .map_err(|e| into_kmp_client_error(KernelTool::Ask, &e))
     }
 
     fn near(&self, args: &NearArguments) -> Result<NearOutcome, KmpClientError> {
-        let structured = self.call_tool("kernel_near", near_request_arguments(args))?;
+        let structured = self.call_tool(KernelTool::Near, near_request_arguments(args))?;
         NearResponseMapper::to_outcome(&structured)
-            .map_err(|e| into_kmp_client_error("kernel_near", &e))
+            .map_err(|e| into_kmp_client_error(KernelTool::Near, &e))
     }
 
     fn goto(&self, args: &GotoArguments) -> Result<GotoOutcome, KmpClientError> {
-        let structured = self.call_tool("kernel_goto", goto_request_arguments(args))?;
+        let structured = self.call_tool(KernelTool::Goto, goto_request_arguments(args))?;
         GotoResponseMapper::to_outcome(&structured)
-            .map_err(|e| into_kmp_client_error("kernel_goto", &e))
+            .map_err(|e| into_kmp_client_error(KernelTool::Goto, &e))
     }
 
     fn rewind(&self, args: &RewindArguments) -> Result<RewindOutcome, KmpClientError> {
-        let structured = self.call_tool("kernel_rewind", rewind_request_arguments(args))?;
+        let structured = self.call_tool(KernelTool::Rewind, rewind_request_arguments(args))?;
         RewindResponseMapper::to_outcome(&structured)
-            .map_err(|e| into_kmp_client_error("kernel_rewind", &e))
+            .map_err(|e| into_kmp_client_error(KernelTool::Rewind, &e))
     }
 
     fn forward(&self, args: &ForwardArguments) -> Result<ForwardOutcome, KmpClientError> {
-        let structured = self.call_tool("kernel_forward", forward_request_arguments(args))?;
+        let structured = self.call_tool(KernelTool::Forward, forward_request_arguments(args))?;
         ForwardResponseMapper::to_outcome(&structured)
-            .map_err(|e| into_kmp_client_error("kernel_forward", &e))
+            .map_err(|e| into_kmp_client_error(KernelTool::Forward, &e))
     }
 
     fn trace(&self, args: &TraceArguments) -> Result<TraceOutcome, KmpClientError> {
-        let structured = self.call_tool("kernel_trace", trace_request_arguments(args))?;
+        let structured = self.call_tool(KernelTool::Trace, trace_request_arguments(args))?;
         TraceResponseMapper::to_outcome(&structured)
-            .map_err(|e| into_kmp_client_error("kernel_trace", &e))
+            .map_err(|e| into_kmp_client_error(KernelTool::Trace, &e))
     }
 
     fn inspect(&self, args: &InspectArguments) -> Result<InspectOutcome, KmpClientError> {
-        let structured = self.call_tool("kernel_inspect", inspect_request_arguments(args))?;
+        let structured = self.call_tool(KernelTool::Inspect, inspect_request_arguments(args))?;
         InspectResponseMapper::to_outcome(&structured)
-            .map_err(|e| into_kmp_client_error("kernel_inspect", &e))
+            .map_err(|e| into_kmp_client_error(KernelTool::Inspect, &e))
     }
 
     fn write_memory(
         &self,
         args: &WriteMemoryArguments,
     ) -> Result<WriteMemoryOutcome, KmpClientError> {
-        let structured =
-            self.call_tool("kernel_write_memory", write_memory_request_arguments(args))?;
+        let structured = self.call_tool(
+            KernelTool::WriteMemory,
+            write_memory_request_arguments(args),
+        )?;
         WriteMemoryResponseMapper::to_outcome(&structured)
-            .map_err(|e| into_kmp_client_error("kernel_write_memory", &e))
+            .map_err(|e| into_kmp_client_error(KernelTool::WriteMemory, &e))
     }
 }

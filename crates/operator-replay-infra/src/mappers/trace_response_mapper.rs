@@ -94,4 +94,33 @@ mod tests {
         assert_eq!(outcome.path_refs()[0].as_str(), "claim:rachel-austin");
         assert_eq!(outcome.path_refs()[1].as_str(), "claim:rachel-denver");
     }
+
+    #[test]
+    fn missing_summary_fails() {
+        let value: Value = serde_json::json!({"trace": []});
+        let err = TraceResponseMapper::to_outcome(&value).unwrap_err();
+        assert!(matches!(
+            err,
+            MappingError::MissingField {
+                tool: "trace",
+                field: "summary"
+            }
+        ));
+    }
+
+    #[test]
+    fn missing_edge_to_fails() {
+        let value: Value = serde_json::json!({
+            "summary": "x",
+            "trace": [{"from": "node:a"}],
+        });
+        let err = TraceResponseMapper::to_outcome(&value).unwrap_err();
+        assert!(matches!(
+            err,
+            MappingError::MissingField {
+                tool: "trace",
+                field: "trace[].to"
+            }
+        ));
+    }
 }
