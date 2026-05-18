@@ -449,6 +449,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "operator-evaluation-infra"
+version = "0.1.0"
+dependencies = [
+ "operator-evaluation-domain",
+ "operator-shared-contract",
+ "operator-shared-domain",
+ "operator-shared-infra",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "operator-replay-application"
 version = "0.1.0"
 dependencies = [
@@ -563,7 +576,9 @@ dependencies = [
 name = "operator-training-infra"
 version = "0.1.0"
 dependencies = [
+ "operator-evaluation-application",
  "operator-evaluation-domain",
+ "operator-evaluation-infra",
  "operator-shared-contract",
  "operator-shared-domain",
  "operator-shared-infra",

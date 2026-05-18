@@ -1,6 +1,11 @@
 pub mod dataset_write_outcome;
 pub mod dataset_writer;
 pub mod manifest_writer;
+pub mod policy_evaluator;
+pub mod predictions_reader;
+pub mod predictor;
+pub mod predictor_outcome;
+pub mod predictor_target;
 pub mod trainer_invocation_outcome;
 pub mod trainer_invoker;
 pub mod trajectory_source;
