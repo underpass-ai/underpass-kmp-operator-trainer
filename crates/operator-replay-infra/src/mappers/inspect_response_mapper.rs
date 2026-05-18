@@ -121,4 +121,43 @@ mod tests {
         assert_eq!(outcome.outgoing_refs()[0].as_str(), "claim:rachel-denver");
         assert!(outcome.incoming_refs().is_empty());
     }
+
+    #[test]
+    fn missing_summary_fails() {
+        let value: Value = serde_json::json!({"object": {"ref": "node:1", "kind": "claim"}});
+        let err = InspectResponseMapper::to_outcome(&value).unwrap_err();
+        assert!(matches!(
+            err,
+            MappingError::MissingField {
+                tool: "inspect",
+                field: "summary"
+            }
+        ));
+    }
+
+    #[test]
+    fn missing_object_fails() {
+        let value: Value = serde_json::json!({"summary": "x"});
+        let err = InspectResponseMapper::to_outcome(&value).unwrap_err();
+        assert!(matches!(
+            err,
+            MappingError::MissingField {
+                tool: "inspect",
+                field: "object"
+            }
+        ));
+    }
+
+    #[test]
+    fn missing_object_ref_fails() {
+        let value: Value = serde_json::json!({"summary": "x", "object": {"kind": "claim"}});
+        let err = InspectResponseMapper::to_outcome(&value).unwrap_err();
+        assert!(matches!(
+            err,
+            MappingError::MissingField {
+                tool: "inspect",
+                field: "object.ref"
+            }
+        ));
+    }
 }

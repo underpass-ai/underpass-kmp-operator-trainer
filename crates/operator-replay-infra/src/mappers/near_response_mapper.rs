@@ -76,4 +76,34 @@ mod tests {
         assert_eq!(outcome.entry_refs().len(), 2);
         assert_eq!(outcome.entry_refs()[0].as_str(), "claim:rachel-denver");
     }
+
+    #[test]
+    fn missing_summary_fails() {
+        let value: Value = serde_json::json!({"entries": []});
+        let err = NearResponseMapper::to_outcome(&value).unwrap_err();
+        assert!(matches!(
+            err,
+            MappingError::MissingField {
+                tool: "near",
+                field: "summary"
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_entry_ref_fails() {
+        let value: Value = serde_json::json!({
+            "summary": "x",
+            "entries": [{"ref": ""}],
+        });
+        let err = NearResponseMapper::to_outcome(&value).unwrap_err();
+        assert!(matches!(
+            err,
+            MappingError::InvalidValue {
+                tool: "near",
+                field: "entries[].ref",
+                ..
+            }
+        ));
+    }
 }

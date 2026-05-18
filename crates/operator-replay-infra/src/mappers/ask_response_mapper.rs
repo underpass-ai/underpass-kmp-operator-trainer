@@ -102,4 +102,34 @@ mod tests {
         let outcome = AskResponseMapper::to_outcome(&value).unwrap();
         assert!(outcome.is_unknown());
     }
+
+    #[test]
+    fn missing_summary_fails() {
+        let value: Value = serde_json::json!({"because": []});
+        let err = AskResponseMapper::to_outcome(&value).unwrap_err();
+        assert!(matches!(
+            err,
+            MappingError::MissingField {
+                tool: "ask",
+                field: "summary"
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_because_ref_fails() {
+        let value: Value = serde_json::json!({
+            "summary": "x",
+            "because": [{"ref": ""}],
+        });
+        let err = AskResponseMapper::to_outcome(&value).unwrap_err();
+        assert!(matches!(
+            err,
+            MappingError::InvalidValue {
+                tool: "ask",
+                field: "because[].ref",
+                ..
+            }
+        ));
+    }
 }

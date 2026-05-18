@@ -94,26 +94,37 @@ schema validator becomes useful, it lands as a follow-up PR.
   the matching `KmpClientError`. Used by tests in this crate and as
   a stub by downstream contexts.
 - `adapters/http_kmp_mcp_client.rs` — `HttpKmpMcpClient`. Real MCP
-  JSON-RPC 2.0 client over HTTP (`reqwest::blocking`). One
-  `KmpMcpClient` method per kernel tool. Each method builds a
+  JSON-RPC 2.0 client over HTTP (`reqwest::blocking`). The trait impl
+  has one method per variant of `KernelTool` in
+  `operator-shared-domain` (9 today); the tool's canonical wire name
+  comes from `KernelTool::as_str()` — there is no string literal for
+  the tool name anywhere in this crate. Each method builds a
   `tools/call` envelope, POSTs to the configured endpoint, deserialises
-  the response into `ToolsCallResponse`, extracts the structured
-  payload, and hands it off to the per-tool response mapper. Errors
-  flow as: HTTP non-2xx and JSON-RPC `error` → `Protocol`; transport
-  failure → `Transport`; structured-content parse failure or mapping
-  error → `MalformedResponse`. Constructed with `new(endpoint)` (30 s
-  default timeout) or `with_client(endpoint, client)` to inject a
-  caller-built `reqwest::blocking::Client` (custom TLS, proxies, etc.).
-  Request id generation is internal, monotonic, and lock-free
-  (`AtomicU64`).
-- `jsonrpc/tools_call_request.rs`, `jsonrpc/tools_call_response.rs` —
-  serde DTOs for the JSON-RPC 2.0 `tools/call` envelope. The response
-  helper `structured_content()` accepts both the modern
-  `result.structuredContent` field and the legacy
-  `result.content[0].text` JSON-encoded payload that older MCP servers
-  return, so the adapter is wire-compatible with both shapes. These
-  two files are listed in the `one_file_one_class` architecture test's
-  `KNOWN_EXCEPTIONS` allow-list as intrinsically paired envelope DTOs.
+  the response into `ToolsCallResponse`, validates the envelope
+  (`ToolsCallResponse::validate`) against JSON-RPC 2.0 §5.1, extracts
+  the structured payload, and hands it off to the per-tool response
+  mapper. Errors flow as: HTTP non-2xx → `Protocol`; envelope
+  violation (wrong `jsonrpc` version, missing or mismatched `id`,
+  result+error both present, neither result nor error) → `Protocol`;
+  JSON-RPC `error` payload → `Protocol`; transport failure →
+  `Transport`; structured-content parse failure or mapping error →
+  `MalformedResponse`. Constructed with `new(endpoint)` (30 s default
+  timeout) or `with_client(endpoint, client)` to inject a caller-built
+  `reqwest::blocking::Client` (custom TLS, proxies, etc.). Request id
+  generation is internal, monotonic, and lock-free (`AtomicU64`).
+- `jsonrpc/tools_call_request.rs`, `jsonrpc/tools_call_response.rs`,
+  `jsonrpc/json_rpc_error.rs` — serde DTOs for the JSON-RPC 2.0
+  `tools/call` envelope. `ToolsCallResponse::validate` enforces §5.1
+  (`jsonrpc == "2.0"`, `id` present and matches the request, exactly
+  one of `result` / `error` present), surfaced as the closed
+  `EnvelopeViolation` enum. The response helper `structured_content()`
+  accepts both the modern `result.structuredContent` field and the
+  legacy `result.content[0].text` JSON-encoded payload that older MCP
+  servers return, so the adapter is wire-compatible with both shapes.
+  `tools_call_request.rs` and `tools_call_response.rs` are listed in
+  the `one_file_one_class` architecture test's `KNOWN_EXCEPTIONS`
+  allow-list as intrinsically paired envelope DTOs; `JsonRpcError`
+  lives in its own file.
 - `mappers/*_response_mapper.rs` — one mapper per tool. Each takes the
   structured `serde_json::Value`, validates required fields, and
   returns the typed `*Outcome` value object from
@@ -144,21 +155,34 @@ scenarios against `InMemoryKmpMcpClient`:
 on `std::net::TcpListener` (no third-party HTTP server dependency in
 tests). The mock binds an ephemeral port, captures the request body
 that the adapter sent, and replies with a caller-supplied JSON-RPC
-envelope. The four scenarios cover:
+envelope. Scenarios covered:
 
-1. Happy path — canned `wake.response.json` round-trips end to end;
+Happy paths:
+
+1. `wake` round-trips end to end against canned `wake.response.json`;
    the captured request body confirms a real `tools/call` envelope
    was sent with the right `name` and `about` arguments.
-2. JSON-RPC error envelope — `error.code = -32601` maps to
-   `KmpClientError::Protocol` and the message includes both the
-   server-side text and the numeric code.
-3. Malformed `structuredContent` — a payload missing `summary` maps
-   to `KmpClientError::MalformedResponse` with the missing field
-   surfaced in the message.
-4. Legacy `content[0].text` envelope — older MCP servers wrap the
+2. Legacy `content[0].text` envelope — older MCP servers wrap the
    typed payload in a JSON-encoded text content block; the envelope
    helper accepts this shape and the adapter still produces a typed
    outcome.
+3. `goto` happy path — verifies the cursor `ref` is serialised under
+   the `at` key (previously the request body shipped an empty `{}`).
+
+Wire-level failure paths (each maps to `KmpClientError::Protocol`
+unless noted):
+
+4. JSON-RPC `error` payload (`error.code = -32601`) — message
+   includes the server-side text and the numeric code.
+5. Malformed `structuredContent` (missing `summary`) →
+   `KmpClientError::MalformedResponse`.
+6. HTTP 5xx with empty body.
+7. HTTP 200 with body that is not valid JSON.
+8. `jsonrpc` field missing.
+9. `jsonrpc` field present but not `"2.0"`.
+10. `id` in the response does not match the request id.
+11. Envelope carries both `result` and `error` (spec violation).
+12. `id` returned as a string instead of a number (parse failure).
 
 ## Pending for later passes
 
