@@ -79,9 +79,13 @@ the implementation is not documented in this tree, that is a bug.
   Stop/Escalate plus the failure-mode branch. Real MCP JSON-RPC client
   ships in a follow-up PR.
 
-- **Pass 5 (this PR)** — `training` bounded context domain skeleton:
-  dataset provenance, readiness gates, training manifest, `TrainingRun`
-  aggregate root with refusal-to-launch invariants. Application and
-  infra layers land in follow-up PRs.
+- **Pass 5** — `training` bounded context, full stack:
+  - **5A** — domain skeleton (dataset provenance, readiness gates,
+    training manifest, `TrainingRun` aggregate root).
+  - **5B** — application (ports + use cases for read/write trajectory,
+    evaluate readiness, assemble manifest, build/launch run).
+  - **5C (this PR)** — infra (filesystem JSONL dataset writer, TOML
+    manifest writer, `std::process::Command` trainer invoker, e2e
+    integration tests).
 
 Runtime and benchmark adapters are still out of scope.

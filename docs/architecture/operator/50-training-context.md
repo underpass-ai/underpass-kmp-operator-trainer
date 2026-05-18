@@ -15,10 +15,10 @@ trainer wired through a CLI adapter in `training-infra` (PR C). See
 ```
 operator-training-domain       value objects, readiness gates,
                                TrainingManifest, TrainingRun aggregate
-operator-training-application  use cases + ports (this PR)
+operator-training-application  use cases + ports
 operator-training-infra        JSONL dataset writer, TOML manifest
-                               writer, CLI trainer invoker (PR C,
-                               pending)
+                               writer, std::process::Command trainer
+                               invoker (this PR)
 ```
 
 Allowed dependencies (per `01-bounded-contexts.md`):
@@ -193,13 +193,79 @@ alias every use case returns.
   propagation path, the "unready manifest written before run refused"
   contract, and `LaunchTrainingRunUseCase` happy + failure paths.
 
+## Infra map
+
+### Adapters (`training-infra/src/adapters/`)
+
+- `jsonl_sft_dataset_writer.rs` — `JsonlSftDatasetWriter`. Filesystem
+  `DatasetWriter` that emits one JSONL line per `TrainingTrajectory`,
+  shaped `{"prompt": <json>, "completion": <json>}` per ADR 0012 §3.
+  `prompt` is `serde_json::to_string(&VisibleStateDto)` (a stable,
+  lossless JSON serialisation of the visible state — a richer
+  natural-language renderer can land behind a future `PromptRenderer`
+  port). `completion` is `serde_json::to_string(&OperatorActionDto)`.
+  Bytes are SHA-256-hashed in flight and the per-task-family
+  distribution is built during the write pass, so the returned
+  `DatasetWriteOutcome` is self-consistent. Output is always
+  newline-terminated; the writer overwrites any pre-existing target.
+- `toml_manifest_writer.rs` — `TomlManifestWriter`. Filesystem
+  `ManifestWriter` that serialises a `TrainingManifest` via a typed
+  TOML DTO tree (see `src/dto/manifest_*.rs`). Each readiness gate is
+  rendered as `[[readiness.gate]]` with its `kind` (closed string),
+  human-readable `target`, `status` and (when failed) `reason`. The
+  top-level `[readiness] overall` is `"ready"` iff every gate passed.
+- `process_trainer_invoker.rs` — `ProcessTrainerInvoker`. Wraps
+  `std::process::Command`. Builds the trainer command line as
+  `<command> --base-model <base_model> --output-dir
+  <output_directory>`, waits synchronously, and maps the exit status
+  to `TrainerInvocationOutcome::Success { exit_code: 0 }`,
+  `Failed { exit_code: Some(code) }` or `Failed { exit_code: None }`
+  (signal-killed processes). stdout / stderr are inherited; this
+  adapter never parses trainer logs.
+
+### DTOs (`training-infra/src/dto/`)
+
+Per ADR 0004 the domain has no `serde` dependency, so every wire
+shape lives in this crate as a `Serialize`-derived DTO mapped from
+the domain at the adapter boundary:
+
+- `jsonl_sft_example_dto.rs` — the per-line `{prompt, completion}` DTO.
+- `manifest_dto.rs` + `manifest_run_dto.rs` +
+  `manifest_dataset_dto.rs` + `manifest_readiness_dto.rs` +
+  `manifest_readiness_gate_dto.rs` +
+  `manifest_trainer_target_dto.rs` — the manifest TOML shape. Each
+  file declares exactly one public type, respecting `1 file = 1
+  class` without an exception entry.
+
+### Test coverage
+
+- **`tests/jsonl_dataset_writer.rs`** — 8 filesystem round-trip tests:
+  one line per trajectory plus expected DTO fields, hash determinism
+  across two writers with the same input, write-failure mapping for
+  unwritable paths, refusal to write zero trajectories (the
+  `PositiveCount` invariant), trailing newline contract, `Send +
+  Sync` smoke, idempotent overwrite, pre-existing-target overwrite.
+- **`tests/toml_manifest_writer.rs`** — 3 round-trip tests asserting
+  the parsed TOML tree (not the byte layout, which can drift with the
+  `toml` crate): every section present with expected values,
+  `overall = "ready"` iff all gates pass, write-failure mapping for
+  unwritable paths.
+- **`tests/process_trainer_invoker.rs`** — 4 integration tests
+  (`#[cfg(unix)]`) against stub shell scripts: exit 0 →
+  `Success{exit_code:0}`, exit 7 → `Failed{exit_code:Some(7)}`,
+  unknown command → `SpawnFailure`, and a captured-argv assertion
+  proving `--base-model` and `--output-dir` reach the trainer.
+- **`tests/end_to_end.rs`** — 2 end-to-end tests wiring
+  `BuildTrainingRunUseCase` with the real filesystem adapters: happy
+  path writes both files and returns a ready `TrainingRun`; the
+  unready-readiness path proves the manifest still lands on disk
+  with `overall = "not_ready"` even when `TrainingRun::new` refuses
+  the run.
+
 ## Pending for later passes
 
-- **PR C — `training-infra`**: filesystem JSONL dataset writer
-  (`{ "prompt": <visible_state_text>, "completion": <action_json> }`
-  per ADR 0012 §3), TOML manifest writer, `std::process::Command`
-  trainer invoker, CLI integration test against a stub shell script.
 - Quality pass after audit.
 - Future: DPO / GRPO dataset writers behind the same port; metric
   capture from trainer stdout; manifest schema published under
-  `api/training/`.
+  `api/training/`; richer `PromptRenderer` port if the JSON prompt
+  shape proves too verbose for the operator policy LLM.
