@@ -1,0 +1,88 @@
+# Operator: Qwen 0.5B + LoRA SFT prediction job.
+#
+# Adapted from rehydration-kernel/k8s/kernel-operator-qwen05-predict-v5-job.yaml.
+# This template runs the trained LoRA adapter over a holdout JSONL
+# and produces predictions.jsonl + summary.json that operator's Rust
+# validation loop (ValidateTrainedRunUseCase) consumes downstream.
+# See ../docs/training/runbook.md for the end-to-end flow.
+#
+# Inputs (host paths, mounted into the pod):
+#   /host-tmp/<dataset_dir>/eval.jsonl   <- holdout SFT JSONL
+#   /host-tmp/<adapter_dir>/             <- trained LoRA adapter
+# Output:
+#   /host-tmp/<predictions_dir>/predictions.jsonl
+#   /host-tmp/<predictions_dir>/summary.json
+#   /host-tmp/<predictions_dir>/failures.jsonl
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: operator-qwen05-lora-predict
+  labels:
+    app.kubernetes.io/name: operator-qwen05-lora-predict
+    app.kubernetes.io/part-of: underpass-operator
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: operator-qwen05-lora-predict
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: predictor
+          image: docker.io/pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
+          imagePullPolicy: IfNotPresent
+          workingDir: /workspace/repo
+          env:
+            - name: HF_HOME
+              value: /host-tmp/huggingface
+            - name: TRANSFORMERS_CACHE
+              value: /host-tmp/huggingface/transformers
+          command:
+            - bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              python -m pip install --upgrade pip
+              python -m pip install \
+                "transformers>=4.51.0" \
+                "datasets>=3.6.0" \
+                "peft>=0.15.0" \
+                "accelerate>=1.7.0" \
+                sentencepiece
+              : "${DATASET_JSONL:=/host-tmp/operator-sft/eval.jsonl}"
+              : "${ADAPTER_DIR:=/host-tmp/operator-qwen05-lora}"
+              : "${OUTPUT_DIR:=/host-tmp/operator-qwen05-predictions}"
+              : "${MODEL_ID:=Qwen/Qwen2.5-0.5B-Instruct}"
+              rm -rf "${OUTPUT_DIR}"
+              python scripts/operator/predict_operator_sft.py \
+                --dataset-jsonl "${DATASET_JSONL}" \
+                --model-id "${MODEL_ID}" \
+                --adapter "${ADAPTER_DIR}" \
+                --output "${OUTPUT_DIR}" \
+                --batch-size 8 \
+                --force
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              memory: 24Gi
+            requests:
+              nvidia.com/gpu: "1"
+              cpu: "4"
+              memory: 16Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /workspace/repo
+            - name: host-tmp
+              mountPath: /host-tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/tirso/ai/developents/operator
+            type: Directory
+        - name: host-tmp
+          hostPath:
+            path: /tmp
+            type: Directory
