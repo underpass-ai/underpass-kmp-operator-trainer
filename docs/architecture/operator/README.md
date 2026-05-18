@@ -28,7 +28,8 @@ the implementation is not documented in this tree, that is a bug.
 - [20-synthetic-context.md](20-synthetic-context.md) — Canonical
   trajectory generation: capabilities, blueprints, generator port,
   in-memory adapter.
-- 30-evaluation-context.md *(pending)* — Scoring and contract coverage.
+- [30-evaluation-context.md](30-evaluation-context.md) — Scoring and
+  contract coverage: prediction pairs, outcomes, per-tool metrics.
 - 40-replay-context.md *(pending)* — Execute predicted actions against MCP/KMP.
 - 50-training-context.md *(pending)* — Run manifests, readiness, metrics.
 - 60-runtime-context.md *(pending)* — Compose LLM, Operator, KMP/MCP, budget.
@@ -53,14 +54,17 @@ the implementation is not documented in this tree, that is a bug.
 - [decisions/0006-composition-over-inheritance.md](decisions/0006-composition-over-inheritance.md)
 - [decisions/0007-architecture-tests-crate.md](decisions/0007-architecture-tests-crate.md)
 - [decisions/0008-no-synthetic-contract-yet.md](decisions/0008-no-synthetic-contract-yet.md)
+- [decisions/0009-evaluation-context-skips-contract-and-infra.md](decisions/0009-evaluation-context-skips-contract-and-infra.md)
 
 ## Scope so far
 
 - **Pass 1** — `shared` bounded context (contract + domain + application +
   infra) plus `operator-architecture-tests` crate.
-- **Pass 2 (this PR)** — `synthetic` bounded context skeleton: capability
-  enumeration, blueprint, generation use case, in-memory adapter,
-  end-to-end test wiring all of the above.
+- **Pass 2** — `synthetic` bounded context skeleton: capability
+  enumeration, blueprint, generation use case, in-memory adapter.
+- **Pass 3 (this PR)** — `evaluation` bounded context: prediction
+  pair, outcome, per-tool metric, report, use case wired to the
+  shared-context `ActionContractValidator`.
 
-Evaluation, replay, training, runtime and benchmark adapters are out of
-scope until synthetic is exercised by at least one real consumer.
+Replay, training, runtime and benchmark adapters are still out of
+scope.

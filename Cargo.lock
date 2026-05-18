@@ -19,6 +19,23 @@ name = "operator-architecture-tests"
 version = "0.1.0"
 
 [[package]]
+name = "operator-evaluation-application"
+version = "0.1.0"
+dependencies = [
+ "operator-evaluation-domain",
+ "operator-shared-domain",
+ "thiserror",
+]
+
+[[package]]
+name = "operator-evaluation-domain"
+version = "0.1.0"
+dependencies = [
+ "operator-shared-domain",
+ "thiserror",
+]
+
+[[package]]
 name = "operator-shared-application"
 version = "0.1.0"
 dependencies = [

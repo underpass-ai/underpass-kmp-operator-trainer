@@ -9,6 +9,8 @@ members = [
     "crates/operator-synthetic-application",
     "crates/operator-synthetic-domain",
     "crates/operator-synthetic-infra",
+    "crates/operator-evaluation-application",
+    "crates/operator-evaluation-domain",
 ]
 
 [workspace.package]
@@ -27,6 +29,8 @@ operator-shared-infra = { path = "crates/operator-shared-infra" }
 operator-synthetic-domain = { path = "crates/operator-synthetic-domain" }
 operator-synthetic-application = { path = "crates/operator-synthetic-application" }
 operator-synthetic-infra = { path = "crates/operator-synthetic-infra" }
+operator-evaluation-domain = { path = "crates/operator-evaluation-domain" }
+operator-evaluation-application = { path = "crates/operator-evaluation-application" }
 
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"

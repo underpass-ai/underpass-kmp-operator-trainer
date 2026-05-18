@@ -1,0 +1,15 @@
+[package]
+name = "operator-evaluation-domain"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Operator: evaluation bounded context — prediction pairs, outcomes, reports."
+
+[lints]
+workspace = true
+
+[dependencies]
+operator-shared-domain.workspace = true
+thiserror.workspace = true
