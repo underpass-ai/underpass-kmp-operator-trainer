@@ -32,3 +32,58 @@ impl Specification<ActionContractSubject<'_>> for BudgetAllowsActionSpec {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::action::stop_action::StopAction;
+    use crate::action::stop_reason::StopReason;
+    use crate::action::tool_call_action::ToolCallAction;
+    use crate::mode::operator_mode::OperatorMode;
+    use crate::tool_arguments::inspect_arguments::InspectArguments;
+    use crate::tool_arguments::tool_arguments::ToolArguments;
+    use crate::value_objects::memory_ref::MemoryRef;
+    use crate::visible_state::budget_snapshot::BudgetSnapshot;
+    use crate::visible_state::visible_state_builder::VisibleStateBuilder;
+
+    fn inspect_action() -> OperatorAction {
+        OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
+            InspectArguments::new(MemoryRef::parse("node:1").unwrap()),
+        )))
+    }
+
+    #[test]
+    fn accepts_when_budget_allows_a_call() {
+        let visible = VisibleStateBuilder::new()
+            .with_budget(BudgetSnapshot::bounded(1, 100))
+            .build();
+        let action = inspect_action();
+        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        assert!(BudgetAllowsActionSpec::new().evaluate(&subject).is_ok());
+    }
+
+    #[test]
+    fn rejects_when_no_calls_remain() {
+        let visible = VisibleStateBuilder::new()
+            .with_budget(BudgetSnapshot::bounded(0, 100))
+            .build();
+        let action = inspect_action();
+        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        let err = BudgetAllowsActionSpec::new()
+            .evaluate(&subject)
+            .unwrap_err();
+        assert_eq!(err.code(), ContractViolationCode::BudgetExhausted);
+    }
+
+    #[test]
+    fn stop_action_is_allowed_even_when_budget_is_exhausted() {
+        let visible = VisibleStateBuilder::new()
+            .with_budget(BudgetSnapshot::bounded(0, 0))
+            .build();
+        let stop = OperatorAction::Stop(
+            StopAction::new(StopReason::BudgetExhausted, None, vec![]).unwrap(),
+        );
+        let subject = ActionContractSubject::new(&stop, OperatorMode::Read, &visible);
+        assert!(BudgetAllowsActionSpec::new().evaluate(&subject).is_ok());
+    }
+}

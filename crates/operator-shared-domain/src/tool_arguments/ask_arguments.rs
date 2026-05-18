@@ -17,3 +17,25 @@ impl AskArguments {
         &self.query
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::domain_error::DomainError;
+
+    #[test]
+    fn refuses_empty_query() {
+        assert!(matches!(
+            AskArguments::new(""),
+            Err(DomainError::EmptyValue {
+                context: "ask_arguments.query"
+            })
+        ));
+    }
+
+    #[test]
+    fn accepts_typical_query() {
+        let args = AskArguments::new("who decided X?").unwrap();
+        assert_eq!(args.query().as_str(), "who decided X?");
+    }
+}

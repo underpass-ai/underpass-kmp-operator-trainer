@@ -31,3 +31,54 @@ impl<T: ?Sized> Specification<T> for AndSpec<T> {
         self.second.evaluate(subject)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::contract::contract_violation_code::ContractViolationCode;
+
+    #[derive(Debug)]
+    struct AlwaysOk;
+    impl Specification<()> for AlwaysOk {
+        fn evaluate(&self, (): &()) -> Result<(), ContractViolation> {
+            Ok(())
+        }
+    }
+
+    #[derive(Debug)]
+    struct AlwaysFails(&'static str);
+    impl Specification<()> for AlwaysFails {
+        fn evaluate(&self, (): &()) -> Result<(), ContractViolation> {
+            Err(ContractViolation::new(
+                ContractViolationCode::BudgetExhausted,
+                "f",
+                self.0,
+            ))
+        }
+    }
+
+    #[test]
+    fn ok_when_both_succeed() {
+        let spec = AndSpec::new(Box::new(AlwaysOk), Box::new(AlwaysOk));
+        assert!(spec.evaluate(&()).is_ok());
+        // Debug impl exercised
+        assert!(format!("{spec:?}").contains("AndSpec"));
+    }
+
+    #[test]
+    fn fails_with_first_violation_when_first_fails() {
+        let spec = AndSpec::new(
+            Box::new(AlwaysFails("first")),
+            Box::new(AlwaysFails("second")),
+        );
+        let err = spec.evaluate(&()).unwrap_err();
+        assert_eq!(err.message(), "first");
+    }
+
+    #[test]
+    fn fails_with_second_when_first_passes_and_second_fails() {
+        let spec = AndSpec::new(Box::new(AlwaysOk), Box::new(AlwaysFails("second")));
+        let err = spec.evaluate(&()).unwrap_err();
+        assert_eq!(err.message(), "second");
+    }
+}

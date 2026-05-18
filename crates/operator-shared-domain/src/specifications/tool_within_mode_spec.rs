@@ -36,3 +36,48 @@ impl Specification<ActionContractSubject<'_>> for ToolWithinModeSpec {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::action::operator_action::OperatorAction;
+    use crate::action::stop_action::StopAction;
+    use crate::action::stop_reason::StopReason;
+    use crate::action::tool_call_action::ToolCallAction;
+    use crate::mode::operator_mode::OperatorMode;
+    use crate::tool_arguments::inspect_arguments::InspectArguments;
+    use crate::tool_arguments::tool_arguments::ToolArguments;
+    use crate::tool_arguments::write_memory_arguments::WriteMemoryArguments;
+    use crate::value_objects::memory_ref::MemoryRef;
+    use crate::visible_state::visible_state_builder::VisibleStateBuilder;
+
+    #[test]
+    fn accepts_inspect_in_read_mode() {
+        let visible = VisibleStateBuilder::new().build();
+        let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
+            InspectArguments::new(MemoryRef::parse("node:1").unwrap()),
+        )));
+        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        assert!(ToolWithinModeSpec::new().evaluate(&subject).is_ok());
+    }
+
+    #[test]
+    fn rejects_write_memory_in_read_mode() {
+        let visible = VisibleStateBuilder::new().build();
+        let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::WriteMemory(
+            WriteMemoryArguments::new("s", "b", vec![]).unwrap(),
+        )));
+        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        let err = ToolWithinModeSpec::new().evaluate(&subject).unwrap_err();
+        assert_eq!(err.code(), ContractViolationCode::ToolOutsideMode);
+    }
+
+    #[test]
+    fn ignores_stop_and_escalate_actions() {
+        let visible = VisibleStateBuilder::new().build();
+        let stop =
+            OperatorAction::Stop(StopAction::new(StopReason::NoCandidate, None, vec![]).unwrap());
+        let subject = ActionContractSubject::new(&stop, OperatorMode::Read, &visible);
+        assert!(ToolWithinModeSpec::new().evaluate(&subject).is_ok());
+    }
+}

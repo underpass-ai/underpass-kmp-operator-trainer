@@ -36,3 +36,40 @@ impl ContractViolations {
         self.items
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::contract::contract_violation_code::ContractViolationCode;
+
+    fn sample(message: &str) -> ContractViolation {
+        ContractViolation::new(ContractViolationCode::BudgetExhausted, "f", message)
+    }
+
+    #[test]
+    fn new_is_empty() {
+        let v = ContractViolations::new();
+        assert!(v.is_empty());
+        assert_eq!(v.len(), 0);
+        assert!(v.as_slice().is_empty());
+    }
+
+    #[test]
+    fn push_then_inspect() {
+        let mut v = ContractViolations::new();
+        v.push(sample("a"));
+        assert_eq!(v.len(), 1);
+        assert_eq!(v.as_slice()[0].message(), "a");
+    }
+
+    #[test]
+    fn extend_merges_two_collections() {
+        let mut a = ContractViolations::new();
+        a.push(sample("a"));
+        let mut b = ContractViolations::new();
+        b.push(sample("b"));
+        a.extend(b);
+        assert_eq!(a.len(), 2);
+        assert_eq!(a.into_inner().len(), 2);
+    }
+}

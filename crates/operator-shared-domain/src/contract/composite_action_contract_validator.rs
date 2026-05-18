@@ -67,3 +67,64 @@ impl ActionContractValidator for CompositeActionContractValidator {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::action::stop_action::StopAction;
+    use crate::action::stop_reason::StopReason;
+    use crate::action::tool_call_action::ToolCallAction;
+    use crate::tool_arguments::inspect_arguments::InspectArguments;
+    use crate::tool_arguments::tool_arguments::ToolArguments;
+    use crate::tool_arguments::write_memory_arguments::WriteMemoryArguments;
+    use crate::value_objects::memory_ref::MemoryRef;
+    use crate::visible_state::budget_snapshot::BudgetSnapshot;
+    use crate::visible_state::visible_state_builder::VisibleStateBuilder;
+
+    #[test]
+    fn accepts_consistent_inspect_in_read() {
+        let target = MemoryRef::parse("node:1").unwrap();
+        let visible = VisibleStateBuilder::new()
+            .with_known_ref(target.clone())
+            .build();
+        let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
+            InspectArguments::new(target),
+        )));
+        let validator = CompositeActionContractValidator::default_strict();
+        validator
+            .validate(&action, OperatorMode::Read, &visible)
+            .expect("consistent inspect is valid");
+        assert!(format!("{validator:?}").contains("CompositeActionContractValidator"));
+    }
+
+    #[test]
+    fn accumulates_multiple_violations() {
+        // 1) WriteMemory in Read mode breaks ToolWithinModeSpec.
+        // 2) Budget exhausted breaks BudgetAllowsActionSpec.
+        let visible = VisibleStateBuilder::new()
+            .with_budget(BudgetSnapshot::bounded(0, 0))
+            .build();
+        let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::WriteMemory(
+            WriteMemoryArguments::new("s", "b", vec![]).unwrap(),
+        )));
+        let validator = CompositeActionContractValidator::default_strict();
+        let err = validator
+            .validate(&action, OperatorMode::Read, &visible)
+            .unwrap_err();
+        assert!(err.len() >= 2);
+    }
+
+    #[test]
+    fn stop_action_passes_full_validator() {
+        let visible = VisibleStateBuilder::new()
+            .with_budget(BudgetSnapshot::bounded(0, 0))
+            .build();
+        let action = OperatorAction::Stop(
+            StopAction::new(StopReason::BudgetExhausted, None, vec![]).unwrap(),
+        );
+        let validator = CompositeActionContractValidator::default_strict();
+        validator
+            .validate(&action, OperatorMode::Read, &visible)
+            .expect("stop with empty budget is always valid");
+    }
+}

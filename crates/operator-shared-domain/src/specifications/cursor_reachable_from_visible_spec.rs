@@ -47,3 +47,117 @@ impl Specification<ActionContractSubject<'_>> for CursorReachableFromVisibleSpec
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::action::tool_call_action::ToolCallAction;
+    use crate::cursor::ref_cursor::RefCursor;
+    use crate::cursor::temporal_anchor::TemporalAnchor;
+    use crate::cursor::temporal_cursor::TemporalCursor;
+    use crate::cursor::temporal_cursor_key::TemporalCursorKey;
+    use crate::mode::operator_mode::OperatorMode;
+    use crate::tool_arguments::forward_arguments::ForwardArguments;
+    use crate::tool_arguments::inspect_arguments::InspectArguments;
+    use crate::tool_arguments::rewind_arguments::RewindArguments;
+    use crate::value_objects::memory_ref::MemoryRef;
+    use crate::value_objects::positive_count::PositiveCount;
+    use crate::visible_state::visible_state_builder::VisibleStateBuilder;
+
+    fn anchor() -> TemporalAnchor {
+        TemporalAnchor::parse("2026-05-18T00:00:00Z").unwrap()
+    }
+
+    fn rewind_action(key: TemporalCursorKey) -> OperatorAction {
+        OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Rewind(
+            RewindArguments::new(
+                TemporalCursor::new(key, anchor()),
+                PositiveCount::parse(1, "w").unwrap(),
+            ),
+        )))
+    }
+
+    fn forward_action(key: TemporalCursorKey) -> OperatorAction {
+        OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Forward(
+            ForwardArguments::new(
+                TemporalCursor::new(key, anchor()),
+                PositiveCount::parse(1, "w").unwrap(),
+            ),
+        )))
+    }
+
+    #[test]
+    fn rewind_with_matching_active_temporal_cursor_passes() {
+        let visible = VisibleStateBuilder::new()
+            .with_active_cursor(Cursor::Temporal(TemporalCursor::new(
+                TemporalCursorKey::Created,
+                anchor(),
+            )))
+            .build();
+        let action = rewind_action(TemporalCursorKey::Created);
+        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        assert!(
+            CursorReachableFromVisibleSpec::new()
+                .evaluate(&subject)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn forward_with_mismatching_key_fails() {
+        let visible = VisibleStateBuilder::new()
+            .with_active_cursor(Cursor::Temporal(TemporalCursor::new(
+                TemporalCursorKey::Created,
+                anchor(),
+            )))
+            .build();
+        let action = forward_action(TemporalCursorKey::Accessed);
+        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        let err = CursorReachableFromVisibleSpec::new()
+            .evaluate(&subject)
+            .unwrap_err();
+        assert_eq!(err.code(), ContractViolationCode::CursorAnchorMissing);
+    }
+
+    #[test]
+    fn rewind_without_any_active_cursor_fails() {
+        let visible = VisibleStateBuilder::new().build();
+        let action = rewind_action(TemporalCursorKey::Created);
+        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        assert!(
+            CursorReachableFromVisibleSpec::new()
+                .evaluate(&subject)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn rewind_with_non_temporal_active_cursor_fails() {
+        let visible = VisibleStateBuilder::new()
+            .with_active_cursor(Cursor::Ref(RefCursor::new(
+                MemoryRef::parse("node:1").unwrap(),
+            )))
+            .build();
+        let action = rewind_action(TemporalCursorKey::Updated);
+        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        assert!(
+            CursorReachableFromVisibleSpec::new()
+                .evaluate(&subject)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn non_temporal_actions_are_ignored() {
+        let visible = VisibleStateBuilder::new().build();
+        let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
+            InspectArguments::new(MemoryRef::parse("node:1").unwrap()),
+        )));
+        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        assert!(
+            CursorReachableFromVisibleSpec::new()
+                .evaluate(&subject)
+                .is_ok()
+        );
+    }
+}

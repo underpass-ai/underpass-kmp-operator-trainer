@@ -20,3 +20,17 @@ impl EvidenceRef {
         &self.dimensions
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn carries_target_and_dimensions() {
+        let target = MemoryRef::parse("node:1").unwrap();
+        let dim = DimensionRef::parse("temporal").unwrap();
+        let ev = EvidenceRef::new(target.clone(), vec![dim.clone()]);
+        assert_eq!(ev.target(), &target);
+        assert_eq!(ev.dimensions(), &[dim]);
+    }
+}

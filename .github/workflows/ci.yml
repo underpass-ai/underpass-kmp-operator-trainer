@@ -51,3 +51,26 @@ jobs:
         run: cargo test --workspace --all-targets
       - name: cargo test --workspace --doc
         run: cargo test --workspace --doc
+
+  coverage:
+    name: coverage (>= 80% lines)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain from rust-toolchain.toml
+        run: rustup show active-toolchain
+      - name: Install llvm-tools-preview
+        run: rustup component add llvm-tools-preview
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: operator-ci
+      - name: cargo llvm-cov --workspace --all-targets --fail-under-lines 80
+        run: cargo llvm-cov --workspace --all-targets --fail-under-lines 80 --lcov --output-path lcov.info
+      - name: Upload lcov.info
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov
+          path: lcov.info
+          if-no-files-found: error

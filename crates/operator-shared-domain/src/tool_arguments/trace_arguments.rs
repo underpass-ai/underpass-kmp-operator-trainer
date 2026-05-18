@@ -25,3 +25,29 @@ impl TraceArguments {
         self.page
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn carries_from_to_and_page() {
+        let from = MemoryRef::parse("node:from").unwrap();
+        let to = MemoryRef::parse("node:to").unwrap();
+        let args = TraceArguments::new(
+            from.clone(),
+            Some(to.clone()),
+            PositiveCount::parse(2, "page").unwrap(),
+        );
+        assert_eq!(args.from(), &from);
+        assert_eq!(args.to(), Some(&to));
+        assert_eq!(args.page().as_usize(), 2);
+    }
+
+    #[test]
+    fn to_is_optional() {
+        let from = MemoryRef::parse("node:from").unwrap();
+        let args = TraceArguments::new(from, None, PositiveCount::parse(1, "page").unwrap());
+        assert!(args.to().is_none());
+    }
+}
