@@ -46,18 +46,81 @@ impl ToolOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cursor::temporal_anchor::TemporalAnchor;
+    use crate::cursor::temporal_cursor::TemporalCursor;
+    use crate::cursor::temporal_cursor_key::TemporalCursorKey;
     use crate::value_objects::memory_ref::MemoryRef;
     use crate::value_objects::non_empty_string::NonEmptyString;
 
+    fn summary(text: &str) -> NonEmptyString {
+        NonEmptyString::parse(text, "ctx").unwrap()
+    }
+
+    fn target() -> MemoryRef {
+        MemoryRef::parse("node:1").unwrap()
+    }
+
     #[test]
-    fn variant_resolves_to_kernel_tool() {
-        let outcome = ToolOutcome::Inspect(InspectOutcome::new(
-            NonEmptyString::parse("s", "ctx").unwrap(),
-            MemoryRef::parse("node:1").unwrap(),
-            NonEmptyString::parse("claim", "ctx").unwrap(),
-            vec![],
-            vec![],
-        ));
-        assert_eq!(outcome.tool(), KernelTool::Inspect);
+    fn every_variant_resolves_to_its_kernel_tool() {
+        let cases: [(ToolOutcome, KernelTool); 9] = [
+            (
+                ToolOutcome::Wake(WakeOutcome::new(summary("w"), vec![])),
+                KernelTool::Wake,
+            ),
+            (
+                ToolOutcome::Ask(AskOutcome::new(summary("a"), None, vec![])),
+                KernelTool::Ask,
+            ),
+            (
+                ToolOutcome::Near(NearOutcome::new(summary("n"), vec![])),
+                KernelTool::Near,
+            ),
+            (
+                ToolOutcome::Goto(GotoOutcome::new(summary("g"), vec![])),
+                KernelTool::Goto,
+            ),
+            (
+                ToolOutcome::Rewind(RewindOutcome::new(summary("r"), vec![])),
+                KernelTool::Rewind,
+            ),
+            (
+                ToolOutcome::Forward(ForwardOutcome::new(summary("f"), vec![])),
+                KernelTool::Forward,
+            ),
+            (
+                ToolOutcome::Trace(TraceOutcome::new(summary("t"), vec![])),
+                KernelTool::Trace,
+            ),
+            (
+                ToolOutcome::Inspect(InspectOutcome::new(
+                    summary("i"),
+                    target(),
+                    summary("claim"),
+                    vec![],
+                    vec![],
+                )),
+                KernelTool::Inspect,
+            ),
+            (
+                ToolOutcome::WriteMemory(WriteMemoryOutcome::new(
+                    summary("wm"),
+                    true,
+                    false,
+                    vec![],
+                )),
+                KernelTool::WriteMemory,
+            ),
+        ];
+        // Touch every variant so a copy-paste bug in any match arm
+        // surfaces here. The `TemporalCursor` import is kept so the
+        // module compiles after future variants land that may need a
+        // temporal-cursor fixture.
+        let _temporal_marker = TemporalCursor::new(
+            TemporalCursorKey::Created,
+            TemporalAnchor::parse("2026-05-18T00:00:00Z").unwrap(),
+        );
+        for (outcome, expected) in cases {
+            assert_eq!(outcome.tool(), expected);
+        }
     }
 }
