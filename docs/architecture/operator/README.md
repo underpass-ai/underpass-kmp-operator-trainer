@@ -37,7 +37,11 @@ the implementation is not documented in this tree, that is a bug.
   preparation: dataset provenance, readiness gates, manifests,
   `TrainingRun` aggregate root.
 - 60-runtime-context.md *(pending)* — Compose LLM, Operator, KMP/MCP, budget.
-- 70-benchmark-adapters-context.md *(pending)* — External benchmark translation.
+
+External benchmark translation (LongMemEval, MemoryArena, …) is **not** an
+Operator bounded context. Those adapters belong to the kernel
+(`rehydration-kernel`) because their purpose is to measure KMP itself, not
+to shape Operator's training surface.
 
 ### Shared bounded context — per-piece pages
 
@@ -88,4 +92,6 @@ the implementation is not documented in this tree, that is a bug.
     manifest writer, `std::process::Command` trainer invoker, e2e
     integration tests).
 
-Runtime and benchmark adapters are still out of scope.
+The `runtime` context is still out of scope. Benchmark adapters are not
+an Operator concern at all — they live in the kernel
+(`rehydration-kernel`) because their purpose is to measure KMP itself.

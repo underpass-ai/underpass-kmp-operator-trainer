@@ -13,16 +13,25 @@ another context. There are no shared "god" types across contexts beyond the
                 │   trajectory model     │
                 └──────────▲─────────────┘
                            │
-   ┌──────────┬────────────┼────────────┬──────────────┬─────────────────┐
-   │          │            │            │              │                 │
-synthetic evaluation    training      replay        runtime       benchmark-adapters
-   │          │            │            │              │                 │
-canonical  scoring,    manifests,    execute        compose         translate external
-trajec-    coverage    readiness,    predicted      LLM, Op,        benchmark artifacts
-tories     metrics     metrics       actions vs     KMP/MCP,        into Operator
-                                     real MCP       budget,         trajectories
+   ┌──────────┬────────────┼────────────┬──────────────┐
+   │          │            │            │              │
+synthetic evaluation    training      replay        runtime
+   │          │            │            │              │
+canonical  scoring,    manifests,    execute        compose
+trajec-    coverage    readiness,    predicted      LLM, Op,
+tories     metrics     metrics       actions vs     KMP/MCP,
+                                     real MCP       budget,
                                                     escalate
 ```
+
+Translation of external benchmark artifacts (LongMemEval, MemoryArena, …)
+into Operator trajectories is **not** part of this repository — those
+benchmark adapters belong to the kernel (`rehydration-kernel`), since their
+purpose is to measure KMP performance against external workloads, not to
+shape Operator's training surface. The kernel may emit
+`TrainingTrajectory`-shaped artifacts through its own bounded contexts;
+Operator consumes them through `TrajectorySource` adapters in
+`training-infra`, never by importing benchmark schemas.
 
 ## shared
 
@@ -61,12 +70,6 @@ Rust dependency on `rehydration-*`**; it talks gRPC/MCP over the network.
 Owns the composition of an LLM, the Operator policy, the KMP/MCP client and
 the budget/escalation policy at serving time.
 
-## benchmark-adapters
-
-Owns translation of external benchmark artifacts (LongMemEval, MemoryArena,
-…) into Operator trajectories. It is the only context allowed to know about
-benchmark schemas. It is forbidden to define Operator vocabulary.
-
 ## Allowed dependency edges
 
 ```
@@ -76,7 +79,6 @@ evaluation       ──▶  shared
 training         ──▶  shared, evaluation (only for readiness gates)
 replay           ──▶  shared
 runtime          ──▶  shared, evaluation (only for online contract checks)
-benchmark-adapt. ──▶  shared
 ```
 
 Edges not listed above are forbidden. In particular:
@@ -85,6 +87,5 @@ Edges not listed above are forbidden. In particular:
   how it will be scored).
 - `evaluation` does **not** depend on `synthetic` (scoring must work on any
   conformant trajectory regardless of how it was generated).
-- `runtime` does **not** depend on `synthetic`, `training` or
-  `benchmark-adapters`.
+- `runtime` does **not** depend on `synthetic` or `training`.
 - No context depends on `rehydration-*` crates.

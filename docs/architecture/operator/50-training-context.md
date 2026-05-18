@@ -31,10 +31,11 @@ training-infra       ──▶  shared-domain, shared-infra,
                           training-domain, training-application
 ```
 
-No dependency on `synthetic`, `replay`, `runtime`,
-`benchmark-adapters` or any `rehydration-*` crate. Cross-context
-data (`TrainingTrajectory`, `EvaluationReport`) flows through the
-shared and evaluation domain types respectively.
+No dependency on `synthetic`, `replay`, `runtime`, or any
+`rehydration-*` crate. Cross-context data (`TrainingTrajectory`,
+`EvaluationReport`) flows through the shared and evaluation domain
+types respectively. Benchmark adapters are not an Operator concern;
+they live in the kernel (`rehydration-kernel`).
 
 ## Domain map
 
