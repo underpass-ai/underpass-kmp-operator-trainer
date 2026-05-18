@@ -45,7 +45,9 @@ training-infra       ──▶  operator-shared-domain,
 
 The cross-context dependency is `evaluation-domain`, used only by
 readiness gates that read `EvaluationReport` field values. There is no
-dependency on `synthetic`, `replay`, `runtime` or `benchmark-adapters`.
+dependency on `synthetic`, `replay`, or `runtime`. There are no
+benchmark adapters in this repository — external benchmark translation
+lives in the kernel, not in Operator (see `01-bounded-contexts.md`).
 
 Rejected: depending on `synthetic`. Synthetic produces
 `TrainingTrajectory` values, but those live in `shared`. The training
