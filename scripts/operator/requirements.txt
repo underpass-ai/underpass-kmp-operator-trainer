@@ -1,0 +1,18 @@
+# Python dependencies for operator/scripts/operator/.
+#
+# Versions pinned to what the kernel k8s training job
+# (`kernel-operator-qwen05-lora-v5-job.yaml`) installed at the last
+# proven training run on 2026-05-17. Bump deliberately when upstream
+# fixes land; do not bump opportunistically.
+
+transformers>=4.51.0,<5.0.0
+datasets>=3.6.0,<4.0.0
+peft>=0.15.0,<1.0.0
+accelerate>=1.7.0,<2.0.0
+trl>=0.18.0,<1.0.0
+sentencepiece
+
+# Inference-only dependency for predict_operator_sft.py.
+# `torch` is pinned by transformers; install the GPU build separately
+# from https://pytorch.org/get-started/locally/ — the k8s image uses
+# pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime.
