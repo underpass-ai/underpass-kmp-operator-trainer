@@ -8,6 +8,7 @@
 use std::fs::{self, File};
 use std::io::Write as _;
 use std::os::unix::fs::PermissionsExt as _;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use operator_training_application::errors::trainer_invoker_error::TrainerInvokerError;
@@ -20,6 +21,13 @@ use operator_training_domain::trainer::trainer_target::TrainerTarget;
 use operator_training_infra::adapters::process_trainer_invoker::ProcessTrainerInvoker;
 
 static SEQ: AtomicU64 = AtomicU64::new(1);
+
+/// Serialise the exec-from-tempfile path. Some kernels and
+/// filesystems (notably tmpfs in CI containers) race with the
+/// write-fd check and return `ETXTBSY` even after the writer is
+/// dropped; taking this mutex around each write-chmod-exec triple
+/// keeps the tests robust without touching the adapter itself.
+static EXEC_LOCK: Mutex<()> = Mutex::new(());
 
 fn write_stub_script(label: &str, body: &str) -> std::path::PathBuf {
     let n = SEQ.fetch_add(1, Ordering::Relaxed);
@@ -50,6 +58,7 @@ fn target_for(script: &std::path::Path) -> TrainerTarget {
 
 #[test]
 fn successful_exit_zero_yields_success_outcome() {
+    let _guard = EXEC_LOCK.lock().unwrap();
     let script = write_stub_script("ok", "exit 0\n");
     let target = target_for(&script);
     let invoker = ProcessTrainerInvoker::new();
@@ -65,6 +74,7 @@ fn successful_exit_zero_yields_success_outcome() {
 
 #[test]
 fn non_zero_exit_yields_failed_outcome_with_code() {
+    let _guard = EXEC_LOCK.lock().unwrap();
     let script = write_stub_script("fail", "exit 7\n");
     let target = target_for(&script);
     let invoker = ProcessTrainerInvoker::new();
@@ -99,6 +109,7 @@ fn unknown_command_yields_spawn_failure() {
 
 #[test]
 fn invoker_passes_base_model_and_output_directory_as_arguments() {
+    let _guard = EXEC_LOCK.lock().unwrap();
     // The stub records its CLI args to a sidecar file; we then assert
     // both `--base-model` and `--output-dir` made it through.
     let argv_log = std::env::temp_dir().join(format!(
