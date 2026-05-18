@@ -1,26 +1,20 @@
 [package]
-name = "operator-training-infra"
+name = "operator-evaluation-infra"
 edition.workspace = true
 rust-version.workspace = true
 version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Operator: training bounded context — filesystem and process adapters."
+description = "Operator: evaluation bounded context — JSONL adapters for predictions and ground truth."
 
 [lints]
 workspace = true
 
 [dependencies]
-operator-evaluation-application.workspace = true
 operator-evaluation-domain.workspace = true
-operator-evaluation-infra.workspace = true
 operator-shared-contract.workspace = true
 operator-shared-domain.workspace = true
 operator-shared-infra.workspace = true
-operator-training-application.workspace = true
-operator-training-domain.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 thiserror.workspace = true
-toml.workspace = true

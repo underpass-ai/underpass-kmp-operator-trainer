@@ -178,6 +178,39 @@ alias every use case returns.
   call. The run aggregate root guarantees readiness, so there is
   nothing to check domain-side; the use case just forwards the
   manifest's `TrainerTarget` to the invoker and returns its outcome.
+- `validate_trained_run_use_case.rs` — post-train validation
+  orchestrator. Invokes the `Predictor` over a holdout dataset,
+  reads `predictions.jsonl` through a `PredictionsReader` adapter,
+  joins step-keyed predictions to the in-memory ground-truth
+  trajectories by `step_id`, and feeds the resulting
+  `EvaluationPair`s to a `PolicyEvaluator`. Returns a
+  `ValidateTrainedRunOutcome` pairing the predictor's process
+  outcome with the model-level `EvaluationReport`. Predictions for
+  steps not in the ground-truth set are dropped silently (same
+  shape as the kernel evaluator).
+- `validate_trained_run_request.rs` / `validate_trained_run_outcome.rs`
+  — input DTO and return value object for the use case.
+
+### Additional ports (`training-application/src/ports/`)
+
+- `predictor.rs` + `predictor_target.rs` + `predictor_outcome.rs` —
+  `Predictor` trait, the domain-typed `PredictorTarget` (command,
+  base model, adapter dir, dataset path, output dir) and the
+  `PredictorOutcome` returned by the adapter (paths + summary
+  counts).
+- `predictions_reader.rs` — `PredictionsReader` trait. Reads
+  `Vec<StepKeyedPrediction>` from whatever source the adapter
+  fronts.
+- `policy_evaluator.rs` — `PolicyEvaluator` trait. Wraps the
+  evaluation-application use case so `training-application` never
+  imports `operator-evaluation-application` directly.
+
+### Additional errors (`training-application/src/errors/`)
+
+`PredictorError` (`SpawnFailure`, `NonZeroExit`),
+`PredictionsReadError` (`SourceUnavailable`, `InvalidRow`,
+`ShapeViolation`) and `PolicyEvaluatorError` (`DomainFailure`).
+All three flatten into `TrainingApplicationError` via `#[from]`.
 
 ## Test coverage
 
@@ -223,6 +256,22 @@ alias every use case returns.
   `Failed { exit_code: Some(code) }` or `Failed { exit_code: None }`
   (signal-killed processes). stdout / stderr are inherited; this
   adapter never parses trainer logs.
+- `process_predictor_invoker.rs` — `ProcessPredictorInvoker`.
+  Sibling of the trainer invoker for the Python
+  `predict_operator_sft.py` script in `scripts/operator/`. Builds
+  `<command> --model-id <base_model> --adapter <adapter_dir>
+  --dataset-jsonl <dataset_path> --output <output_dir>`, redirects
+  stdin to `/dev/null`, waits, and reads `<output_dir>/summary.json`
+  to populate `PredictorOutcome.predictions` and `failures`.
+- `jsonl_predictions_reader_adapter.rs` — `PredictionsReader`
+  adapter that wraps the `operator-evaluation-infra` JSONL reader
+  and translates its evaluation-infra error type into the
+  training-application `PredictionsReadError`.
+- `composite_policy_evaluator.rs` — `PolicyEvaluator` adapter that
+  wraps `EvaluateOperatorPolicyUseCase` from
+  `operator-evaluation-application`. Keeps the training-application
+  layer decoupled from evaluation-application; only the infra crate
+  knows about both.
 
 ### DTOs (`training-infra/src/dto/`)
 

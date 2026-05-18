@@ -1,5 +1,8 @@
 pub mod dataset_write_error;
 pub mod manifest_write_error;
+pub mod policy_evaluator_error;
+pub mod predictions_read_error;
+pub mod predictor_error;
 pub mod trainer_invoker_error;
 pub mod training_application_error;
 pub mod training_application_result;
