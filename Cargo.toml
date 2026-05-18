@@ -14,7 +14,7 @@ rust-version = "1.90"
 version = "0.1.0"
 license = "Apache-2.0"
 description = "Operator: a small specialist runtime and dataset model for bounded KMP/MCP action policy"
-repository = "https://github.com/underpass-ai/operator"
+repository = "https://github.com/underpass-ai/underpass-kmp-operator-trainer"
 
 [workspace.dependencies]
 operator-shared-contract = { path = "crates/operator-shared-contract" }
