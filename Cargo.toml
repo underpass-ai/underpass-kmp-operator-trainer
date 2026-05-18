@@ -14,6 +14,7 @@ members = [
     "crates/operator-replay-application",
     "crates/operator-replay-domain",
     "crates/operator-replay-infra",
+    "crates/operator-training-domain",
 ]
 
 [workspace.package]
@@ -37,6 +38,7 @@ operator-evaluation-application = { path = "crates/operator-evaluation-applicati
 operator-replay-application = { path = "crates/operator-replay-application" }
 operator-replay-domain = { path = "crates/operator-replay-domain" }
 operator-replay-infra = { path = "crates/operator-replay-infra" }
+operator-training-domain = { path = "crates/operator-training-domain" }
 
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"

@@ -1,0 +1,16 @@
+[package]
+name = "operator-training-domain"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Operator: training bounded context — manifests, dataset provenance, readiness gates."
+
+[lints]
+workspace = true
+
+[dependencies]
+operator-shared-domain.workspace = true
+operator-evaluation-domain.workspace = true
+thiserror.workspace = true
