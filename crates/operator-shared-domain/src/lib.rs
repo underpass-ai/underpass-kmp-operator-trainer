@@ -14,6 +14,7 @@ pub mod mode;
 pub mod specifications;
 pub mod tool;
 pub mod tool_arguments;
+pub mod tool_outcomes;
 pub mod trajectory;
 pub mod value_objects;
 pub mod visible_state;

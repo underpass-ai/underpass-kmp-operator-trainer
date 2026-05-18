@@ -55,7 +55,8 @@ the implementation is not documented in this tree, that is a bug.
 - [decisions/0007-architecture-tests-crate.md](decisions/0007-architecture-tests-crate.md)
 - [decisions/0008-no-synthetic-contract-yet.md](decisions/0008-no-synthetic-contract-yet.md)
 - [decisions/0009-evaluation-context-skips-contract-and-infra.md](decisions/0009-evaluation-context-skips-contract-and-infra.md)
-- [decisions/0010-replay-context-design.md](decisions/0010-replay-context-design.md)
+- [decisions/0010-replay-context-design.md](decisions/0010-replay-context-design.md) (§1 superseded by 0011)
+- [decisions/0011-replay-context-talks-mcp-not-grpc.md](decisions/0011-replay-context-talks-mcp-not-grpc.md)
 
 ## Scope so far
 

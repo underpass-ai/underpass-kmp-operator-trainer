@@ -1,0 +1,9 @@
+pub mod ask_outcome;
+pub mod forward_outcome;
+pub mod goto_outcome;
+pub mod inspect_outcome;
+pub mod near_outcome;
+pub mod rewind_outcome;
+pub mod trace_outcome;
+pub mod wake_outcome;
+pub mod write_memory_outcome;

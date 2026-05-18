@@ -1,6 +1,16 @@
 # ADR 0010 — Replay context design (groundwork)
 
-Status: accepted (2026-05-18)
+Status: accepted (2026-05-18); **§1 superseded by
+[ADR 0011](0011-replay-context-talks-mcp-not-grpc.md)**.
+
+§2, §3 and §4 remain in force. §1 originally specified that the KMP
+proto would be vendored at `api/proto/` and `replay-infra` would
+compile a gRPC client. After inspecting the actual kernel surface we
+found that operator-shaped tools (`kernel_wake`, `kernel_ask`, etc.)
+live on the MCP JSON-RPC layer, not on the raw gRPC layer. ADR 0011
+replaces §1 with "vendor the MCP tool catalog at `api/mcp/` and speak
+JSON-RPC".
+
 Companion to: pending `docs/architecture/operator/40-replay-context.md`
 
 ## Context
