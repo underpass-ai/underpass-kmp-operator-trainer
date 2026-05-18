@@ -1,0 +1,27 @@
+[package]
+name = "operator-training-cli"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Operator: training bounded context — command-line interface."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "operator-train"
+path = "src/main.rs"
+
+[dependencies]
+operator-evaluation-domain.workspace = true
+operator-evaluation-infra.workspace = true
+operator-shared-contract.workspace = true
+operator-shared-domain.workspace = true
+operator-shared-infra.workspace = true
+operator-training-application.workspace = true
+operator-training-domain.workspace = true
+operator-training-infra.workspace = true
+clap.workspace = true
+thiserror.workspace = true
