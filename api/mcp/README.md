@@ -51,6 +51,11 @@ canonical request and response examples live as JSON fixtures at
 
 - `README.md` (this file): the table above, the sync policy, and the
   link to the kernel source of truth.
+- `examples/kernel/v1beta1/kmp/*.response.json` — frozen response
+  fixtures. The per-tool mappers in `operator-replay-infra` are
+  tested against these exact bytes; if a kernel response shape drifts
+  away from these, the mapper tests break and force a deliberate
+  re-snapshot.
 
 What this directory does **not** contain:
 
@@ -78,12 +83,9 @@ renamed, or its input/output keys change):
 
 ## Snapshot index
 
-(Pending — first snapshot lands with the `replay-bootstrap-use-case`
-PR, when the live JSON-RPC client is implemented.)
-
 | Date | Kernel SHA | Notes |
 | --- | --- | --- |
-| _(none yet)_ |  |  |
+| 2026-05-18 | `fc279eae448b` | Initial snapshot of all 9 read+write response fixtures (plus ingest) for the per-tool mappers in `operator-replay-infra::mappers`. |
 
 ## Where MCP fits in the dependency graph
 

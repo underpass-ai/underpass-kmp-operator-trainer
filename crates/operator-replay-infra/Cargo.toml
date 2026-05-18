@@ -13,4 +13,9 @@ workspace = true
 [dependencies]
 operator-replay-application.workspace = true
 operator-replay-domain.workspace = true
+operator-shared-contract.workspace = true
 operator-shared-domain.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

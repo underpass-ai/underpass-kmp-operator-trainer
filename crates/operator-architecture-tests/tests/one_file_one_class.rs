@@ -34,6 +34,14 @@ const KNOWN_EXCEPTIONS: &[(&str, &str)] = &[
         "adapters/in_memory_kmp_mcp_client.rs",
         "InMemoryKmpMcpClient + FailureMode config enum are intrinsically paired test-fixture types",
     ),
+    (
+        "jsonrpc/tools_call_request.rs",
+        "ToolsCallRequest + ToolsCallParams are intrinsically paired JSON-RPC envelope DTOs",
+    ),
+    (
+        "jsonrpc/tools_call_response.rs",
+        "ToolsCallResponse / Result / Content / JsonRpcError are intrinsically paired JSON-RPC envelope DTOs",
+    ),
 ];
 
 #[test]
