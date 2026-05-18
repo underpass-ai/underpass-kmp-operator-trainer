@@ -1,0 +1,100 @@
+# Operator: Qwen 0.5B + LoRA SFT training job.
+#
+# Adapted from rehydration-kernel/k8s/kernel-operator-qwen05-lora-v5-job.yaml.
+# This template trains the operator policy via the canonical Python
+# pipeline at operator/scripts/operator/train_operator_sft_lora.py;
+# see ../docs/training/runbook.md for the end-to-end flow.
+#
+# Inputs (host paths, mounted into the pod):
+#   /host-tmp/<dataset_dir>/openai_train.jsonl
+#   /host-tmp/<dataset_dir>/openai_eval.jsonl
+# Output:
+#   /host-tmp/<output_dir>/   <- LoRA adapter weights
+#
+# Adjust:
+#   - args.* for the dataset paths and hyperparameters
+#   - resources.* for the local GPU / CPU / memory
+#   - volumes.repo.hostPath to point at the operator repo
+#
+# Customize the dataset by setting the two --*-jsonl args to the
+# dataset you want to train on. The job itself is generic.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: operator-qwen05-lora-train
+  labels:
+    app.kubernetes.io/name: operator-qwen05-lora-train
+    app.kubernetes.io/part-of: underpass-operator
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: operator-qwen05-lora-train
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: trainer
+          image: docker.io/pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
+          imagePullPolicy: IfNotPresent
+          workingDir: /workspace/repo
+          env:
+            - name: HF_HOME
+              value: /host-tmp/huggingface
+            - name: TRANSFORMERS_CACHE
+              value: /host-tmp/huggingface/transformers
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: expandable_segments:True
+          command:
+            - bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              python -m pip install --upgrade pip
+              python -m pip install \
+                "transformers>=4.51.0" \
+                "datasets>=3.6.0" \
+                "peft>=0.15.0" \
+                "accelerate>=1.7.0" \
+                "trl>=0.18.0" \
+                sentencepiece
+              # Override these via `kubectl set env` or by editing the
+              # job before apply.
+              : "${DATASET_DIR:=/host-tmp/operator-sft}"
+              : "${OUTPUT_DIR:=/host-tmp/operator-qwen05-lora}"
+              : "${MODEL_ID:=Qwen/Qwen2.5-0.5B-Instruct}"
+              rm -rf "${OUTPUT_DIR}"
+              python scripts/operator/train_operator_sft_lora.py \
+                --train-jsonl "${DATASET_DIR}/openai_train.jsonl" \
+                --eval-jsonl  "${DATASET_DIR}/openai_eval.jsonl" \
+                --model-id "${MODEL_ID}" \
+                --output-dir "${OUTPUT_DIR}" \
+                --epochs 3 \
+                --batch-size 2 \
+                --grad-accum 8 \
+                --max-length 2048 \
+                --fp16
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              memory: 32Gi
+            requests:
+              nvidia.com/gpu: "1"
+              cpu: "4"
+              memory: 20Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /workspace/repo
+            - name: host-tmp
+              mountPath: /host-tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/tirso/ai/developents/operator
+            type: Directory
+        - name: host-tmp
+          hostPath:
+            path: /tmp
+            type: Directory
