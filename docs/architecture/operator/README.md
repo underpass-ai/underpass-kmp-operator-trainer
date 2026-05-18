@@ -33,7 +33,9 @@ the implementation is not documented in this tree, that is a bug.
 - [40-replay-context.md](40-replay-context.md) — Execute predicted
   actions against MCP/KMP: predictions, outcomes, execution records,
   use case, in-memory stub adapter.
-- 50-training-context.md *(pending)* — Run manifests, readiness, metrics.
+- [50-training-context.md](50-training-context.md) — Training run
+  preparation: dataset provenance, readiness gates, manifests,
+  `TrainingRun` aggregate root.
 - 60-runtime-context.md *(pending)* — Compose LLM, Operator, KMP/MCP, budget.
 - 70-benchmark-adapters-context.md *(pending)* — External benchmark translation.
 
@@ -59,6 +61,7 @@ the implementation is not documented in this tree, that is a bug.
 - [decisions/0009-evaluation-context-skips-contract-and-infra.md](decisions/0009-evaluation-context-skips-contract-and-infra.md)
 - [decisions/0010-replay-context-design.md](decisions/0010-replay-context-design.md) (§1 superseded by 0011)
 - [decisions/0011-replay-context-talks-mcp-not-grpc.md](decisions/0011-replay-context-talks-mcp-not-grpc.md)
+- [decisions/0012-training-context-design.md](decisions/0012-training-context-design.md)
 
 ## Scope so far
 
@@ -76,4 +79,9 @@ the implementation is not documented in this tree, that is a bug.
   Stop/Escalate plus the failure-mode branch. Real MCP JSON-RPC client
   ships in a follow-up PR.
 
-Training, runtime and benchmark adapters are still out of scope.
+- **Pass 5 (this PR)** — `training` bounded context domain skeleton:
+  dataset provenance, readiness gates, training manifest, `TrainingRun`
+  aggregate root with refusal-to-launch invariants. Application and
+  infra layers land in follow-up PRs.
+
+Runtime and benchmark adapters are still out of scope.
