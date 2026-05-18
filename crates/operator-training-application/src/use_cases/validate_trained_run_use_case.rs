@@ -74,8 +74,24 @@ fn join_predictions(
     ground_truth: &[TrainingTrajectory],
     predictions: &[StepKeyedPrediction],
 ) -> Vec<EvaluationPair> {
-    let truth_by_step: HashMap<&StepId, &TrainingTrajectory> =
-        ground_truth.iter().map(|t| (t.step_id(), t)).collect();
+    let mut truth_by_step: HashMap<&StepId, &TrainingTrajectory> =
+        HashMap::with_capacity(ground_truth.len());
+    for trajectory in ground_truth {
+        // Refuse silently-shadowed step_ids. The HashMap pattern hides
+        // duplicates by letting the second insert win, which would
+        // produce a misleading evaluation report. A duplicate step_id
+        // is a caller invariant violation, never expected in
+        // production data — treat it as a programmer error via a
+        // debug assertion. In release builds the second trajectory
+        // wins, matching the previous behaviour, so we never panic
+        // on user data.
+        let previous = truth_by_step.insert(trajectory.step_id(), trajectory);
+        debug_assert!(
+            previous.is_none(),
+            "ground truth has duplicate step_id `{}` — caller invariant violated",
+            trajectory.step_id().as_str()
+        );
+    }
     let mut pairs = Vec::new();
     for prediction in predictions {
         let Some(trajectory) = truth_by_step.get(prediction.step_id()) else {
@@ -126,13 +142,24 @@ mod tests {
     #[derive(Debug)]
     struct StubPredictor {
         outcome: PredictorOutcome,
+        last_target: Mutex<Option<crate::ports::predictor_target::PredictorTarget>>,
+    }
+
+    impl StubPredictor {
+        fn new(outcome: PredictorOutcome) -> Self {
+            Self {
+                outcome,
+                last_target: Mutex::new(None),
+            }
+        }
     }
 
     impl Predictor for StubPredictor {
         fn predict(
             &self,
-            _target: &crate::ports::predictor_target::PredictorTarget,
+            target: &crate::ports::predictor_target::PredictorTarget,
         ) -> Result<PredictorOutcome, PredictorError> {
+            *self.last_target.lock().unwrap() = Some(target.clone());
             Ok(self.outcome.clone())
         }
     }
@@ -240,9 +267,7 @@ mod tests {
 
     #[test]
     fn happy_path_returns_outcome_and_passes_pairs_to_evaluator() {
-        let predictor = StubPredictor {
-            outcome: predictor_outcome(),
-        };
+        let predictor = StubPredictor::new(predictor_outcome());
         let reader = StubReader {
             rows: vec![
                 inspect_prediction("step:1", "node:1"),
@@ -267,6 +292,17 @@ mod tests {
             2,
             "evaluator must receive one pair per prediction"
         );
+        // Verify the predictor was called with the request's target —
+        // a future refactor that accidentally swaps adapter dirs or
+        // dataset paths would not silently pass this test.
+        let captured = use_case
+            .predictor
+            .last_target
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("predictor must have been invoked");
+        assert_eq!(&captured, request.predictor_target());
     }
 
     #[test]
@@ -286,9 +322,7 @@ mod tests {
 
     #[test]
     fn reader_failure_bubbles_out() {
-        let predictor = StubPredictor {
-            outcome: predictor_outcome(),
-        };
+        let predictor = StubPredictor::new(predictor_outcome());
         let use_case =
             ValidateTrainedRunUseCase::new(predictor, FailingReader, RecordingEvaluator::default());
 
@@ -304,9 +338,7 @@ mod tests {
 
     #[test]
     fn predictions_with_no_matching_ground_truth_are_skipped() {
-        let predictor = StubPredictor {
-            outcome: predictor_outcome(),
-        };
+        let predictor = StubPredictor::new(predictor_outcome());
         let reader = StubReader {
             rows: vec![
                 inspect_prediction("step:1", "node:1"),
@@ -343,9 +375,7 @@ mod tests {
                 })
             }
         }
-        let predictor = StubPredictor {
-            outcome: predictor_outcome(),
-        };
+        let predictor = StubPredictor::new(predictor_outcome());
         let reader = StubReader {
             rows: vec![inspect_prediction("step:1", "node:1")],
         };
@@ -364,9 +394,8 @@ mod tests {
 
     #[test]
     fn empty_predictions_yields_empty_evaluation() {
-        let predictor = StubPredictor {
-            outcome: PredictorOutcome::new("/tmp/p", "/tmp/s", 0, 0).unwrap(),
-        };
+        let predictor =
+            StubPredictor::new(PredictorOutcome::new("/tmp/p", "/tmp/s", 0, 0).unwrap());
         let reader = StubReader { rows: Vec::new() };
         let evaluator = RecordingEvaluator::default();
         let use_case = ValidateTrainedRunUseCase::new(predictor, reader, evaluator);
@@ -378,5 +407,30 @@ mod tests {
         let outcome = use_case.execute(&request).expect("happy path");
         assert_eq!(outcome.evaluation_report().total(), 0);
         assert_eq!(*use_case.evaluator.last_count.lock().unwrap(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "duplicate step_id")]
+    fn duplicate_ground_truth_step_id_panics_in_debug_builds() {
+        // Two trajectories share `step:1` — this is a caller-side
+        // invariant violation that the use case refuses to handle
+        // silently. In release builds `debug_assert!` is a no-op and
+        // the second trajectory wins (preserving the prior
+        // behaviour); the panic here is the debug-time canary.
+        let predictor = StubPredictor::new(predictor_outcome());
+        let reader = StubReader {
+            rows: vec![inspect_prediction("step:1", "node:1")],
+        };
+        let evaluator = RecordingEvaluator::default();
+        let use_case = ValidateTrainedRunUseCase::new(predictor, reader, evaluator);
+
+        let request = ValidateTrainedRunRequest::new(
+            predictor_target(),
+            vec![
+                inspect_trajectory("traj:1", "step:1", "node:1"),
+                inspect_trajectory("traj:2", "step:1", "node:2"),
+            ],
+        );
+        let _ = use_case.execute(&request);
     }
 }

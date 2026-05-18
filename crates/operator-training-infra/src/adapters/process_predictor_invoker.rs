@@ -9,12 +9,28 @@
 //!     --dataset-jsonl <dataset_path> --output <output_dir>
 //! ```
 //!
+//! Before spawning, the adapter ensures `output_directory` exists
+//! (via `fs::create_dir_all`) so the Python child does not fail
+//! trying to write its first byte. A pre-existing directory is
+//! accepted; a parent-not-found / permission-denied / path-is-a-file
+//! condition surfaces as `PredictorError::OutputDirectoryUnusable`.
+//!
 //! stdin is redirected to `/dev/null` for the same reason as
 //! `ProcessTrainerInvoker`: the predictor must never block waiting
 //! for input the parent never sends. stdout / stderr are inherited;
 //! this adapter does not parse predictor logs — it reads
 //! `<output_dir>/summary.json` after the child exits to populate
 //! `PredictorOutcome.predictions` and `PredictorOutcome.failures`.
+//!
+//! Error model:
+//!
+//! - `SpawnFailure` — `Command::status()` itself failed (binary not
+//!   found, permission denied, working directory missing).
+//! - `OutputDirectoryUnusable` — the output directory could not be
+//!   created or opened.
+//! - `NonZeroExit` — the child exited with a non-zero status.
+//! - `SummaryUnreadable` — the child exited 0 but `summary.json` is
+//!   missing, unreadable or unparseable.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -47,6 +63,13 @@ struct SummaryDto {
 
 impl Predictor for ProcessPredictorInvoker {
     fn predict(&self, target: &PredictorTarget) -> Result<PredictorOutcome, PredictorError> {
+        let output_dir = PathBuf::from(target.output_directory().as_str());
+        fs::create_dir_all(&output_dir).map_err(|err| PredictorError::OutputDirectoryUnusable {
+            adapter: ADAPTER,
+            output_directory: output_dir.display().to_string(),
+            message: err.to_string(),
+        })?;
+
         let mut command = Command::new(target.command().as_str());
         command
             .stdin(Stdio::null())
@@ -72,23 +95,23 @@ impl Predictor for ProcessPredictorInvoker {
                 exit_code: status.code(),
             });
         }
-        let output_dir = PathBuf::from(target.output_directory().as_str());
         let predictions_path = output_dir.join("predictions.jsonl");
         let summary_path = output_dir.join("summary.json");
-        let summary = read_summary(&summary_path).map_err(|err| PredictorError::SpawnFailure {
-            adapter: ADAPTER,
-            command: target.command().as_str().to_string(),
-            message: err,
-        })?;
+        let summary =
+            read_summary(&summary_path).map_err(|message| PredictorError::SummaryUnreadable {
+                adapter: ADAPTER,
+                summary_path: summary_path.display().to_string(),
+                message,
+            })?;
         PredictorOutcome::new(
             predictions_path.to_string_lossy().to_string(),
             summary_path.to_string_lossy().to_string(),
             summary.predictions,
             summary.failures,
         )
-        .map_err(|err| PredictorError::SpawnFailure {
+        .map_err(|err| PredictorError::SummaryUnreadable {
             adapter: ADAPTER,
-            command: target.command().as_str().to_string(),
+            summary_path: summary_path.display().to_string(),
             message: format!("build outcome: {err}"),
         })
     }

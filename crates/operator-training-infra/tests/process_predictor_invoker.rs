@@ -129,7 +129,7 @@ fn unknown_command_yields_spawn_failure() {
 }
 
 #[test]
-fn missing_summary_after_exit_zero_yields_spawn_failure() {
+fn missing_summary_after_exit_zero_yields_summary_unreadable() {
     let _guard = EXEC_LOCK.lock().unwrap();
     let output_dir = tmp_output_dir("nosummary");
     let script = write_stub_script("nosummary", "exit 0\n");
@@ -139,18 +139,75 @@ fn missing_summary_after_exit_zero_yields_spawn_failure() {
         .predict(&target_for(&script, &output_dir))
         .expect_err("must fail");
     match err {
-        PredictorError::SpawnFailure {
+        PredictorError::SummaryUnreadable {
             adapter: "process_predictor_invoker",
-            message,
+            summary_path,
             ..
         } => {
-            assert!(message.contains("read") || message.contains("summary"));
+            assert!(summary_path.ends_with("summary.json"));
         }
-        other => panic!("expected SpawnFailure, got {other:?}"),
+        other => panic!("expected SummaryUnreadable, got {other:?}"),
     }
 
     fs::remove_file(&script).ok();
     fs::remove_dir_all(&output_dir).ok();
+}
+
+#[test]
+fn nonexistent_output_directory_is_created_on_demand() {
+    let _guard = EXEC_LOCK.lock().unwrap();
+    // Use a deeply-nested non-existent directory; the adapter must
+    // create it before spawning the child so the Python writer can
+    // land its files there.
+    let parent = tmp_output_dir("auto-create-parent");
+    let output_dir = parent.join("a/b/c");
+    let summary_path = output_dir.join("summary.json");
+    let body = format!(
+        "cat > {} <<'EOF'\n{}\nEOF\nexit 0\n",
+        summary_path.to_string_lossy(),
+        r#"{"predictions":1,"failures":0}"#
+    );
+    let script = write_stub_script("autocreate", &body);
+
+    let invoker = ProcessPredictorInvoker::new();
+    let outcome = invoker
+        .predict(&target_for(&script, &output_dir))
+        .expect("predict");
+    assert_eq!(outcome.predictions(), 1);
+    assert!(output_dir.exists(), "adapter must create output_dir");
+
+    fs::remove_file(&script).ok();
+    fs::remove_dir_all(&parent).ok();
+}
+
+#[test]
+fn output_directory_pointing_at_existing_file_surfaces_unusable_error() {
+    let _guard = EXEC_LOCK.lock().unwrap();
+    // Pre-create a regular file where output_directory expects a
+    // directory. create_dir_all then fails with NotADirectory.
+    let parent = tmp_output_dir("collide");
+    let blocker = parent.join("blocker-file");
+    File::create(&blocker).expect("create blocker file");
+    let invoker = ProcessPredictorInvoker::new();
+    let target = PredictorTarget::new(
+        TrainerCommand::parse("/bin/true").unwrap(),
+        BaseModelId::parse("base").unwrap(),
+        OutputDirectory::parse("/tmp").unwrap(),
+        "/tmp/dataset.jsonl",
+        OutputDirectory::parse(blocker.to_string_lossy().to_string()).unwrap(),
+    )
+    .unwrap();
+    let err = invoker.predict(&target).expect_err("must fail");
+    assert!(matches!(
+        err,
+        PredictorError::OutputDirectoryUnusable {
+            adapter: "process_predictor_invoker",
+            ..
+        }
+    ));
+
+    fs::remove_file(&blocker).ok();
+    fs::remove_dir_all(&parent).ok();
 }
 
 #[test]

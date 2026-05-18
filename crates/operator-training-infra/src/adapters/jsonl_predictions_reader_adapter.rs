@@ -5,6 +5,16 @@
 //! crate returns its own evaluation-infra error type. This adapter
 //! maps one onto the other so the training use cases stay decoupled
 //! from `operator-evaluation-infra`.
+//!
+//! Why a named adapter struct and not a `From` impl: every adapter
+//! in this crate (`ProcessTrainerInvoker`, `ProcessPredictorInvoker`,
+//! `CompositePolicyEvaluator`, the two filesystem writers) is a
+//! named struct that implements its port trait. Keeping
+//! `JsonlPredictionsReaderAdapter` in the same shape makes the
+//! adapter inventory consistent at a glance and gives the wrapper a
+//! place to grow when the wire shape inevitably needs to diverge
+//! from the application port (e.g., for an alternate JSONL dialect
+//! emitted by a future predictor).
 
 use operator_evaluation_domain::prediction::step_keyed_prediction::StepKeyedPrediction;
 use operator_evaluation_infra::adapters::jsonl_predictions_reader::JsonlPredictionsReader;
