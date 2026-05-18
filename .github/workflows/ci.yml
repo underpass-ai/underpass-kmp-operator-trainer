@@ -18,7 +18,7 @@ jobs:
     name: rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install pinned toolchain from rust-toolchain.toml
         run: rustup show active-toolchain
       - name: cargo fmt --all -- --check
@@ -28,7 +28,7 @@ jobs:
     name: clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install pinned toolchain from rust-toolchain.toml
         run: rustup show active-toolchain
       - uses: Swatinem/rust-cache@v2
@@ -41,7 +41,7 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install pinned toolchain from rust-toolchain.toml
         run: rustup show active-toolchain
       - uses: Swatinem/rust-cache@v2
@@ -56,7 +56,7 @@ jobs:
     name: coverage (>= 80% lines)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install pinned toolchain from rust-toolchain.toml
         run: rustup show active-toolchain
       - name: Install llvm-tools-preview
@@ -69,7 +69,7 @@ jobs:
         run: cargo llvm-cov --workspace --all-targets --fail-under-lines 80 --lcov --output-path lcov.info
       - name: Upload lcov.info
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lcov
           path: lcov.info
