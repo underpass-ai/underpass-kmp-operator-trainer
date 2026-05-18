@@ -36,6 +36,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "operator-replay-application"
+version = "0.1.0"
+dependencies = [
+ "operator-shared-domain",
+ "thiserror",
+]
+
+[[package]]
 name = "operator-shared-application"
 version = "0.1.0"
 dependencies = [

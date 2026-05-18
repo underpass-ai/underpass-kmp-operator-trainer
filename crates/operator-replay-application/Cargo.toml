@@ -1,0 +1,15 @@
+[package]
+name = "operator-replay-application"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Operator: replay bounded context — KmpMcpClient port and adapter-facing error types. Use cases land in a follow-up PR."
+
+[lints]
+workspace = true
+
+[dependencies]
+operator-shared-domain.workspace = true
+thiserror.workspace = true
