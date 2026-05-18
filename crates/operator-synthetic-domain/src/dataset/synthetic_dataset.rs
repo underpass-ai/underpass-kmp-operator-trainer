@@ -19,7 +19,7 @@ impl SyntheticDataset {
         trajectories: Vec<TrainingTrajectory>,
     ) -> SyntheticDomainResult<Self> {
         if trajectories.is_empty() {
-            return Err(SyntheticDomainError::EmptyBlueprint);
+            return Err(SyntheticDomainError::EmptyDataset);
         }
         Ok(Self {
             dataset_id,
@@ -34,12 +34,16 @@ impl SyntheticDataset {
     pub fn trajectories(&self) -> &[TrainingTrajectory] {
         &self.trajectories
     }
+}
 
-    pub fn len(&self) -> usize {
-        self.trajectories.len()
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    pub fn is_empty(&self) -> bool {
-        self.trajectories.is_empty()
+    #[test]
+    fn refuses_empty_trajectories() {
+        let err =
+            SyntheticDataset::new(DatasetId::parse("dataset:empty").unwrap(), vec![]).unwrap_err();
+        assert!(matches!(err, SyntheticDomainError::EmptyDataset));
     }
 }

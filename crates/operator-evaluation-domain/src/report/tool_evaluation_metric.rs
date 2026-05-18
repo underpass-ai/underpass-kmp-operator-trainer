@@ -16,14 +16,17 @@ pub struct ToolEvaluationMetric {
 impl ToolEvaluationMetric {
     /// Creates an empty metric for the given tool. `tool == None` is the
     /// bucket for actions without a kernel tool (Stop / Escalate).
-    pub fn empty_for(tool: Option<KernelTool>) -> Self {
+    /// `pub(crate)` because only the aggregator in `evaluation_report.rs`
+    /// is allowed to construct + mutate metrics; external callers read
+    /// metrics through the immutable accessors.
+    pub(crate) fn empty_for(tool: Option<KernelTool>) -> Self {
         Self {
             tool,
             ..Self::default()
         }
     }
 
-    pub fn record(&mut self, is_exact: bool, is_tool: bool, is_contract_valid: bool) {
+    pub(crate) fn record(&mut self, is_exact: bool, is_tool: bool, is_contract_valid: bool) {
         self.total += 1;
         if is_exact {
             self.exact_matches += 1;
@@ -69,13 +72,12 @@ impl ToolEvaluationMetric {
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn rate(numerator: usize, denominator: usize) -> f64 {
     if denominator == 0 {
         0.0
     } else {
-        #[allow(clippy::cast_precision_loss)]
-        let value = numerator as f64 / denominator as f64;
-        value
+        numerator as f64 / denominator as f64
     }
 }
 

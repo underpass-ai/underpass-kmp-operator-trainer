@@ -149,4 +149,108 @@ mod tests {
         assert_eq!(report.contract_valid_count(), 0);
         assert_eq!(report.tool_match_count(), 1);
     }
+
+    fn ask_trajectory(id: &str) -> TrainingTrajectory {
+        let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Ask(
+            AskArguments::new("ground truth question").unwrap(),
+        )));
+        TrainingTrajectory::new(
+            TrainingTrajectoryId::parse(id).unwrap(),
+            StepId::parse("s:1").unwrap(),
+            AboutId::parse("a:1").unwrap(),
+            OperatorMode::Read,
+            TaskFamily::parse("read.ask").unwrap(),
+            AllowedTools::for_mode(OperatorMode::Read),
+            VisibleState::assemble([], [], None, BudgetSnapshot::unbounded()),
+            action,
+        )
+        .unwrap()
+    }
+
+    fn stop_trajectory(id: &str) -> TrainingTrajectory {
+        use operator_shared_domain::action::stop_action::StopAction;
+        use operator_shared_domain::action::stop_reason::StopReason;
+
+        let action =
+            OperatorAction::Stop(StopAction::new(StopReason::AnswerReady, None, vec![]).unwrap());
+        TrainingTrajectory::new(
+            TrainingTrajectoryId::parse(id).unwrap(),
+            StepId::parse("s:1").unwrap(),
+            AboutId::parse("a:1").unwrap(),
+            OperatorMode::Read,
+            TaskFamily::parse("read.stop").unwrap(),
+            AllowedTools::for_mode(OperatorMode::Read),
+            VisibleState::assemble([], [], None, BudgetSnapshot::unbounded()),
+            action,
+        )
+        .unwrap()
+    }
+
+    fn custom_pair(gt: TrainingTrajectory, predicted_action: OperatorAction) -> EvaluationPair {
+        let prediction = PredictedAction::new(gt.id().clone(), predicted_action);
+        EvaluationPair::new(gt, prediction).unwrap()
+    }
+
+    #[test]
+    fn per_tool_bucketing_through_use_case_separates_inspect_ask_and_stop() {
+        use operator_shared_domain::action::stop_action::StopAction;
+        use operator_shared_domain::action::stop_reason::StopReason;
+        use operator_shared_domain::tool::kernel_tool::KernelTool;
+
+        let use_case =
+            EvaluateOperatorPolicyUseCase::new(CompositeActionContractValidator::default_strict());
+
+        // Inspect bucket: 2 pairs, one exact and one wrong-tool prediction.
+        let inspect_exact = pair("t:i1", inspect("node:1"));
+        let inspect_wrong = pair("t:i2", ask("predicted instead"));
+
+        // Ask bucket: 1 pair, exact match.
+        let ask_exact = custom_pair(ask_trajectory("t:a1"), ask("ground truth question"));
+
+        // Stop bucket (None): 1 pair, exact; 1 pair with wrong prediction.
+        let stop_exact = custom_pair(
+            stop_trajectory("t:s1"),
+            OperatorAction::Stop(StopAction::new(StopReason::AnswerReady, None, vec![]).unwrap()),
+        );
+        let stop_wrong = custom_pair(stop_trajectory("t:s2"), ask("predicted instead of stop"));
+
+        let report = use_case
+            .execute(&[
+                inspect_exact,
+                inspect_wrong,
+                ask_exact,
+                stop_exact,
+                stop_wrong,
+            ])
+            .unwrap();
+
+        assert_eq!(report.total(), 5);
+
+        let per_tool = report.per_tool();
+        assert_eq!(per_tool.len(), 3);
+
+        let inspect_bucket = per_tool
+            .iter()
+            .find(|m| m.tool() == Some(KernelTool::Inspect))
+            .expect("inspect bucket exists");
+        assert_eq!(inspect_bucket.total(), 2);
+        assert_eq!(inspect_bucket.exact_matches(), 1);
+        assert_eq!(inspect_bucket.tool_matches(), 1);
+
+        let ask_bucket = per_tool
+            .iter()
+            .find(|m| m.tool() == Some(KernelTool::Ask))
+            .expect("ask bucket exists");
+        assert_eq!(ask_bucket.total(), 1);
+        assert_eq!(ask_bucket.exact_matches(), 1);
+        assert_eq!(ask_bucket.tool_matches(), 1);
+
+        let stop_bucket = per_tool
+            .iter()
+            .find(|m| m.tool().is_none())
+            .expect("stop/escalate bucket exists");
+        assert_eq!(stop_bucket.total(), 2);
+        assert_eq!(stop_bucket.exact_matches(), 1);
+        assert_eq!(stop_bucket.tool_matches(), 1);
+    }
 }
