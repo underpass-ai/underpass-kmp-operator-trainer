@@ -1,0 +1,16 @@
+[package]
+name = "operator-synthetic-infra"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Operator: synthetic bounded context — adapters (in-memory generators today, teacher generators later)."
+
+[lints]
+workspace = true
+
+[dependencies]
+operator-shared-domain.workspace = true
+operator-synthetic-application.workspace = true
+operator-synthetic-domain.workspace = true

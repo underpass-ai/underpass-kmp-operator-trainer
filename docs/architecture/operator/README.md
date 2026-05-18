@@ -25,7 +25,9 @@ the implementation is not documented in this tree, that is a bug.
 - [10-shared-context.md](10-shared-context.md) — The shared bounded context:
   vocabulary, action contract, trajectory model and validators every other
   context depends on. **First pass scope.**
-- 20-synthetic-context.md *(pending)* — Canonical trajectory generation.
+- [20-synthetic-context.md](20-synthetic-context.md) — Canonical
+  trajectory generation: capabilities, blueprints, generator port,
+  in-memory adapter.
 - 30-evaluation-context.md *(pending)* — Scoring and contract coverage.
 - 40-replay-context.md *(pending)* — Execute predicted actions against MCP/KMP.
 - 50-training-context.md *(pending)* — Run manifests, readiness, metrics.
@@ -50,10 +52,15 @@ the implementation is not documented in this tree, that is a bug.
 - [decisions/0005-specification-pattern-validators.md](decisions/0005-specification-pattern-validators.md)
 - [decisions/0006-composition-over-inheritance.md](decisions/0006-composition-over-inheritance.md)
 - [decisions/0007-architecture-tests-crate.md](decisions/0007-architecture-tests-crate.md)
+- [decisions/0008-no-synthetic-contract-yet.md](decisions/0008-no-synthetic-contract-yet.md)
 
-## Scope of this pass
+## Scope so far
 
-Only the `shared` bounded context (contract + domain + application + infra)
-plus the `operator-architecture-tests` crate. Synthetic, evaluation, replay,
-training and benchmark adapters are explicitly out of scope until `shared` is
-stable.
+- **Pass 1** — `shared` bounded context (contract + domain + application +
+  infra) plus `operator-architecture-tests` crate.
+- **Pass 2 (this PR)** — `synthetic` bounded context skeleton: capability
+  enumeration, blueprint, generation use case, in-memory adapter,
+  end-to-end test wiring all of the above.
+
+Evaluation, replay, training, runtime and benchmark adapters are out of
+scope until synthetic is exercised by at least one real consumer.
