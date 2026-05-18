@@ -28,14 +28,30 @@ training-domain      ──▶  shared-domain
 training-application ──▶  shared-domain, evaluation-domain,
                           training-domain
 training-infra       ──▶  shared-domain, shared-infra,
-                          training-domain, training-application
+                          training-domain, training-application,
+                          evaluation-domain, evaluation-application,
+                          evaluation-infra
 ```
+
+The cross-context edge `training-infra → evaluation-application` is
+intentional and tightly scoped: `CompositePolicyEvaluator` (an
+adapter in `training-infra`) wraps `EvaluateOperatorPolicyUseCase`
+(in `evaluation-application`) so the use-case-facing
+`PolicyEvaluator` port stays inside `training-application` and the
+application layer never imports `evaluation-application` directly.
+Similarly, `JsonlPredictionsReaderAdapter` wraps
+`evaluation-infra::JsonlPredictionsReader` to keep
+`training-application` decoupled from `evaluation-infra`. These
+adapters are the only place in the operator where one bounded
+context's infra touches another bounded context's application or
+infra layer; treat any new edge of this shape as a smell unless it
+follows the same wrapping pattern.
 
 No dependency on `synthetic`, `replay`, `runtime`, or any
 `rehydration-*` crate. Cross-context data (`TrainingTrajectory`,
-`EvaluationReport`) flows through the shared and evaluation domain
-types respectively. Benchmark adapters are not an Operator concern;
-they live in the kernel (`rehydration-kernel`).
+`EvaluationReport`, `StepKeyedPrediction`) flows through the shared
+and evaluation domain types respectively. Benchmark adapters are not
+an Operator concern; they live in the kernel (`rehydration-kernel`).
 
 ## Domain map
 
