@@ -202,7 +202,7 @@ mod tests {
     fn near_accepts_known_anchor_and_dimensions() {
         let visible = visible_with_known();
         let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Near(
-            NearArguments::new(known_node(), vec![known_dim()], None),
+            NearArguments::new(known_node(), vec![known_dim()], None).unwrap(),
         )));
         assert!(evaluate(&action, &visible).is_ok());
     }
@@ -211,7 +211,12 @@ mod tests {
     fn near_rejects_unknown_anchor() {
         let visible = visible_with_known();
         let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Near(
-            NearArguments::new(MemoryRef::parse("node:absent").unwrap(), vec![], None),
+            NearArguments::new(
+                MemoryRef::parse("node:absent").unwrap(),
+                vec![known_dim()],
+                None,
+            )
+            .unwrap(),
         )));
         let err = evaluate(&action, &visible).unwrap_err();
         assert_eq!(err.code(), ContractViolationCode::UnknownMemoryRef);
@@ -225,7 +230,8 @@ mod tests {
                 known_node(),
                 vec![DimensionRef::parse("semantic").unwrap()],
                 None,
-            ),
+            )
+            .unwrap(),
         )));
         let err = evaluate(&action, &visible).unwrap_err();
         assert_eq!(err.code(), ContractViolationCode::UnknownDimension);

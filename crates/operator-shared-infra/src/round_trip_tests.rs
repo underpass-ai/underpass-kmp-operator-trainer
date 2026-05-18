@@ -41,7 +41,7 @@ use operator_shared_domain::value_objects::model_id::ModelId;
 use operator_shared_domain::value_objects::positive_count::PositiveCount;
 use operator_shared_domain::value_objects::task_family::TaskFamily;
 use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
-use operator_shared_domain::visible_state::visible_state_builder::VisibleStateBuilder;
+use operator_shared_domain::visible_state::visible_state::VisibleState;
 
 use crate::adapters::jsonl::jsonl_trajectory_reader::JsonlTrajectoryReader;
 use crate::adapters::jsonl::jsonl_trajectory_writer::JsonlTrajectoryWriter;
@@ -50,16 +50,15 @@ use crate::mappers::training_trajectory_mapper::TrainingTrajectoryMapper;
 fn read_mode_trajectory(action: OperatorAction, family: &str) -> TrainingTrajectory {
     let target = MemoryRef::parse("node:42").unwrap();
     let dim = DimensionRef::parse("temporal").unwrap();
-    let visible = VisibleStateBuilder::new()
-        .with_known_ref(target.clone())
-        .with_known_ref(MemoryRef::parse("node:other").unwrap())
-        .with_known_dimension(dim)
-        .with_active_cursor(Cursor::Temporal(TemporalCursor::new(
+    let visible = VisibleState::assemble(
+        [target, MemoryRef::parse("node:other").unwrap()],
+        [dim],
+        Some(Cursor::Temporal(TemporalCursor::new(
             TemporalCursorKey::Created,
             TemporalAnchor::parse("2026-05-18T00:00:00Z").unwrap(),
-        )))
-        .with_budget(BudgetSnapshot::bounded(10, 1000))
-        .build();
+        ))),
+        BudgetSnapshot::bounded(10, 1000),
+    );
     TrainingTrajectory::new(
         TrainingTrajectoryId::parse("traj:1").unwrap(),
         StepId::parse("step:1").unwrap(),
@@ -104,7 +103,8 @@ fn near_round_trips() {
             anchor,
             vec![dim],
             Some(PositiveCount::parse(5, "limit").unwrap()),
-        ),
+        )
+        .unwrap(),
     )));
     round_trip(&read_mode_trajectory(action, "read.near"));
 }
@@ -186,7 +186,7 @@ fn inspect_round_trips() {
 #[test]
 fn write_memory_round_trips() {
     let related = vec![MemoryRef::parse("node:1").unwrap()];
-    let visible = VisibleStateBuilder::new().build();
+    let visible = VisibleState::assemble([], [], None, BudgetSnapshot::unbounded());
     let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::WriteMemory(
         WriteMemoryArguments::new("summary text", "body text", related).unwrap(),
     )));
@@ -236,10 +236,12 @@ fn escalate_action_round_trips() {
 
 #[test]
 fn unbounded_budget_round_trips() {
-    let visible = VisibleStateBuilder::new()
-        .with_known_ref(MemoryRef::parse("node:42").unwrap())
-        .with_budget(BudgetSnapshot::unbounded())
-        .build();
+    let visible = VisibleState::assemble(
+        [MemoryRef::parse("node:42").unwrap()],
+        [],
+        None,
+        BudgetSnapshot::unbounded(),
+    );
     let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
         InspectArguments::new(MemoryRef::parse("node:42").unwrap()),
     )));
@@ -268,9 +270,7 @@ fn jsonl_writer_then_reader_round_trips_a_trajectory() {
 
     let mut writer = JsonlTrajectoryWriter::new(&path);
     let target = MemoryRef::parse("node:42").unwrap();
-    let visible = VisibleStateBuilder::new()
-        .with_known_ref(target.clone())
-        .build();
+    let visible = VisibleState::assemble([target.clone()], [], None, BudgetSnapshot::unbounded());
     let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
         InspectArguments::new(target),
     )));
@@ -326,9 +326,7 @@ fn reader_skips_blank_lines() {
     }
     let mut writer = JsonlTrajectoryWriter::new(&path);
     let target = MemoryRef::parse("node:42").unwrap();
-    let visible = VisibleStateBuilder::new()
-        .with_known_ref(target.clone())
-        .build();
+    let visible = VisibleState::assemble([target.clone()], [], None, BudgetSnapshot::unbounded());
     let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
         InspectArguments::new(target),
     )));

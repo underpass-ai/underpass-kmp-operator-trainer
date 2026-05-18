@@ -45,14 +45,14 @@ mod tests {
     use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
     use operator_shared_domain::value_objects::memory_ref::MemoryRef;
     use operator_shared_domain::value_objects::task_family::TaskFamily;
-    use operator_shared_domain::visible_state::visible_state_builder::VisibleStateBuilder;
+    use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
+    use operator_shared_domain::visible_state::visible_state::VisibleState;
 
     #[test]
     fn accepts_consistent_inspect_trajectory() {
         let target = MemoryRef::parse("node:1").unwrap();
-        let visible = VisibleStateBuilder::new()
-            .with_known_ref(target.clone())
-            .build();
+        let visible =
+            VisibleState::assemble([target.clone()], [], None, BudgetSnapshot::unbounded());
         let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
             InspectArguments::new(target),
         )));
@@ -79,7 +79,7 @@ mod tests {
     fn rejects_inspect_of_unknown_ref() {
         // visible state knows nothing; action inspects an unknown ref.
         let target = MemoryRef::parse("node:absent").unwrap();
-        let visible = VisibleStateBuilder::new().build();
+        let visible = VisibleState::assemble([], [], None, BudgetSnapshot::unbounded());
         let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
             InspectArguments::new(target),
         )));

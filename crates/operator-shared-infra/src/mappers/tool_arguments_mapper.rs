@@ -61,7 +61,7 @@ impl ToolArgumentsMapper {
                 };
                 Ok(ToolArguments::Near(NearArguments::new(
                     anchor, dimensions, limit,
-                )))
+                )?))
             }
             KernelTool::Goto => {
                 let goto: GotoArgumentsDto = decode(&dto.arguments, "kernel_goto")?;

@@ -1,9 +1,11 @@
+use std::collections::BTreeSet;
+
 use operator_shared_contract::visible_state_dto::{BudgetSnapshotDto, VisibleStateDto};
+use operator_shared_domain::cursor::cursor::Cursor;
 use operator_shared_domain::value_objects::dimension_ref::DimensionRef;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
 use operator_shared_domain::visible_state::budget_snapshot::{BudgetField, BudgetSnapshot};
 use operator_shared_domain::visible_state::visible_state::VisibleState;
-use operator_shared_domain::visible_state::visible_state_builder::VisibleStateBuilder;
 
 use crate::mappers::cursor_mapper::CursorMapper;
 use crate::mappers::mapping_error::MappingError;
@@ -13,18 +15,24 @@ pub struct VisibleStateMapper;
 
 impl VisibleStateMapper {
     pub fn to_domain(dto: &VisibleStateDto) -> Result<VisibleState, MappingError> {
-        let mut builder = VisibleStateBuilder::new();
+        let mut known_refs: BTreeSet<MemoryRef> = BTreeSet::new();
         for raw in &dto.known_refs {
-            builder = builder.with_known_ref(MemoryRef::parse(raw.clone())?);
+            known_refs.insert(MemoryRef::parse(raw.clone())?);
         }
+        let mut known_dimensions: BTreeSet<DimensionRef> = BTreeSet::new();
         for raw in &dto.known_dimensions {
-            builder = builder.with_known_dimension(DimensionRef::parse(raw.clone())?);
+            known_dimensions.insert(DimensionRef::parse(raw.clone())?);
         }
-        if let Some(cursor_dto) = dto.active_cursor.as_ref() {
-            builder = builder.with_active_cursor(CursorMapper::to_domain(cursor_dto)?);
-        }
-        builder = builder.with_budget(budget_to_domain(dto.budget));
-        Ok(builder.build())
+        let active_cursor: Option<Cursor> = match dto.active_cursor.as_ref() {
+            Some(cursor_dto) => Some(CursorMapper::to_domain(cursor_dto)?),
+            None => None,
+        };
+        Ok(VisibleState::assemble(
+            known_refs,
+            known_dimensions,
+            active_cursor,
+            budget_to_domain(dto.budget),
+        ))
     }
 
     pub fn to_dto(domain: &VisibleState) -> VisibleStateDto {

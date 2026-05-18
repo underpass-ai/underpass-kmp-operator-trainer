@@ -32,6 +32,27 @@ impl VisibleState {
         }
     }
 
+    /// Public constructor for adapter and integration code. Takes
+    /// `IntoIterator` inputs so call sites can pass arrays, vectors or any
+    /// other iterable without ceremony.
+    ///
+    /// The crate-internal `VisibleStateBuilder` is only used by domain
+    /// tests; production callers (mappers, replay adapters, runtime
+    /// composers) construct typed inputs and pass them here.
+    pub fn assemble(
+        known_refs: impl IntoIterator<Item = MemoryRef>,
+        known_dimensions: impl IntoIterator<Item = DimensionRef>,
+        active_cursor: Option<Cursor>,
+        budget: BudgetSnapshot,
+    ) -> Self {
+        Self::new(
+            known_refs.into_iter().collect(),
+            known_dimensions.into_iter().collect(),
+            active_cursor,
+            budget,
+        )
+    }
+
     pub fn knows_ref(&self, target: &MemoryRef) -> bool {
         self.known_refs.contains(target)
     }

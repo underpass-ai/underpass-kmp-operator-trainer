@@ -154,6 +154,21 @@ This rule is enforced by `operator-architecture-tests::no_kernel_deps`.
 
 ## 10. Architectural tests run on every commit
 
-`operator-architecture-tests` scans Cargo manifests and source trees. It
-fails if any of the rules above is violated, with a specific message naming
-the offending file and the violated rule.
+`operator-architecture-tests` scans Cargo manifests and source trees. The
+table below shows which principles have an explicit test and which still
+rely on code review. Untested principles are still binding; if you see one
+of them violated in a PR, request a fix and consider adding a test.
+
+| Principle | Test (under `tests/`) | Notes |
+| --- | --- | --- |
+| 1. Hexagonal | `no_io_runtime_outside_infra` | Bans `tokio`/`reqwest`/`tonic`/`tracing` in `*-domain`/`*-application`/`*-contract` manifests. |
+| 1. Hexagonal (ports) | `ports_take_only_domain_types` | Bans `serde_json::Value`, `tool: &str`, `cursor_key: &str`, `json!` in `*-application/src/ports/*.rs`. |
+| 2. Pure DDD | _convention_ | Reviewed at PR time. |
+| 3. SOLID | _convention_ | Reviewed at PR time. |
+| 4. One file = one class | `one_file_one_class` | One `pub struct`/`enum`/`trait` per file outside an allow-list. |
+| 5. Composition over inheritance | _convention_ | Reviewed at PR time. |
+| 6. No primitives across boundaries | `no_string_tool_or_cursor` | Bans `tool: &str` and `cursor_key: &str` in any operator source file. |
+| 7. JSON is an infra concern | `no_serde_in_application_or_domain` + `no_serde_json_in_domain_or_application` | Manifests must not list `serde`/`serde_json` outside infra/contract; source files must not contain `serde_json::Value` or `json!(`. |
+| 8. No fallbacks, fail fast | _convention_ | Constructors that return `T` and could fail are caught only by review and unit tests. |
+| 9. No kernel dependency | `no_kernel_deps` | Manifests must not contain `rehydration-`. |
+| 10. Architectural tests | `no_serde_json_value_in_application_or_domain_manifests` (workspace consistency) | Asserts every crate on disk is registered in the workspace and vice-versa. |

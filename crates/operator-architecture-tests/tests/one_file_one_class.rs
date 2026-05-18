@@ -56,16 +56,16 @@ fn each_source_file_declares_at_most_one_public_type() {
 }
 
 fn relative_under_src(path: &std::path::Path) -> String {
-    let mut parts: Vec<&str> = Vec::new();
+    let mut parts: Vec<String> = Vec::new();
     let mut hit_src = false;
     for component in path.components() {
-        let segment = component.as_os_str().to_string_lossy().to_string();
+        let segment = component.as_os_str().to_string_lossy().into_owned();
         if segment == "src" {
             hit_src = true;
             continue;
         }
         if hit_src {
-            parts.push(Box::leak(segment.into_boxed_str()));
+            parts.push(segment);
         }
     }
     parts.join("/")

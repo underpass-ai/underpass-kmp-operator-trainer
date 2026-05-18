@@ -2,7 +2,6 @@
 //! `Stop` and `Escalate` do not. If the action consumes a call and the
 //! budget snapshot reports zero calls remaining, the action is rejected.
 
-use crate::action::operator_action::OperatorAction;
 use crate::contract::action_contract_subject::ActionContractSubject;
 use crate::contract::contract_violation::ContractViolation;
 use crate::contract::contract_violation_code::ContractViolationCode;
@@ -19,9 +18,9 @@ impl BudgetAllowsActionSpec {
 
 impl Specification<ActionContractSubject<'_>> for BudgetAllowsActionSpec {
     fn evaluate(&self, subject: &ActionContractSubject<'_>) -> Result<(), ContractViolation> {
-        let OperatorAction::ToolCall(_) = subject.action() else {
+        if !subject.action().consumes_tool_slot() {
             return Ok(());
-        };
+        }
         if subject.visible().budget().allows_another_call() {
             return Ok(());
         }
@@ -36,6 +35,7 @@ impl Specification<ActionContractSubject<'_>> for BudgetAllowsActionSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::action::operator_action::OperatorAction;
     use crate::action::stop_action::StopAction;
     use crate::action::stop_reason::StopReason;
     use crate::action::tool_call_action::ToolCallAction;

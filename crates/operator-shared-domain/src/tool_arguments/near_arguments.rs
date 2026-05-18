@@ -1,3 +1,5 @@
+use crate::error::domain_error::DomainError;
+use crate::error::domain_result::DomainResult;
 use crate::value_objects::dimension_ref::DimensionRef;
 use crate::value_objects::memory_ref::MemoryRef;
 use crate::value_objects::positive_count::PositiveCount;
@@ -14,12 +16,17 @@ impl NearArguments {
         anchor: MemoryRef,
         dimensions: Vec<DimensionRef>,
         limit: Option<PositiveCount>,
-    ) -> Self {
-        Self {
+    ) -> DomainResult<Self> {
+        if dimensions.is_empty() {
+            return Err(DomainError::EmptyValue {
+                context: "near_arguments.dimensions",
+            });
+        }
+        Ok(Self {
             anchor,
             dimensions,
             limit,
-        }
+        })
     }
 
     pub fn anchor(&self) -> &MemoryRef {
@@ -47,17 +54,30 @@ mod tests {
             anchor.clone(),
             vec![dim.clone()],
             Some(PositiveCount::parse(5, "limit").unwrap()),
-        );
+        )
+        .unwrap();
         assert_eq!(args.anchor(), &anchor);
         assert_eq!(args.dimensions(), &[dim]);
         assert_eq!(args.limit().unwrap().as_usize(), 5);
     }
 
     #[test]
-    fn allows_no_limit() {
+    fn refuses_empty_dimensions() {
         let anchor = MemoryRef::parse("node:1").unwrap();
-        let args = NearArguments::new(anchor, vec![], None);
+        let err = NearArguments::new(anchor, vec![], None).unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::EmptyValue {
+                context: "near_arguments.dimensions"
+            }
+        ));
+    }
+
+    #[test]
+    fn limit_is_optional() {
+        let anchor = MemoryRef::parse("node:1").unwrap();
+        let dim = DimensionRef::parse("temporal").unwrap();
+        let args = NearArguments::new(anchor, vec![dim], None).unwrap();
         assert!(args.limit().is_none());
-        assert!(args.dimensions().is_empty());
     }
 }

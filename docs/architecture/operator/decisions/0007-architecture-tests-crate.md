@@ -24,23 +24,41 @@ The crate reads:
 It never imports the production crates as Rust libraries; it inspects them
 as files. This keeps the test crate fast and avoids cyclic dependencies.
 
-The rules enforced:
+The rules enforced today (one test file per rule under `tests/`):
 
-1. **No kernel deps** — no operator manifest contains `rehydration-`.
-2. **No serde_json outside contract/infra** — `*-domain` and
-   `*-application` manifests must not list `serde_json` as a dependency, and
-   their source must not contain `json!` or `serde_json::Value`.
-3. **One file = one class** — every `.rs` file in `src/` declares at most
-   one `pub struct`, one `pub enum`, or one `pub trait`. Exceptions are
-   listed in a constant in the test crate with a justification comment.
-4. **No `tool: &str` / `cursor_key: &str`** — these substrings must not
-   appear in any operator source file (outside an explicit allowlist of
-   infra mapper files).
-5. **CLI thinness** — every `*-cli` crate's `main.rs` is under 200 lines and
-   imports at least one `*-application` use case. (Pending; first CLI lives
-   in a later pass.)
-6. **Workspace member list** — every crate inside `crates/` is registered
-   in the workspace `members` list, and every member is a real directory.
+1. **No kernel deps** (`no_kernel_deps`) — no operator manifest contains
+   `rehydration-`.
+2. **No serde_json in domain or application** (`no_serde_json_in_domain_or_application`)
+   — `*-domain` and `*-application` manifests must not list `serde_json`;
+   their source must not contain `json!(` or `serde_json::Value`.
+3. **No serde in domain or application** (`no_serde_in_application_or_domain`)
+   — same as #2, but for the plain `serde` crate (allowed in contract +
+   infra only).
+4. **No I/O runtime outside infra** (`no_io_runtime_outside_infra`) —
+   `tokio`, `tokio-stream`, `reqwest`, `tracing`, `tracing-subscriber`,
+   `tonic` and `prost` may not appear in `*-domain`, `*-application` or
+   `*-contract` manifests.
+5. **Ports take only domain types** (`ports_take_only_domain_types`) —
+   files inside `*-application/src/ports/` must not contain
+   `serde_json::Value`, `tool: &str`, `cursor_key: &str` or `json!(`.
+6. **One file = one class** (`one_file_one_class`) — every `.rs` file
+   declares at most one `pub struct`, `pub enum` or `pub trait`. Exceptions
+   live in a `KNOWN_EXCEPTIONS` constant with a justification.
+7. **No `tool: &str` / `cursor_key: &str` anywhere** (`no_string_tool_or_cursor`)
+   — bans the substrings across every operator source file.
+8. **Workspace consistency** (`no_serde_json_value_in_application_or_domain_manifests`)
+   — every crate on disk is in the workspace `members`; every member is on
+   disk. (The file name is historical; the test does the consistency
+   sweep.)
+
+The following principles are still convention-only and rely on PR review:
+
+- **Pure DDD** (immutable value objects, aggregate boundary discipline).
+- **SOLID** (single responsibility per type).
+- **Composition over inheritance**.
+- **No fallbacks, fail fast** (constructors that silently return defaults).
+- **CLI thinness** — pending; the first CLI lives in a later bounded
+  context.
 
 ## Consequences
 

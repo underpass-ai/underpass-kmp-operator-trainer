@@ -11,3 +11,6 @@ pub mod mappers;
 
 #[cfg(test)]
 mod round_trip_tests;
+
+#[cfg(test)]
+mod wire_snapshot_tests;
