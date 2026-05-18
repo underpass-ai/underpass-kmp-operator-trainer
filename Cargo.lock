@@ -54,6 +54,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "operator-synthetic-application"
+version = "0.1.0"
+dependencies = [
+ "operator-shared-domain",
+ "operator-synthetic-domain",
+ "thiserror",
+]
+
+[[package]]
+name = "operator-synthetic-domain"
+version = "0.1.0"
+dependencies = [
+ "operator-shared-domain",
+ "thiserror",
+]
+
+[[package]]
+name = "operator-synthetic-infra"
+version = "0.1.0"
+dependencies = [
+ "operator-shared-domain",
+ "operator-synthetic-application",
+ "operator-synthetic-domain",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"

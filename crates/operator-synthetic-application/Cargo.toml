@@ -1,0 +1,16 @@
+[package]
+name = "operator-synthetic-application"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Operator: synthetic bounded context — application use cases and ports."
+
+[lints]
+workspace = true
+
+[dependencies]
+operator-shared-domain.workspace = true
+operator-synthetic-domain.workspace = true
+thiserror.workspace = true
