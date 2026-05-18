@@ -1,16 +1,15 @@
 [package]
-name = "operator-replay-application"
+name = "operator-replay-domain"
 edition.workspace = true
 rust-version.workspace = true
 version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Operator: replay bounded context — KmpMcpClient port and adapter-facing error types. Use cases land in a follow-up PR."
+description = "Operator: replay bounded context — predictions, execution records, outcomes, and aggregate reports."
 
 [lints]
 workspace = true
 
 [dependencies]
-operator-replay-domain.workspace = true
 operator-shared-domain.workspace = true
 thiserror.workspace = true

@@ -30,6 +30,10 @@ const KNOWN_EXCEPTIONS: &[(&str, &str)] = &[
         "visible_state_dto.rs",
         "VisibleStateDto + BudgetSnapshotDto are intrinsically paired wire types",
     ),
+    (
+        "adapters/in_memory_kmp_mcp_client.rs",
+        "InMemoryKmpMcpClient + FailureMode config enum are intrinsically paired test-fixture types",
+    ),
 ];
 
 #[test]

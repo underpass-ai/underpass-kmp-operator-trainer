@@ -30,7 +30,9 @@ the implementation is not documented in this tree, that is a bug.
   in-memory adapter.
 - [30-evaluation-context.md](30-evaluation-context.md) — Scoring and
   contract coverage: prediction pairs, outcomes, per-tool metrics.
-- 40-replay-context.md *(pending)* — Execute predicted actions against MCP/KMP.
+- [40-replay-context.md](40-replay-context.md) — Execute predicted
+  actions against MCP/KMP: predictions, outcomes, execution records,
+  use case, in-memory stub adapter.
 - 50-training-context.md *(pending)* — Run manifests, readiness, metrics.
 - 60-runtime-context.md *(pending)* — Compose LLM, Operator, KMP/MCP, budget.
 - 70-benchmark-adapters-context.md *(pending)* — External benchmark translation.
@@ -64,9 +66,14 @@ the implementation is not documented in this tree, that is a bug.
   infra) plus `operator-architecture-tests` crate.
 - **Pass 2** — `synthetic` bounded context skeleton: capability
   enumeration, blueprint, generation use case, in-memory adapter.
-- **Pass 3 (this PR)** — `evaluation` bounded context: prediction
-  pair, outcome, per-tool metric, report, use case wired to the
-  shared-context `ActionContractValidator`.
+- **Pass 3** — `evaluation` bounded context: prediction pair, outcome,
+  per-tool metric, report, use case wired to the shared-context
+  `ActionContractValidator`.
+- **Pass 4 (this PR + ADR 0010 + ADR 0011 + the outcomes-and-port PR
+  before it)** — `replay` bounded context: predictions, outcomes,
+  execution records, report, `KmpMcpClient` port, `ExecuteReplayUseCase`,
+  in-memory stub adapter, end-to-end test covering every tool plus
+  Stop/Escalate plus the failure-mode branch. Real MCP JSON-RPC client
+  ships in a follow-up PR.
 
-Replay, training, runtime and benchmark adapters are still out of
-scope.
+Training, runtime and benchmark adapters are still out of scope.
