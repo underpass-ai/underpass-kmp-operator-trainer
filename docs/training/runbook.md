@@ -65,12 +65,34 @@ in `operator-evaluation-application` and `operator-training-application`.
   `hostPath` in the K8s jobs adjusted).
 - Python 3.11+ available on a workstation if you want to run the
   scripts directly without Kubernetes.
-- A trajectory-v1 JSONL on the host filesystem. For now, produce it
-  by:
-  - copying one from the kernel's existing exports (e.g.,
-    `rehydration-kernel/scripts/operator/` historical artefacts), or
-  - running operator's synthetic generation library directly (no
-    CLI yet — see the audit punch list).
+- A trajectory-v1 JSONL on the host filesystem. The fastest way to
+  produce one is via `operator-synthesize` (see §0a). Alternative
+  sources: a kernel-side export, or a custom binary against
+  `operator-synthetic-application`.
+
+## 0a. Synthesize a trajectory JSONL
+
+`operator-synthesize` wires the fixture-grade
+`InMemorySyntheticCaseGenerator` against the canonical
+`for_all_capabilities` blueprint and writes the result as
+`TrainingTrajectoryDto` JSONL — the exact shape every downstream
+tool in this runbook reads:
+
+```bash
+cargo run --release -p operator-synthetic-cli --bin operator-synthesize -- \
+    --dataset-id dataset:smoke-$(date +%Y-%m-%d) \
+    --minimum-examples 4 \
+    --output /tmp/trajectories.jsonl
+```
+
+The output is deterministic given the same `--dataset-id` and
+`--minimum-examples`. The CLI prints a per-case coverage report so
+you know exactly how many trajectories each `KmpMcpCapability`
+contributed. **Note**: the in-memory generator is fixture-grade —
+one canonical trajectory per capability, cloned N times. It satisfies
+the strict KMP action contract but does not reflect realistic
+operator behaviour; a teacher-model-backed generator will land in a
+later pass.
 
 ## 1. Prepare the SFT dataset
 
@@ -265,11 +287,11 @@ same bytes the SFT label has.
 This runbook calls out the remaining CLI gaps because they require
 manual workarounds today:
 
-1. **No `operator-synthetic-cli`** — the synthetic context can
-   generate trajectories programmatically (see
-   `operator-synthetic-application`), but there is no command-line
-   binary yet. Stage trajectories from the kernel's existing exports
-   or write a small custom binary against the library API.
+1. **`operator-synthesize` is fixture-grade** — the canonical
+   `InMemorySyntheticCaseGenerator` produces one trajectory per
+   `KmpMcpCapability`, cloned N times. The trajectories satisfy the
+   strict KMP action contract but do not reflect realistic operator
+   behaviour. A teacher-model-backed generator is on the roadmap.
 2. **`operator-evaluation-cli` is partial** — `operator-policy-eval`
    covers prediction scoring (§4b) and `operator-replay` covers live
    KMP execution (§4c). The `contract-coverage` and `llm-baseline`

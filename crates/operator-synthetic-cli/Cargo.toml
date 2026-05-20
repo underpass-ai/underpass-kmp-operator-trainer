@@ -1,0 +1,26 @@
+[package]
+name = "operator-synthetic-cli"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Operator: synthetic bounded context — command-line tools."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "operator-synthesize"
+path = "src/bin/operator_synthesize.rs"
+
+[dependencies]
+operator-shared-contract.workspace = true
+operator-shared-domain.workspace = true
+operator-shared-infra.workspace = true
+operator-synthetic-application.workspace = true
+operator-synthetic-domain.workspace = true
+operator-synthetic-infra.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

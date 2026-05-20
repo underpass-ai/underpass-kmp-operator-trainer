@@ -59,8 +59,13 @@ impl InMemorySyntheticCaseGenerator {
         let trajectory_id =
             TrainingTrajectoryId::parse(format!("{}:{:04}", spec.case_id().as_str(), index))
                 .map_err(|err| domain_to_err(spec, &err))?;
-        let step_id =
-            StepId::parse(format!("step:{index:04}")).map_err(|err| domain_to_err(spec, &err))?;
+        // Step id prefixed with the case id so step ids stay globally
+        // unique across capabilities: two cases generating their first
+        // example would otherwise both write `step:0000`, and
+        // downstream consumers that join by step id (operator-policy-eval,
+        // operator-replay) would collapse them into one row.
+        let step_id = StepId::parse(format!("step:{}:{index:04}", spec.case_id().as_str()))
+            .map_err(|err| domain_to_err(spec, &err))?;
         let about = AboutId::parse(format!("about:{}:{}", capability.name(), index))
             .map_err(|err| domain_to_err(spec, &err))?;
         let task_family = TaskFamily::parse(format!("{}.{}", mode.as_str(), capability.name()))
@@ -253,6 +258,30 @@ mod tests {
         let s = spec(KmpMcpCapability::Inspect, 3);
         let result = generator.generate(&s).unwrap();
         assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn step_ids_stay_unique_across_capabilities_and_examples() {
+        // Two capabilities × three examples each. step_id must encode
+        // the case so the six step ids are all distinct — downstream
+        // consumers that join predictions by step_id rely on this.
+        use std::collections::HashSet;
+        let generator = InMemorySyntheticCaseGenerator::new();
+        let a = generator
+            .generate(&spec(KmpMcpCapability::Inspect, 3))
+            .unwrap();
+        let b = generator
+            .generate(&spec(KmpMcpCapability::Wake, 3))
+            .unwrap();
+        let mut ids: HashSet<String> = HashSet::new();
+        for trajectory in a.iter().chain(b.iter()) {
+            assert!(
+                ids.insert(trajectory.step_id().as_str().to_string()),
+                "step_id collision: {}",
+                trajectory.step_id().as_str()
+            );
+        }
+        assert_eq!(ids.len(), 6, "six unique step_ids expected");
     }
 
     #[test]
