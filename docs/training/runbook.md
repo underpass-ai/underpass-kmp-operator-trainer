@@ -94,6 +94,29 @@ the strict KMP action contract but does not reflect realistic
 operator behaviour; a teacher-model-backed generator will land in a
 later pass.
 
+## 0b. Audit a trajectory JSONL with `operator-contract-coverage`
+
+Before feeding a trajectory JSONL into the rest of the pipeline,
+verify it covers every `KernelTool` variant and that every row
+validates against the strict KMP action contract:
+
+```bash
+cargo run --release -p operator-evaluation-cli --bin operator-contract-coverage -- \
+    --trajectories /tmp/trajectories.jsonl \
+    --require-full-coverage \
+    --require-zero-invalid
+```
+
+The binary prints per-tool / per-mode counts plus the tool-coverage
+ratio, then gates on the two flags: `--require-full-coverage` fails
+if any `KernelTool` variant has zero trajectories;
+`--require-zero-invalid` fails if any row's action violates the
+strict contract. Omitting both flags prints metrics and exits 0.
+
+Run this in CI against any dataset destined for training to catch
+exporter regressions (missing tools, drifted action shapes) before
+they reach the trainer.
+
 ## 1. Prepare the SFT dataset
 
 The Python `prepare_operator_sft_dataset.py` script turns a
@@ -293,9 +316,11 @@ manual workarounds today:
    strict KMP action contract but do not reflect realistic operator
    behaviour. A teacher-model-backed generator is on the roadmap.
 2. **`operator-evaluation-cli` is partial** — `operator-policy-eval`
-   covers prediction scoring (§4b) and `operator-replay` covers live
-   KMP execution (§4c). The `contract-coverage` and `llm-baseline`
-   siblings (kernel-equivalent binaries) are still pending.
+   covers prediction scoring (§4b), `operator-replay` covers live
+   KMP execution (§4c), and `operator-contract-coverage` covers
+   dataset audits (§0b). The `llm-baseline` sibling (kernel-equivalent
+   binary that runs a frontier LLM on the holdout to measure
+   ceiling) is still pending.
 
-When those CLIs land, the runbook collapses to four `kubectl apply`
+When that CLI lands, the runbook collapses to four `kubectl apply`
 plus a few `cargo run` invocations.

@@ -14,6 +14,10 @@ workspace = true
 name = "operator-policy-eval"
 path = "src/bin/operator_policy_eval.rs"
 
+[[bin]]
+name = "operator-contract-coverage"
+path = "src/bin/operator_contract_coverage.rs"
+
 [dependencies]
 operator-evaluation-application.workspace = true
 operator-evaluation-domain.workspace = true
