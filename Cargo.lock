@@ -682,6 +682,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "operator-synthetic-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "operator-shared-contract",
+ "operator-shared-domain",
+ "operator-shared-infra",
+ "operator-synthetic-application",
+ "operator-synthetic-domain",
+ "operator-synthetic-infra",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "operator-synthetic-domain"
 version = "0.1.0"
 dependencies = [
