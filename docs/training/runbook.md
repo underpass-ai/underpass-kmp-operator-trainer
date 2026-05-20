@@ -4,7 +4,7 @@ End-to-end recipe for training a small operator policy (Qwen 0.5B +
 LoRA SFT) and validating it before declaring a release candidate.
 This runbook assumes the holdout dataset has already been produced
 upstream (synthetic generation or external benchmark adapter — the
-synthetic side will gain a `operator-synthetic-cli` in a later PR;
+fixture-grade `operator-synthesize` CLI exists for contract gates;
 benchmark adapters are kernel-side and stay there per ADR 0001).
 
 The pipeline has five stages: **prepare → train → predict → score →
@@ -69,6 +69,26 @@ in `operator-evaluation-application` and `operator-training-application`.
   produce one is via `operator-synthesize` (see §0a). Alternative
   sources: a kernel-side export, or a custom binary against
   `operator-synthetic-application`.
+
+## Training data policy
+
+There are two different corpus classes:
+
+| Corpus | Purpose | Allowed for release-candidate training? |
+| --- | --- | --- |
+| contract-v6 fixture corpus | pipeline/contract gate, 10/10 tool coverage, no-gold and round-trip smoke | no |
+| realistic-v7 corpus | episode-based operator decisions with teacher-backed or hand-authored realistic processes | yes, once gates pass |
+
+Do not spend GPU time on contract-v6 expecting an interpretable model score. It
+is intentionally fixture-grade and will inflate results. Use it only to prove
+that prepare/train/predict/eval wiring is sound.
+
+The realistic-v7 path has two different sizes: 300-600 rows is only a training
+smoke; an interpretable baseline needs at least 1500-3000 realistic rows and a
+mandatory frontier ceiling on the held-out episode split.
+
+The next interpretable training run waits for
+[`operator-realistic-corpus-v7-plan-2026-05-20.md`](operator-realistic-corpus-v7-plan-2026-05-20.md).
 
 ## 0a. Synthesize a trajectory JSONL
 
@@ -153,6 +173,7 @@ operator-synthesize
 This corpus is still contract-grade synthetic data, not the final realistic
 teacher-generated dataset. Its purpose is to close P0.4/P0.5 and prevent GPU
 training from starting until the complete KMP/MCP action surface round-trips.
+It must not be used as the release-candidate corpus.
 
 ## 1. Prepare the SFT dataset
 
@@ -380,7 +401,8 @@ manual workarounds today:
    `InMemorySyntheticCaseGenerator` produces one trajectory per
    `KmpMcpCapability`, cloned N times. The trajectories satisfy the
    strict KMP action contract but do not reflect realistic operator
-   behaviour. A teacher-model-backed generator is on the roadmap.
+   behaviour. The realistic-v7 corpus plan defines the next accepted
+   training-data path.
 2. **CLI parity with the pre-disaster kernel is complete.**
    `operator-policy-eval` covers prediction scoring (§4b),
    `operator-replay` covers live KMP execution (§4c),

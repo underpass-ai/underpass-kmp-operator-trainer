@@ -40,6 +40,27 @@ strict run improves sharply, the dataset and wire-contract cleanup mattered. If
 it stays near 24.1%, the limitation is probably the 0.5B policy or the task
 formulation rather than the legacy dataset shape.
 
+## Current training decision
+
+Do not train a release-candidate model on the contract-v6 fixture corpus from
+PR #27.
+
+That corpus is a valid pipeline gate, not a realistic training set. It has
+10/10 KMP/MCP tool coverage and strict round-trip validation, but it is built
+from canonical cloned fixtures. A high score on it would mostly prove
+memorization of the fixture shape.
+
+The next meaningful model-history row should come from the realistic-v7 corpus
+plan:
+
+```text
+docs/training/operator-realistic-corpus-v7-plan-2026-05-20.md
+```
+
+That row must include the v7 frontier ceiling for the same held-out episode
+split. A 300-600 row v7 run is a training smoke, not a release-candidate
+baseline.
+
 ## Why Qwen 0.5B and not something larger?
 
 The kernel's design goal (see [`feedback_small_models`] in the
