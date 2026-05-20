@@ -34,8 +34,8 @@ else.
 
 ### References (under `value_objects/`)
 
-`MemoryRef`, `DimensionRef`, `TaskFamily`, `ModelId`, `NonEmptyString`,
-`PositiveCount`, `ExampleCount`.
+`MemoryRef`, `DimensionRef`, `TaskFamily`, `TrajectoryGoal`, `ModelId`,
+`NonEmptyString`, `PositiveCount`, `ExampleCount`.
 
 ### Tool arguments (under `tool_arguments/`)
 
@@ -66,9 +66,12 @@ else.
   one of the known cursor variants — enforced by `Cursor` being a typed
   enum.
 - `TrainingTrajectory::new(...)` refuses to build a trajectory when the
-  target action's tool is not in the trajectory's allowed_tools, or when
-  the target action's referenced cursor/refs are not present in the
-  visible state.
+  target action's tool is not in the trajectory's allowed_tools.
+- Reference and cursor visibility are contract-validator rules, not aggregate
+  constructor rules.
+- `TrainingTrajectory::new(...)` requires an explicit `TrajectoryGoal`.
+  `TaskFamily` is taxonomy; `TrajectoryGoal` is the objective persisted with
+  the row and projected into SFT prompts.
 - Every value object refuses an empty string.
 
 ## What does **not** live here

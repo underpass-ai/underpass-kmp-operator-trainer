@@ -23,6 +23,7 @@ use operator_shared_domain::trajectory::training_trajectory::TrainingTrajectory;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
 use operator_shared_domain::value_objects::model_id::ModelId;
 use operator_shared_domain::value_objects::task_family::TaskFamily;
+use operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal;
 use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
 use operator_shared_domain::visible_state::visible_state::VisibleState;
 
@@ -42,6 +43,7 @@ fn inspect_trajectory() -> TrainingTrajectory {
         AboutId::parse("about:snap").unwrap(),
         OperatorMode::Read,
         TaskFamily::parse("read.inspect").unwrap(),
+        TrajectoryGoal::parse("Inspect node:1.").unwrap(),
         AllowedTools::for_mode(OperatorMode::Read),
         visible,
         action,
@@ -123,6 +125,20 @@ fn full_inspect_trajectory_round_trips_through_real_json() {
 }
 
 #[test]
+fn full_trajectory_without_goal_is_invalid_json() {
+    let json = concat!(
+        r#"{"id":"traj:snap","step_id":"step:snap","about":"about:snap","mode":"read","#,
+        r#""task_family":"read.inspect","#,
+        r#""allowed_tools":["kernel_wake","kernel_ask","kernel_near","kernel_goto",
+"kernel_rewind","kernel_forward","kernel_trace","kernel_inspect"],"#,
+        r#""visible_state":{"known_refs":["node:1"],"known_dimensions":[],"budget":{"calls_remaining":5,"tokens_remaining":1000}},"#,
+        r#""target_action":{"kind":"tool_call","tool":"kernel_inspect","arguments":{"target":"node:1"}}}"#
+    )
+    .replace('\n', "");
+    assert!(serde_json::from_str::<TrainingTrajectoryDto>(&json).is_err());
+}
+
+#[test]
 fn full_inspect_trajectory_canonical_json_shape() {
     let trajectory = inspect_trajectory();
     let dto = TrainingTrajectoryMapper::to_dto(&trajectory).unwrap();
@@ -134,7 +150,7 @@ fn full_inspect_trajectory_canonical_json_shape() {
         json,
         concat!(
             r#"{"id":"traj:snap","step_id":"step:snap","about":"about:snap","mode":"read","#,
-            r#""task_family":"read.inspect","#,
+            r#""task_family":"read.inspect","goal":"Inspect node:1.","#,
             r#""allowed_tools":["kernel_wake","kernel_ask","kernel_near","kernel_goto",
 "kernel_rewind","kernel_forward","kernel_trace","kernel_inspect"],"#,
             r#""visible_state":{"known_refs":["node:1"],"known_dimensions":[],"budget":{"calls_remaining":5,"tokens_remaining":1000}},"#,

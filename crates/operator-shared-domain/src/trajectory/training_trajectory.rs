@@ -20,6 +20,7 @@ use crate::ids::training_trajectory_id::TrainingTrajectoryId;
 use crate::mode::allowed_tools::AllowedTools;
 use crate::mode::operator_mode::OperatorMode;
 use crate::value_objects::task_family::TaskFamily;
+use crate::value_objects::trajectory_goal::TrajectoryGoal;
 use crate::visible_state::visible_state::VisibleState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,6 +30,7 @@ pub struct TrainingTrajectory {
     about: AboutId,
     mode: OperatorMode,
     task_family: TaskFamily,
+    goal: TrajectoryGoal,
     allowed_tools: AllowedTools,
     visible_state: VisibleState,
     target_action: OperatorAction,
@@ -42,6 +44,7 @@ impl TrainingTrajectory {
         about: AboutId,
         mode: OperatorMode,
         task_family: TaskFamily,
+        goal: TrajectoryGoal,
         allowed_tools: AllowedTools,
         visible_state: VisibleState,
         target_action: OperatorAction,
@@ -75,6 +78,7 @@ impl TrainingTrajectory {
             about,
             mode,
             task_family,
+            goal,
             allowed_tools,
             visible_state,
             target_action,
@@ -99,6 +103,10 @@ impl TrainingTrajectory {
 
     pub fn task_family(&self) -> &TaskFamily {
         &self.task_family
+    }
+
+    pub fn goal(&self) -> &TrajectoryGoal {
+        &self.goal
     }
 
     pub fn allowed_tools(&self) -> &AllowedTools {
@@ -149,6 +157,7 @@ mod tests {
             AboutId::parse("about:1")?,
             OperatorMode::Read,
             TaskFamily::parse("read.inspect")?,
+            TrajectoryGoal::parse("Inspect the visible memory node.")?,
             AllowedTools::for_mode(OperatorMode::Read),
             visible,
             action,
@@ -176,6 +185,7 @@ mod tests {
             AboutId::parse("about:1").unwrap(),
             OperatorMode::Read,
             TaskFamily::parse("read.stop").unwrap(),
+            TrajectoryGoal::parse("Stop with the visible evidence.").unwrap(),
             AllowedTools::for_mode(OperatorMode::Write),
             visible,
             action,
@@ -211,6 +221,7 @@ mod tests {
             AboutId::parse("about:1").unwrap(),
             OperatorMode::Read,
             TaskFamily::parse("read.write_attempt").unwrap(),
+            TrajectoryGoal::parse("Reject write tools while operating in read mode.").unwrap(),
             AllowedTools::for_mode(OperatorMode::Read),
             visible,
             write_action,

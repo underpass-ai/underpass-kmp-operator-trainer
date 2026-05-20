@@ -6,3 +6,4 @@ pub mod non_empty_string;
 pub mod positive_count;
 pub mod string_map;
 pub mod task_family;
+pub mod trajectory_goal;

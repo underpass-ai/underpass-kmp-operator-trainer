@@ -42,6 +42,7 @@ use operator_shared_domain::value_objects::non_empty_string::NonEmptyString;
 use operator_shared_domain::value_objects::positive_count::PositiveCount;
 use operator_shared_domain::value_objects::string_map::StringMap;
 use operator_shared_domain::value_objects::task_family::TaskFamily;
+use operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal;
 use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
 use operator_shared_domain::visible_state::visible_state::VisibleState;
 use operator_synthetic_application::error::generate_synthetic_case_error::GenerateSyntheticCaseError;
@@ -77,6 +78,12 @@ impl InMemorySyntheticCaseGenerator {
             .map_err(|err| domain_to_err(spec, &err))?;
         let task_family = TaskFamily::parse(format!("{}.{}", mode.as_str(), capability.name()))
             .map_err(|err| domain_to_err(spec, &err))?;
+        let goal = TrajectoryGoal::parse(format!(
+            "Select the next {} action for the {} capability.",
+            mode.as_str(),
+            capability.name()
+        ))
+        .map_err(|err| domain_to_err(spec, &err))?;
         let (visible_state, target_action) = match capability {
             KmpMcpCapability::Ingest => fixture_ingest(about.clone()),
             KmpMcpCapability::Wake => fixture_wake(about.clone()),
@@ -95,6 +102,7 @@ impl InMemorySyntheticCaseGenerator {
             about,
             mode,
             task_family,
+            goal,
             AllowedTools::for_mode(mode),
             visible_state,
             target_action,

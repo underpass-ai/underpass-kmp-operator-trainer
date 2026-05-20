@@ -77,6 +77,10 @@ fn inspect_trajectory(traj: &str, family: &str, target_ref: &str) -> TrainingTra
         AboutId::parse("about:1").unwrap(),
         OperatorMode::Read,
         TaskFamily::parse(family).unwrap(),
+        operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal::parse(format!(
+            "Execute the {family} training fixture."
+        ))
+        .unwrap(),
         AllowedTools::for_mode(OperatorMode::Read),
         visible,
         action,

@@ -85,6 +85,10 @@ mod tests {
             AboutId::parse("a:1").unwrap(),
             OperatorMode::Read,
             TaskFamily::parse("read.inspect").unwrap(),
+            operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal::parse(
+                "Inspect the expected memory node.",
+            )
+            .unwrap(),
             AllowedTools::for_mode(OperatorMode::Read),
             visible,
             action,
@@ -161,6 +165,10 @@ mod tests {
             AboutId::parse("a:1").unwrap(),
             OperatorMode::Read,
             TaskFamily::parse("read.ask").unwrap(),
+            operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal::parse(
+                "Ask the prepared ground truth question.",
+            )
+            .unwrap(),
             AllowedTools::for_mode(OperatorMode::Read),
             VisibleState::assemble([], [], None, BudgetSnapshot::unbounded()),
             action,
@@ -180,6 +188,10 @@ mod tests {
             AboutId::parse("a:1").unwrap(),
             OperatorMode::Read,
             TaskFamily::parse("read.stop").unwrap(),
+            operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal::parse(
+                "Stop after reaching the answer.",
+            )
+            .unwrap(),
             AllowedTools::for_mode(OperatorMode::Read),
             VisibleState::assemble([], [], None, BudgetSnapshot::unbounded()),
             action,

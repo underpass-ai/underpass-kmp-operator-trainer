@@ -40,6 +40,7 @@ use operator_shared_domain::value_objects::memory_ref::MemoryRef;
 use operator_shared_domain::value_objects::model_id::ModelId;
 use operator_shared_domain::value_objects::positive_count::PositiveCount;
 use operator_shared_domain::value_objects::task_family::TaskFamily;
+use operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal;
 use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
 use operator_shared_domain::visible_state::visible_state::VisibleState;
 
@@ -65,6 +66,7 @@ fn read_mode_trajectory(action: OperatorAction, family: &str) -> TrainingTraject
         AboutId::parse("about:1").unwrap(),
         OperatorMode::Read,
         TaskFamily::parse(family).unwrap(),
+        TrajectoryGoal::parse(format!("Execute the {family} operator step.")).unwrap(),
         AllowedTools::for_mode(OperatorMode::Read),
         visible,
         action,
@@ -196,6 +198,7 @@ fn write_memory_round_trips() {
         AboutId::parse("about:wm").unwrap(),
         OperatorMode::Write,
         TaskFamily::parse("write.memory").unwrap(),
+        TrajectoryGoal::parse("Write the prepared memory note.").unwrap(),
         AllowedTools::for_mode(OperatorMode::Write),
         visible,
         action,
@@ -251,6 +254,7 @@ fn unbounded_budget_round_trips() {
         AboutId::parse("about:un").unwrap(),
         OperatorMode::Read,
         TaskFamily::parse("read.inspect").unwrap(),
+        TrajectoryGoal::parse("Inspect the visible memory node with an unbounded budget.").unwrap(),
         AllowedTools::for_mode(OperatorMode::Read),
         visible,
         action,
@@ -280,6 +284,7 @@ fn jsonl_writer_then_reader_round_trips_a_trajectory() {
         AboutId::parse("about:42").unwrap(),
         OperatorMode::Read,
         TaskFamily::parse("read.inspect").unwrap(),
+        TrajectoryGoal::parse("Inspect the visible memory node.").unwrap(),
         AllowedTools::for_mode(OperatorMode::Read),
         visible,
         action,
@@ -336,6 +341,7 @@ fn reader_skips_blank_lines() {
         AboutId::parse("about:1").unwrap(),
         OperatorMode::Read,
         TaskFamily::parse("read.inspect").unwrap(),
+        TrajectoryGoal::parse("Inspect the visible memory node.").unwrap(),
         AllowedTools::for_mode(OperatorMode::Read),
         visible,
         action,

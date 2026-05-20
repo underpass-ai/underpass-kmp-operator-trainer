@@ -28,6 +28,7 @@ fn write_ground_truth(path: &std::path::Path) {
         "about": "about:1",
         "mode": "read",
         "task_family": "read.inspect",
+        "goal": "Inspect node:1.",
         "allowed_tools": [
             "kernel_wake","kernel_ask","kernel_near","kernel_goto",
             "kernel_rewind","kernel_forward","kernel_trace","kernel_inspect"

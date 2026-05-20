@@ -30,6 +30,7 @@ fn write_single_inspect(path: &std::path::Path) {
         "about": "about:1",
         "mode": "read",
         "task_family": "read.inspect",
+        "goal": "Inspect node:1.",
         "allowed_tools": [
             "kernel_wake","kernel_ask","kernel_near","kernel_goto",
             "kernel_rewind","kernel_forward","kernel_trace","kernel_inspect"
@@ -164,6 +165,7 @@ fn write_invalid_inspect(path: &std::path::Path) {
         "about": "about:1",
         "mode": "read",
         "task_family": "read.inspect",
+        "goal": "Inspect a ref that is not visible.",
         "allowed_tools": [
             "kernel_wake","kernel_ask","kernel_near","kernel_goto",
             "kernel_rewind","kernel_forward","kernel_trace","kernel_inspect"
