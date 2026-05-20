@@ -215,9 +215,28 @@ return value.
   prompt-template drift), or hyperparameter regressions (start with
   the kernel's `*-v5` defaults and bisect).
 
+## 4b. Or score offline with `operator-policy-eval`
+
+Once the predictor has written `predictions.jsonl`, you can score it
+against any ground-truth JSONL without re-running the predictor:
+
+```bash
+cargo run --release -p operator-evaluation-cli --bin operator-policy-eval -- \
+    --predictions  /tmp/operator-qwen05-predictions/predictions.jsonl \
+    --ground-truth /tmp/operator-sft/eval.jsonl \
+    --min-pass-rate 0.9
+```
+
+The binary joins predictions and ground truth by `step_id`, runs
+`EvaluateOperatorPolicyUseCase` under the strict KMP contract, prints
+per-tool / per-mode metrics, and exits 0 or 1 based on the
+`--min-pass-rate` threshold (omit the flag to print metrics only).
+Useful for inspecting a historical run, comparing against a different
+contract version, or gating a publication candidate.
+
 ## Known gaps
 
-This runbook calls out two CLI gaps explicitly because they require
+This runbook calls out the remaining CLI gaps because they require
 manual workarounds today:
 
 1. **No `operator-synthetic-cli`** — the synthetic context can
@@ -225,10 +244,14 @@ manual workarounds today:
    `operator-synthetic-application`), but there is no command-line
    binary yet. Stage trajectories from the kernel's existing exports
    or write a small custom binary against the library API.
-2. **No `operator-evaluation-cli`** — the validation step in §4
-   above currently requires a custom binary or a test harness; a
-   `policy-eval` / `contract-coverage` / `llm-baseline` CLI trio
-   will follow in dedicated PRs.
+2. **No `operator-replay-cli`** — `operator-replay-{application,infra}`
+   has the full MCP JSON-RPC client and the `ExecuteReplayUseCase`,
+   but no CLI binary that wires them. Use the library API for live
+   MCP replay until this lands.
+3. **`operator-evaluation-cli` is partial** — `operator-policy-eval`
+   covers prediction scoring (§4b). The `contract-coverage` and
+   `llm-baseline` siblings (kernel-equivalent binaries) are still
+   pending.
 
 When those CLIs land, the runbook collapses to four `kubectl apply`
-+ one `cargo run` invocation.
+plus a few `cargo run` invocations.

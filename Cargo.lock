@@ -555,6 +555,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "operator-evaluation-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "operator-evaluation-application",
+ "operator-evaluation-domain",
+ "operator-evaluation-infra",
+ "operator-shared-contract",
+ "operator-shared-domain",
+ "operator-shared-infra",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "operator-evaluation-domain"
 version = "0.1.0"
 dependencies = [

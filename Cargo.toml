@@ -19,6 +19,7 @@ members = [
     "crates/operator-training-infra",
     "crates/operator-evaluation-infra",
     "crates/operator-training-cli",
+    "crates/operator-evaluation-cli",
 ]
 
 [workspace.package]
@@ -47,6 +48,7 @@ operator-training-application = { path = "crates/operator-training-application" 
 operator-training-infra = { path = "crates/operator-training-infra" }
 operator-evaluation-infra = { path = "crates/operator-evaluation-infra" }
 operator-training-cli = { path = "crates/operator-training-cli" }
+operator-evaluation-cli = { path = "crates/operator-evaluation-cli" }
 
 clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }
