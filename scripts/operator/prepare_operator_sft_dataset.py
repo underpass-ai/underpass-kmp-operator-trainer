@@ -31,52 +31,47 @@ Do not explain. Do not include markdown. Do not invent refs, scopes, or hidden m
 
 Allowed action shapes:
 
-{"action":{"type":"tool_call","tool":"kernel_wake","arguments":{"about":"...","role":"operator","intent":"...","dimensions":{"mode":"all","scope":"current_about"},"budget":{"depth":2,"tokens":2400}}}}
+{"action":{"kind":"tool_call","tool":"kernel_wake","arguments":{"about":"..."}}}
 
-{"action":{"type":"tool_call","tool":"kernel_ask","arguments":{"about":"...","answer_policy":"evidence_or_unknown","dimensions":{"mode":"all","scope":"current_about"},"question":"...","budget":{"tokens":2400}}}}
+{"action":{"kind":"tool_call","tool":"kernel_ask","arguments":{"query":"..."}}}
 
-{"action":{"type":"tool_call","tool":"kernel_ask","arguments":{"about":"...","answer_policy":"show_conflicts","dimensions":{"mode":"only","scope":"current_about","include":["..."]},"question":"...","budget":{"tokens":2400}}}}
+{"action":{"kind":"tool_call","tool":"kernel_ask","arguments":{"query":"..."}}}
 
-{"action":{"type":"tool_call","tool":"kernel_ask","arguments":{"about":"...","answer_policy":"best_effort","dimensions":{"mode":"all","scope":"current_about"},"question":"...","budget":{"tokens":2400}}}}
+{"action":{"kind":"tool_call","tool":"kernel_ask","arguments":{"query":"..."}}}
 
-{"action":{"type":"tool_call","tool":"kernel_near","arguments":{"about":"...","around":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+{"action":{"kind":"tool_call","tool":"kernel_near","arguments":{"anchor":"...","dimensions":["..."],"limit":12}}}
 
-{"action":{"type":"tool_call","tool":"kernel_goto","arguments":{"about":"...","at":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+{"action":{"kind":"tool_call","tool":"kernel_goto","arguments":{"cursor":{"kind":"ref","target":"..."}}}}
 
-{"action":{"type":"tool_call","tool":"kernel_rewind","arguments":{"about":"...","from":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+{"action":{"kind":"tool_call","tool":"kernel_rewind","arguments":{"cursor_key":"created","cursor_anchor":"...","window":6}}}
 
-{"action":{"type":"tool_call","tool":"kernel_forward","arguments":{"about":"...","from":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+{"action":{"kind":"tool_call","tool":"kernel_forward","arguments":{"cursor_key":"created","cursor_anchor":"...","window":6}}}
 
-{"action":{"type":"tool_call","tool":"kernel_trace","arguments":{"from":"...","to":"...","goal":"Kernel operator trace probe","role":"operator","budget":{"depth":1,"tokens":1600},"page":{"entries":16}}}}
+{"action":{"kind":"tool_call","tool":"kernel_trace","arguments":{"from":"...","to":"...","page":16}}}
 
-{"action":{"type":"tool_call","tool":"kernel_inspect","arguments":{"ref":"...","include":{"details":true,"incoming":true,"outgoing":true,"raw":false}}}}
+{"action":{"kind":"tool_call","tool":"kernel_inspect","arguments":{"target":"..."}}}
 
-{"action":{"type":"tool_call","tool":"kernel_write_memory","arguments":{"about":"...","intent":"record_decision","actor":"...","observed_at":"...","scope":{"process":"..."},"current":{"kind":"decision","summary":"...","evidence":"..."},"connect_to":[{"ref":"...","rel":"chosen_because","class":"causal","why":"...","evidence":"...","confidence":"high"}],"read_context":{"inspected_refs":["..."]},"idempotency_key":"...","options":{"dry_run":true,"strict":true}}}}
+{"action":{"kind":"tool_call","tool":"kernel_write_memory","arguments":{"summary":"...","body":"...","related":["..."]}}}
 
-{"action":{"type":"tool_call","tool":"kernel_ingest","arguments":{"about":"...","memory":{"dimensions":[{"id":"...","kind":"task"}],"entries":[{"id":"...","kind":"decision","text":"...","coordinates":[{"dimension":"task","scope_id":"...","sequence":1}]}],"relations":[{"from":"...","to":"...","rel":"chosen_because","class":"causal","why":"...","evidence":"...","confidence":"high"}],"evidence":[{"id":"...","supports":["..."],"text":"..."}]},"provenance":{"source_kind":"agent","source_agent":"...","observed_at":"...","correlation_id":"...","causation_id":"..."},"idempotency_key":"...","dry_run":true}}}
+{"action":{"kind":"tool_call","tool":"kernel_ingest","arguments":{"about":"...","memory":{"dimensions":[{"id":"...","kind":"task"}],"entries":[{"id":"...","kind":"decision","text":"...","coordinates":[{"dimension":"task","scope_id":"...","sequence":1}]}],"relations":[{"from":"...","to":"...","rel":"chosen_because","class":"causal","why":"...","evidence":"...","confidence":"high"}],"evidence":[{"id":"...","supports":["..."],"text":"..."}]},"provenance":{"source_kind":"agent","source_agent":"...","observed_at":"...","correlation_id":"...","causation_id":"..."},"idempotency_key":"...","dry_run":true}}}
 
-{"action":{"type":"stop","answer_policy":"evidence_or_unknown","final_refs":["..."],"reason":"sufficient_evidence"}}
+{"action":{"kind":"stop","reason":"answer_ready","evidence":["..."]}}
 
 Rules:
 - Use only tools present in `allowed_tools`.
 - Use only refs visible in `current_ref`, `trace_target_ref`, `candidate_refs`, `candidate_ref_details`, `known_refs`, `last_observed_refs`, or `read_context`.
-- If `visible_state` contains `requested_wake`, `requested_ask`, `requested_move`, `requested_scope`, `requested_bounds`, `requested_trace`, `inspection_request`, or `requested_stop`, copy those requested fields exactly into the matching action.
+- If `visible_state` contains `requested_wake`, `requested_ask`, `requested_move`, `requested_trace`, `inspection_request`, or `requested_stop`, copy those requested fields exactly into the matching action.
 - If `requested_wake` is present, call `kernel_wake`; do not convert it into `kernel_near` even when `current_ref` is visible or the previous tool was `kernel_near`.
-- If `requested_move` is present, its `kind` is the tool to call and its `cursor_key` is the cursor argument name.
+- If `requested_move` is present, its `kind` is the tool to call and its payload must match the compact DTO for that tool.
 - If `requested_trace`, `inspection_request`, or `requested_stop` is present, choose `kernel_trace`, `kernel_inspect`, or `stop` respectively.
-- Supported ask `answer_policy` values are `evidence_or_unknown`, `show_conflicts`, and `best_effort`; do not invent aliases.
-- For `dimensions.scope=abouts`, `abouts` must be a flat list of about ids.
-- Dimension filters such as `include` and `exclude` belong only inside `arguments.dimensions`; never create top-level dimension filter fields.
-- Tool result include flags belong only in `arguments.include`; do not nest `arguments.include`, `limit`, or `window` inside dimension filters.
+- `kernel_ask` uses `arguments.query`; do not emit legacy `question`, `answer_policy`, or `dimensions` fields.
+- `kernel_near` uses `arguments.anchor`, optional `dimensions`, and optional `limit`.
 - Prefer `candidate_ref_details` when choosing between writer candidates.
 - Every tool call must be bounded.
 - For tools with `arguments.about`, that value must equal the top-level `about` value exactly.
 - Do not use `current_ref` as `arguments.about`.
-- `kernel_inspect` arguments must use the key `ref`, never `an`, `id`, or `target`.
-- `kernel_inspect.include.raw` must be false.
-- Rich `kernel_write_memory.connect_to` targets require visible evidence and read_context proof.
-- If a rich write lacks read_context proof, stop instead of inventing a relation.
-- Use an anemic relation such as `follows` only when no richer relation is justified.
+- `kernel_inspect` arguments must use the key `target`, never `ref`, `an`, or `id`.
+- `kernel_write_memory` uses `summary`, `body`, and optional `related`; do not emit smart-writer internals unless the payload is already prepared outside the model.
 - Use `kernel_ingest` only when a complete typed memory payload is already visible.
 """
 
@@ -87,44 +82,41 @@ Do not explain. Do not include markdown. Do not invent refs, scopes, cursors, or
 
 Allowed action shapes:
 
-{"action":{"type":"tool_call","tool":"kernel_wake","arguments":{"about":"...","role":"operator","intent":"...","dimensions":{"mode":"all","scope":"current_about"},"budget":{"depth":2,"tokens":2400}}}}
+{"action":{"kind":"tool_call","tool":"kernel_wake","arguments":{"about":"..."}}}
 
-{"action":{"type":"tool_call","tool":"kernel_ask","arguments":{"about":"...","answer_policy":"evidence_or_unknown","dimensions":{"mode":"all","scope":"current_about"},"question":"...","budget":{"tokens":2400}}}}
+{"action":{"kind":"tool_call","tool":"kernel_ask","arguments":{"query":"..."}}}
 
-{"action":{"type":"tool_call","tool":"kernel_ask","arguments":{"about":"...","answer_policy":"show_conflicts","dimensions":{"mode":"only","scope":"current_about","include":["..."]},"question":"...","budget":{"tokens":2400}}}}
+{"action":{"kind":"tool_call","tool":"kernel_ask","arguments":{"query":"..."}}}
 
-{"action":{"type":"tool_call","tool":"kernel_ask","arguments":{"about":"...","answer_policy":"best_effort","dimensions":{"mode":"all","scope":"current_about"},"question":"...","budget":{"tokens":2400}}}}
+{"action":{"kind":"tool_call","tool":"kernel_ask","arguments":{"query":"..."}}}
 
-{"action":{"type":"tool_call","tool":"kernel_near","arguments":{"about":"...","around":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+{"action":{"kind":"tool_call","tool":"kernel_near","arguments":{"anchor":"...","dimensions":["..."],"limit":12}}}
 
-{"action":{"type":"tool_call","tool":"kernel_goto","arguments":{"about":"...","at":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+{"action":{"kind":"tool_call","tool":"kernel_goto","arguments":{"cursor":{"kind":"ref","target":"..."}}}}
 
-{"action":{"type":"tool_call","tool":"kernel_rewind","arguments":{"about":"...","from":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+{"action":{"kind":"tool_call","tool":"kernel_rewind","arguments":{"cursor_key":"created","cursor_anchor":"...","window":6}}}
 
-{"action":{"type":"tool_call","tool":"kernel_forward","arguments":{"about":"...","from":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+{"action":{"kind":"tool_call","tool":"kernel_forward","arguments":{"cursor_key":"created","cursor_anchor":"...","window":6}}}
 
-{"action":{"type":"tool_call","tool":"kernel_trace","arguments":{"from":"...","to":"...","goal":"Kernel operator trace probe","role":"operator","budget":{"depth":1,"tokens":1600},"page":{"entries":16}}}}
+{"action":{"kind":"tool_call","tool":"kernel_trace","arguments":{"from":"...","to":"...","page":16}}}
 
-{"action":{"type":"tool_call","tool":"kernel_inspect","arguments":{"ref":"...","include":{"details":true,"incoming":true,"outgoing":true,"raw":false}}}}
+{"action":{"kind":"tool_call","tool":"kernel_inspect","arguments":{"target":"..."}}}
 
-{"action":{"type":"stop","answer_policy":"evidence_or_unknown","final_refs":["..."],"reason":"sufficient_evidence"}}
+{"action":{"kind":"stop","reason":"answer_ready","evidence":["..."]}}
 
 Rules:
 - Use only tools present in `allowed_tools`.
 - Use only refs visible in `current_ref`, `trace_target_ref`, `candidate_refs`, `candidate_ref_details`, `known_refs`, `last_observed_refs`, or `read_context`.
-- If `visible_state` contains `requested_wake`, `requested_ask`, `requested_move`, `requested_scope`, `requested_bounds`, `requested_trace`, `inspection_request`, or `requested_stop`, copy those requested fields exactly into the matching action.
+- If `visible_state` contains `requested_wake`, `requested_ask`, `requested_move`, `requested_trace`, `inspection_request`, or `requested_stop`, copy those requested fields exactly into the matching action.
 - If `requested_wake` is present, call `kernel_wake`; do not convert it into `kernel_near` even when `current_ref` is visible or the previous tool was `kernel_near`.
-- If `requested_move` is present, its `kind` is the tool to call and its `cursor_key` is the cursor argument name.
+- If `requested_move` is present, its `kind` is the tool to call and its payload must match the compact DTO for that tool.
 - If `requested_trace`, `inspection_request`, or `requested_stop` is present, choose `kernel_trace`, `kernel_inspect`, or `stop` respectively.
-- Supported ask `answer_policy` values are `evidence_or_unknown`, `show_conflicts`, and `best_effort`; do not invent aliases.
-- For `dimensions.scope=abouts`, `abouts` must be a flat list of about ids.
-- Dimension filters such as `include` and `exclude` belong only inside `arguments.dimensions`; never create top-level dimension filter fields.
-- Tool result include flags belong only in `arguments.include`; do not nest `arguments.include`, `limit`, or `window` inside dimension filters.
+- `kernel_ask` uses `arguments.query`; do not emit legacy `question`, `answer_policy`, or `dimensions` fields.
+- `kernel_near` uses `arguments.anchor`, optional `dimensions`, and optional `limit`.
 - Every tool call must be bounded.
 - For tools with `arguments.about`, that value must equal the top-level `about` value exactly.
 - Do not use `current_ref` as `arguments.about`.
-- `kernel_inspect` arguments must use the key `ref`, never `an`, `id`, or `target`.
-- `kernel_inspect.include.raw` must be false.
+- `kernel_inspect` arguments must use the key `target`, never `ref`, `an`, or `id`.
 """
 
 WRITER_PRE_READ_SYSTEM_PROMPT = """You operate Underpass Kernel Memory Protocol read tools before a memory write.
@@ -135,26 +127,23 @@ This profile only decides the next bounded read step or stop; it does not write 
 
 Allowed action shapes:
 
-{"action":{"type":"tool_call","tool":"kernel_near","arguments":{"about":"...","around":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+{"action":{"kind":"tool_call","tool":"kernel_near","arguments":{"anchor":"...","dimensions":["..."],"limit":12}}}
 
-{"action":{"type":"tool_call","tool":"kernel_trace","arguments":{"from":"...","to":"...","goal":"Writer pre-read trace","role":"operator","budget":{"depth":1,"tokens":1600},"page":{"entries":16}}}}
+{"action":{"kind":"tool_call","tool":"kernel_trace","arguments":{"from":"...","to":"...","page":16}}}
 
-{"action":{"type":"tool_call","tool":"kernel_inspect","arguments":{"ref":"...","include":{"details":true,"incoming":true,"outgoing":true,"raw":false}}}}
+{"action":{"kind":"tool_call","tool":"kernel_inspect","arguments":{"target":"..."}}}
 
-{"action":{"type":"stop","answer_policy":"evidence_or_unknown","final_refs":["..."],"reason":"sufficient_evidence"}}
+{"action":{"kind":"stop","reason":"answer_ready","evidence":["..."]}}
 
 Rules:
 - Use only tools present in `allowed_tools`.
 - Use only refs visible in `current_ref`, `trace_target_ref`, `candidate_refs`, `candidate_ref_details`, `known_refs`, `last_observed_refs`, or `read_context`.
 - If `visible_state` contains `requested_move`, `requested_bounds`, `requested_trace`, `inspection_request`, or `requested_stop`, copy those requested fields exactly into the matching action.
-- If `requested_move` is present, its `kind` is the tool to call and its `cursor_key` is the cursor argument name.
+- If `requested_move` is present, its `kind` is the tool to call and its payload must match the compact DTO for that tool.
 - If `requested_trace`, `inspection_request`, or `requested_stop` is present, choose `kernel_trace`, `kernel_inspect`, or `stop` respectively.
 - Prefer `candidate_ref_details` when choosing between writer candidates.
 - Every tool call must be bounded.
-- For tools with `arguments.about`, that value must equal the top-level `about` value exactly.
-- Do not use `current_ref` as `arguments.about`.
-- `kernel_inspect` arguments must use the key `ref`, never `an`, `id`, or `target`.
-- `kernel_inspect.include.raw` must be false.
+- `kernel_inspect` arguments must use the key `target`, never `ref`, `an`, or `id`.
 - Stop only when the visible read context is sufficient for a writer to justify the next memory relation.
 """
 
@@ -167,11 +156,11 @@ Do not copy full write payloads. Select the prepared payload source and let the 
 
 Allowed action shapes:
 
-{"action":{"type":"prepared_tool_call","tool":"kernel_write_memory","source":"draft_write.prepared_arguments"}}
+{"action":{"kind":"prepared_tool_call","tool":"kernel_write_memory","source":"draft_write.prepared_arguments"}}
 
-{"action":{"type":"prepared_tool_call","tool":"kernel_ingest","source":"canonical_payload"}}
+{"action":{"kind":"prepared_tool_call","tool":"kernel_ingest","source":"canonical_payload"}}
 
-{"action":{"type":"stop","answer_policy":"evidence_or_unknown","final_refs":["..."],"reason":"sufficient_evidence"}}
+{"action":{"kind":"stop","reason":"no_candidate"}}
 
 Rules:
 - Use only tools present in `allowed_tools`.
@@ -199,30 +188,27 @@ The semantic write payload is prepared outside this model. Do not copy or recons
 
 Allowed action shapes:
 
-{"action":{"type":"tool_call","tool":"kernel_near","arguments":{"about":"...","around":{"ref":"..."},"dimensions":{"mode":"all","scope":"current_about"},"include":{"evidence":true,"raw_refs":false,"relations":true},"limit":{"entries":12,"tokens":2400},"budget":{"depth":3,"tokens":2400},"window":{"before_entries":6,"after_entries":0}}}}
+{"action":{"kind":"tool_call","tool":"kernel_near","arguments":{"anchor":"...","dimensions":["..."],"limit":12}}}
 
-{"action":{"type":"tool_call","tool":"kernel_trace","arguments":{"from":"...","to":"...","goal":"Writer orchestration trace","role":"operator","budget":{"depth":1,"tokens":1600},"page":{"entries":16}}}}
+{"action":{"kind":"tool_call","tool":"kernel_trace","arguments":{"from":"...","to":"...","page":16}}}
 
-{"action":{"type":"tool_call","tool":"kernel_inspect","arguments":{"ref":"...","include":{"details":true,"incoming":true,"outgoing":true,"raw":false}}}}
+{"action":{"kind":"tool_call","tool":"kernel_inspect","arguments":{"target":"..."}}}
 
-{"action":{"type":"prepared_tool_call","tool":"kernel_write_memory","source":"draft_write.prepared_arguments"}}
+{"action":{"kind":"prepared_tool_call","tool":"kernel_write_memory","source":"draft_write.prepared_arguments"}}
 
-{"action":{"type":"prepared_tool_call","tool":"kernel_ingest","source":"canonical_payload"}}
+{"action":{"kind":"prepared_tool_call","tool":"kernel_ingest","source":"canonical_payload"}}
 
-{"action":{"type":"stop","answer_policy":"evidence_or_unknown","final_refs":["..."],"reason":"sufficient_evidence"}}
+{"action":{"kind":"stop","reason":"no_candidate"}}
 
 Rules:
 - Use only tools present in `allowed_tools`.
 - Use only refs visible in `current_ref`, `trace_target_ref`, `candidate_refs`, `candidate_ref_details`, `known_refs`, `last_observed_refs`, or `read_context`.
 - If `visible_state` contains `requested_move`, `requested_bounds`, `requested_trace`, `inspection_request`, or `requested_stop`, copy those requested fields exactly into the matching action.
-- If `requested_move` is present, its `kind` is the tool to call and its `cursor_key` is the cursor argument name.
+- If `requested_move` is present, its `kind` is the tool to call and its payload must match the compact DTO for that tool.
 - If `requested_trace`, `inspection_request`, or `requested_stop` is present, choose `kernel_trace`, `kernel_inspect`, or `stop` respectively.
 - Prefer `candidate_ref_details` when choosing between writer candidates.
 - Every read tool call must be bounded.
-- For read tools with `arguments.about`, that value must equal the top-level `about` value exactly.
-- Do not use `current_ref` as `arguments.about`.
-- `kernel_inspect` arguments must use the key `ref`, never `an`, `id`, or `target`.
-- `kernel_inspect.include.raw` must be false.
+- `kernel_inspect` arguments must use the key `target`, never `ref`, `an`, or `id`.
 - If the writer needs more evidence to justify a relation, choose a bounded read tool.
 - If `visible_state.draft_write.prepared_arguments` is complete and valid, call `kernel_write_memory` with source `draft_write.prepared_arguments`.
 - If `visible_state.canonical_payload_ready=true` and `visible_state.canonical_payload` is complete and valid, call `kernel_ingest` with source `canonical_payload`.
@@ -625,7 +611,7 @@ def main() -> None:
                         "run_id": item.get("run_id"),
                         "mode": item.get("mode"),
                         "tool": item.get("target_action", {}).get("tool"),
-                        "action_type": item.get("target_action", {}).get("type"),
+                        "action_kind": item.get("target_action", {}).get("kind"),
                         "missing_refs": sorted(missing_refs),
                     }
                 )
@@ -652,7 +638,7 @@ def main() -> None:
                         "run_id": item.get("run_id"),
                         "mode": item.get("mode"),
                         "tool": item.get("target_action", {}).get("tool"),
-                        "action_type": item.get("target_action", {}).get("type"),
+                        "action_kind": item.get("target_action", {}).get("kind"),
                         "missing_cursors": missing_cursors,
                     }
                 )
@@ -934,7 +920,7 @@ def cap_duplicate_model_rows(
                 "run_id": trajectory.get("run_id"),
                 "mode": trajectory.get("mode"),
                 "tool": trajectory.get("target_action", {}).get("tool"),
-                "action_type": trajectory.get("target_action", {}).get("type"),
+                "action_kind": trajectory.get("target_action", {}).get("kind"),
                 **details,
             }
         )
@@ -990,7 +976,7 @@ def drop_eval_model_row_overlap(
                 "run_id": trajectory.get("run_id"),
                 "mode": trajectory.get("mode"),
                 "tool": trajectory.get("target_action", {}).get("tool"),
-                "action_type": trajectory.get("target_action", {}).get("type"),
+                "action_kind": trajectory.get("target_action", {}).get("kind"),
                 **details,
             }
         )
@@ -1849,12 +1835,12 @@ def writer_exec_capabilities(trajectory: dict[str, Any]) -> set[str]:
 
 def action_capabilities(action: dict[str, Any]) -> set[str]:
     capabilities: set[str] = set()
-    action_type = action.get("type")
-    if action_type == "stop":
+    action_kind = action.get("kind")
+    if action_kind == "stop":
         capabilities.add(CAP_TOOL_STOP)
         capabilities.add(CAP_WINDOW_STOP_SUFFICIENT)
         return capabilities
-    if action_type != "tool_call":
+    if action_kind != "tool_call":
         return capabilities
 
     tool = action.get("tool")
@@ -2105,9 +2091,8 @@ def to_sft_row(
         "visible_state": visible_state,
     }
     assistant_payload = {"action": assistant_action}
-    return {
+    row = {
         "id": item["step_id"],
-        "run_id": item["run_id"],
         "step_id": item["step_id"],
         "task_family": item["task_family"],
         "mode": item["mode"],
@@ -2125,24 +2110,28 @@ def to_sft_row(
             },
         ],
     }
+    run_id = item.get("run_id")
+    if isinstance(run_id, str) and run_id:
+        row["run_id"] = run_id
+    return row
 
 
 def model_facing_target_action(item: dict[str, Any], prompt_profile: str) -> dict[str, Any]:
     action = item["target_action"]
     if prompt_profile not in {"writer-exec", "writer-orchestration"}:
         return action
-    if action.get("type") != "tool_call":
+    if action.get("kind") != "tool_call":
         return action
     tool = action.get("tool")
     if tool == "kernel_write_memory":
         return {
-            "type": "prepared_tool_call",
+            "kind": "prepared_tool_call",
             "tool": "kernel_write_memory",
             "source": "draft_write.prepared_arguments",
         }
     if tool == "kernel_ingest":
         return {
-            "type": "prepared_tool_call",
+            "kind": "prepared_tool_call",
             "tool": "kernel_ingest",
             "source": "canonical_payload",
         }
@@ -2189,36 +2178,21 @@ def assert_model_facing_action_allowed(
             f"{item.get('step_id')} model-facing action violates operator "
             f"contract: {shape_error}"
         )
-    action_type = action.get("type")
-    if action_type == "stop":
-        expected_keys = {"type", "answer_policy", "final_refs", "reason"}
+    action_kind = action.get("kind")
+    if action_kind == "stop":
+        expected_keys = {"kind", "reason"}
+        optional_keys = {"answer", "evidence"}
         actual_keys = set(action.keys())
-        if actual_keys != expected_keys:
+        if not expected_keys.issubset(actual_keys) or actual_keys - expected_keys - optional_keys:
             raise ValueError(
-                f"{item.get('step_id')} stop action must have exactly "
-                f"{sorted(expected_keys)}; got {sorted(actual_keys)}"
-            )
-        if action.get("answer_policy") not in {
-            "evidence_or_unknown",
-            "show_conflicts",
-            "best_effort",
-        }:
-            raise ValueError(
-                f"{item.get('step_id')} stop action has unsupported answer_policy"
-            )
-        if not isinstance(action.get("reason"), str) or not action["reason"]:
-            raise ValueError(f"{item.get('step_id')} stop action missing reason")
-        final_refs = action.get("final_refs")
-        if not isinstance(final_refs, list) or not all(
-            isinstance(ref, str) and ref for ref in final_refs
-        ):
-            raise ValueError(
-                f"{item.get('step_id')} stop action has invalid final_refs"
+                f"{item.get('step_id')} stop action must have required keys "
+                f"{sorted(expected_keys)} and optional keys {sorted(optional_keys)}; "
+                f"got {sorted(actual_keys)}"
             )
         return
-    if action_type not in {"tool_call", "prepared_tool_call"}:
+    if action_kind not in {"tool_call", "prepared_tool_call"}:
         raise ValueError(
-            f"{item.get('step_id')} unsupported model-facing action type `{action_type}`"
+            f"{item.get('step_id')} unsupported model-facing action kind `{action_kind}`"
         )
     tool = action.get("tool")
     if tool not in allowed_tools:
@@ -2226,8 +2200,8 @@ def assert_model_facing_action_allowed(
             f"{item.get('step_id')} target tool `{tool}` is not allowed by "
             f"model-facing profile tools: {allowed_tools}"
         )
-    if action_type == "prepared_tool_call":
-        expected_keys = {"type", "tool", "source"}
+    if action_kind == "prepared_tool_call":
+        expected_keys = {"kind", "tool", "source"}
         actual_keys = set(action.keys())
         if actual_keys != expected_keys:
             raise ValueError(
@@ -2275,7 +2249,7 @@ def assert_prepared_payload_visible_and_matches_target(
     target_action = item.get("target_action")
     if not isinstance(target_action, dict):
         raise ValueError(f"{item.get('step_id')} target_action is not an object")
-    if target_action.get("type") != "tool_call" or target_action.get("tool") != tool:
+    if target_action.get("kind") != "tool_call" or target_action.get("tool") != tool:
         raise ValueError(
             f"{item.get('step_id')} prepared payload target mismatch for `{tool}`"
         )
@@ -2285,7 +2259,7 @@ def assert_prepared_payload_visible_and_matches_target(
             "target_action.arguments"
         )
     resolved_action = {
-        "type": "tool_call",
+        "kind": "tool_call",
         "tool": tool,
         "arguments": payload,
     }
@@ -2392,7 +2366,7 @@ def build_debug_audit_row(item: dict[str, Any]) -> dict[str, Any]:
         "split": None,
         "drop_reasons": [],
         "target": {
-            "action_type": action.get("type"),
+            "action_kind": action.get("kind"),
             "tool": action.get("tool"),
             "argument_keys": target_argument_keys(action),
             "capabilities": sorted(action_capabilities(action)),
@@ -2429,7 +2403,7 @@ def target_argument_keys(action: dict[str, Any]) -> list[str]:
 
 def target_cursor_values(item: dict[str, Any]) -> list[dict[str, str]]:
     action = item.get("target_action", {})
-    if action.get("type") != "tool_call":
+    if action.get("kind") != "tool_call":
         return []
     tool = action.get("tool")
     args = action.get("arguments")
@@ -2508,7 +2482,7 @@ def missing_visible_target_refs(item: dict[str, Any]) -> set[str]:
 def missing_visible_target_cursors(item: dict[str, Any]) -> list[dict[str, str]]:
     visible = visible_cursor_values(item.get("visible_state", {}))
     action = item.get("target_action", {})
-    if action.get("type") != "tool_call":
+    if action.get("kind") != "tool_call":
         return []
 
     tool = action.get("tool")
@@ -2635,10 +2609,10 @@ def collect_visible_payload_refs(value: Any, refs: set[str]) -> None:
 
 def target_primary_refs(item: dict[str, Any]) -> set[str]:
     action = item.get("target_action", {})
-    if action.get("type") == "stop":
-        refs = action.get("final_refs", [])
+    if action.get("kind") == "stop":
+        refs = action.get("evidence", [])
         return {ref for ref in refs if isinstance(ref, str)}
-    if action.get("type") != "tool_call":
+    if action.get("kind") != "tool_call":
         return set()
 
     args = action.get("arguments", {})
@@ -2852,15 +2826,15 @@ def inject_target_request_fields(item: dict[str, Any]) -> dict[str, Any]:
     action = cloned.get("target_action")
     if not isinstance(action, dict):
         return cloned
-    action_type = action.get("type")
-    if action_type == "stop":
+    action_kind = action.get("kind")
+    if action_kind == "stop":
         state["requested_stop"] = {
             key: value
             for key, value in action.items()
-            if key in {"answer_policy", "final_refs", "reason"}
+            if key in {"answer", "evidence", "reason"}
         }
         return cloned
-    if action_type != "tool_call":
+    if action_kind != "tool_call":
         return cloned
 
     tool = action.get("tool")
@@ -2943,16 +2917,16 @@ def count_actions(rows: list[dict[str, Any]]) -> dict[str, int]:
     for row in rows:
         assistant = row["messages"][-1]["content"]
         action = json.loads(assistant)["action"]
-        if action.get("type") == "tool_call":
+        if action.get("kind") == "tool_call":
             label = f"tool_call:{action.get('tool', 'unknown')}"
-        elif action.get("type") == "prepared_tool_call":
+        elif action.get("kind") == "prepared_tool_call":
             label = (
                 "prepared_tool_call:"
                 f"{action.get('tool', 'unknown')}:"
                 f"{action.get('source', 'unknown')}"
             )
         else:
-            label = str(action.get("type", "unknown"))
+            label = str(action.get("kind", "unknown"))
         counts[label] = counts.get(label, 0) + 1
     return dict(sorted(counts.items()))
 
@@ -2989,9 +2963,7 @@ def answer_policy_label(trajectory: dict[str, Any]) -> list[str]:
     action = trajectory.get("target_action")
     if not isinstance(action, dict):
         return []
-    if action.get("type") == "stop":
-        policy = action.get("answer_policy")
-    elif action.get("tool") == "kernel_ask":
+    if action.get("tool") == "kernel_ask":
         policy = (action.get("arguments") or {}).get("answer_policy")
     else:
         return []
@@ -3000,7 +2972,7 @@ def answer_policy_label(trajectory: dict[str, Any]) -> list[str]:
 
 def budget_detail_label(trajectory: dict[str, Any]) -> list[str]:
     action = trajectory.get("target_action")
-    if not isinstance(action, dict) or action.get("type") != "tool_call":
+    if not isinstance(action, dict) or action.get("kind") != "tool_call":
         return []
     arguments = action.get("arguments")
     if not isinstance(arguments, dict):
@@ -3014,7 +2986,7 @@ def budget_detail_label(trajectory: dict[str, Any]) -> list[str]:
 
 def dimension_scope_ids_label(trajectory: dict[str, Any]) -> list[str]:
     action = trajectory.get("target_action")
-    if not isinstance(action, dict) or action.get("type") != "tool_call":
+    if not isinstance(action, dict) or action.get("kind") != "tool_call":
         return []
     arguments = action.get("arguments")
     if not isinstance(arguments, dict):
@@ -3030,7 +3002,7 @@ def dimension_scope_ids_label(trajectory: dict[str, Any]) -> list[str]:
 
 def raw_access_label(trajectory: dict[str, Any]) -> list[str]:
     action = trajectory.get("target_action")
-    if not isinstance(action, dict) or action.get("type") != "tool_call":
+    if not isinstance(action, dict) or action.get("kind") != "tool_call":
         return []
     tool = action.get("tool")
     arguments = action.get("arguments")
@@ -3181,7 +3153,7 @@ def target_tool_arguments(trajectory: dict[str, Any], tool: str) -> dict[str, An
     action = trajectory.get("target_action")
     if not isinstance(action, dict):
         return None
-    if action.get("type") != "tool_call" or action.get("tool") != tool:
+    if action.get("kind") != "tool_call" or action.get("tool") != tool:
         return None
     arguments = action.get("arguments")
     return arguments if isinstance(arguments, dict) else None

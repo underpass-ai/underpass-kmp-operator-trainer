@@ -266,8 +266,8 @@ def validate_sft_rows(rows: list[dict[str, Any]], label: str) -> None:
                 f"{label} row {index}: target action violates strict contract: "
                 f"{shape_error}"
             )
-        action_type = action.get("type")
-        if action_type in {"tool_call", "prepared_tool_call"}:
+        action_kind = action.get("kind")
+        if action_kind in {"tool_call", "prepared_tool_call"}:
             tool = action.get("tool")
             if tool not in allowed_tools:
                 raise SystemExit(
