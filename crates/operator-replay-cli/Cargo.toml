@@ -1,0 +1,27 @@
+[package]
+name = "operator-replay-cli"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Operator: replay bounded context — command-line tools."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "operator-replay"
+path = "src/bin/operator_replay.rs"
+
+[dependencies]
+operator-replay-application.workspace = true
+operator-replay-domain.workspace = true
+operator-replay-infra.workspace = true
+operator-shared-contract.workspace = true
+operator-shared-domain.workspace = true
+operator-shared-infra.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
