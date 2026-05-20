@@ -2,6 +2,10 @@ use crate::error::domain_error::DomainError;
 use crate::error::domain_result::DomainResult;
 use crate::value_objects::non_empty_string::NonEmptyString;
 
+// kernel-source:
+// - crates/rehydration-mcp/src/grpc/requests/ingest.rs:160-168 enforces canonical rel wire values.
+// - crates/rehydration-domain/src/value_objects/relation_type.rs:143-180 defines accepted aliases.
+// - crates/rehydration-domain/src/value_objects/relation_type.rs:185-220 defines canonical values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IngestRelationType {
     canonical: NonEmptyString,

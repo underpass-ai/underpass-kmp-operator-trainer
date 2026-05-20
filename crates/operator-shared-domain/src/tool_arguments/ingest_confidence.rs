@@ -1,6 +1,10 @@
 use crate::error::domain_error::DomainError;
 use crate::error::domain_result::DomainResult;
 
+// kernel-source:
+// - api/proto/underpass/rehydration/kernel/v1beta1/memory.proto:422-428 defines MemoryConfidence.
+// - crates/rehydration-mcp/src/grpc/requests/common.rs:294-309 maps MCP strings to proto enum.
+// - crates/rehydration-mcp/src/grpc/requests/ingest.rs:173-181 makes non-structural confidence required.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IngestConfidence {
     High,

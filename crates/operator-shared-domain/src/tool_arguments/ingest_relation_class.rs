@@ -1,6 +1,10 @@
 use crate::error::domain_error::DomainError;
 use crate::error::domain_result::DomainResult;
 
+// kernel-source:
+// - api/proto/underpass/rehydration/kernel/v1beta1/memory.proto:430-438 defines MemorySemanticClass.
+// - crates/rehydration-mcp/src/grpc/requests/common.rs:276-291 maps MCP strings to proto enum.
+// - crates/rehydration-mcp/src/grpc/requests/ingest.rs:169 consumes memory.relations[].class.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IngestRelationClass {
     Structural,
