@@ -565,6 +565,7 @@ dependencies = [
  "operator-shared-contract",
  "operator-shared-domain",
  "operator-shared-infra",
+ "serde",
  "serde_json",
  "thiserror",
 ]
@@ -581,10 +582,12 @@ dependencies = [
 name = "operator-evaluation-infra"
 version = "0.1.0"
 dependencies = [
+ "operator-evaluation-application",
  "operator-evaluation-domain",
  "operator-shared-contract",
  "operator-shared-domain",
  "operator-shared-infra",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror",
