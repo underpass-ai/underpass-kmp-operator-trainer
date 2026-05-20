@@ -1,6 +1,7 @@
 use operator_shared_contract::per_tool::ask_arguments_dto::AskArgumentsDto;
 use operator_shared_contract::per_tool::forward_arguments_dto::ForwardArgumentsDto;
 use operator_shared_contract::per_tool::goto_arguments_dto::GotoArgumentsDto;
+use operator_shared_contract::per_tool::ingest_arguments_dto::IngestArgumentsDto;
 use operator_shared_contract::per_tool::inspect_arguments_dto::InspectArgumentsDto;
 use operator_shared_contract::per_tool::near_arguments_dto::NearArgumentsDto;
 use operator_shared_contract::per_tool::rewind_arguments_dto::RewindArgumentsDto;
@@ -29,6 +30,7 @@ use operator_shared_domain::value_objects::positive_count::PositiveCount;
 use serde::de::DeserializeOwned;
 
 use crate::mappers::cursor_mapper::CursorMapper;
+use crate::mappers::ingest_arguments_mapper::IngestArgumentsMapper;
 use crate::mappers::mapping_error::MappingError;
 
 #[derive(Debug)]
@@ -38,6 +40,12 @@ impl ToolArgumentsMapper {
     pub fn to_domain(dto: &ToolArgumentsDto) -> Result<ToolArguments, MappingError> {
         let tool = KernelTool::parse(&dto.tool)?;
         match tool {
+            KernelTool::Ingest => {
+                let ingest: IngestArgumentsDto = decode(&dto.arguments, "kernel_ingest")?;
+                Ok(ToolArguments::Ingest(IngestArgumentsMapper::to_domain(
+                    ingest,
+                )?))
+            }
             KernelTool::Wake => {
                 let wake: WakeArgumentsDto = decode(&dto.arguments, "kernel_wake")?;
                 Ok(ToolArguments::Wake(WakeArguments::new(AboutId::parse(
@@ -126,6 +134,11 @@ impl ToolArgumentsMapper {
 
     pub fn to_dto(domain: &ToolArguments) -> Result<ToolArgumentsDto, MappingError> {
         let (tool, arguments) = match domain {
+            ToolArguments::Ingest(i) => (
+                KernelTool::Ingest,
+                serde_json::to_value(IngestArgumentsMapper::to_dto(i))
+                    .map_err(|e| serde_err("kernel_ingest", &e))?,
+            ),
             ToolArguments::Wake(w) => (
                 KernelTool::Wake,
                 serde_json::to_value(WakeArgumentsDto {

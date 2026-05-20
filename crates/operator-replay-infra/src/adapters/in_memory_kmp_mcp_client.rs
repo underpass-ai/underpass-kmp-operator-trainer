@@ -21,6 +21,7 @@ use operator_shared_domain::tool::kernel_tool::KernelTool;
 use operator_shared_domain::tool_arguments::ask_arguments::AskArguments;
 use operator_shared_domain::tool_arguments::forward_arguments::ForwardArguments;
 use operator_shared_domain::tool_arguments::goto_arguments::GotoArguments;
+use operator_shared_domain::tool_arguments::ingest_arguments::IngestArguments;
 use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
 use operator_shared_domain::tool_arguments::near_arguments::NearArguments;
 use operator_shared_domain::tool_arguments::rewind_arguments::RewindArguments;
@@ -30,6 +31,7 @@ use operator_shared_domain::tool_arguments::write_memory_arguments::WriteMemoryA
 use operator_shared_domain::tool_outcomes::ask_outcome::AskOutcome;
 use operator_shared_domain::tool_outcomes::forward_outcome::ForwardOutcome;
 use operator_shared_domain::tool_outcomes::goto_outcome::GotoOutcome;
+use operator_shared_domain::tool_outcomes::ingest_outcome::IngestOutcome;
 use operator_shared_domain::tool_outcomes::inspect_outcome::InspectOutcome;
 use operator_shared_domain::tool_outcomes::near_outcome::NearOutcome;
 use operator_shared_domain::tool_outcomes::rewind_outcome::RewindOutcome;
@@ -39,13 +41,7 @@ use operator_shared_domain::tool_outcomes::write_memory_outcome::WriteMemoryOutc
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
 use operator_shared_domain::value_objects::non_empty_string::NonEmptyString;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FailureMode {
-    Transport,
-    Protocol,
-    InvalidArguments,
-    MalformedResponse,
-}
+use crate::adapters::failure_mode::FailureMode;
 
 #[derive(Debug)]
 pub struct InMemoryKmpMcpClient {
@@ -112,6 +108,19 @@ fn surfaced_ref() -> MemoryRef {
 }
 
 impl KmpMcpClient for InMemoryKmpMcpClient {
+    fn ingest(&self, args: &IngestArguments) -> Result<IngestOutcome, KmpClientError> {
+        if self.should_fail(KernelTool::Ingest) {
+            return Err(self.failure_for("kernel_ingest"));
+        }
+        Ok(IngestOutcome::new(
+            summary("stub ingest"),
+            args.about().clone(),
+            summary("memory:stub"),
+            !args.dry_run(),
+            vec![],
+        ))
+    }
+
     fn wake(&self, _args: &WakeArguments) -> Result<WakeOutcome, KmpClientError> {
         if self.should_fail(KernelTool::Wake) {
             return Err(self.failure_for("kernel_wake"));

@@ -44,6 +44,7 @@ mod tests {
     use crate::action::stop_action::StopAction;
     use crate::action::stop_reason::StopReason;
     use crate::action::tool_call_action::ToolCallAction;
+    use crate::ids::about_id::AboutId;
     use crate::mode::operator_mode::OperatorMode;
     use crate::tool_arguments::inspect_arguments::InspectArguments;
     use crate::tool_arguments::tool_arguments::ToolArguments;
@@ -51,13 +52,19 @@ mod tests {
     use crate::value_objects::memory_ref::MemoryRef;
     use crate::visible_state::visible_state_builder::VisibleStateBuilder;
 
+    fn about() -> AboutId {
+        AboutId::parse("about:tool").unwrap()
+    }
+
     #[test]
     fn accepts_inspect_in_read_mode() {
         let visible = VisibleStateBuilder::new().build();
         let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
             InspectArguments::new(MemoryRef::parse("node:1").unwrap()),
         )));
-        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        let case_about = about();
+        let subject =
+            ActionContractSubject::new(&action, &case_about, OperatorMode::Read, &visible);
         assert!(ToolWithinModeSpec::new().evaluate(&subject).is_ok());
     }
 
@@ -67,7 +74,9 @@ mod tests {
         let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::WriteMemory(
             WriteMemoryArguments::new("s", "b", vec![]).unwrap(),
         )));
-        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        let case_about = about();
+        let subject =
+            ActionContractSubject::new(&action, &case_about, OperatorMode::Read, &visible);
         let err = ToolWithinModeSpec::new().evaluate(&subject).unwrap_err();
         assert_eq!(err.code(), ContractViolationCode::ToolOutsideMode);
     }
@@ -77,7 +86,8 @@ mod tests {
         let visible = VisibleStateBuilder::new().build();
         let stop =
             OperatorAction::Stop(StopAction::new(StopReason::NoCandidate, None, vec![]).unwrap());
-        let subject = ActionContractSubject::new(&stop, OperatorMode::Read, &visible);
+        let case_about = about();
+        let subject = ActionContractSubject::new(&stop, &case_about, OperatorMode::Read, &visible);
         assert!(ToolWithinModeSpec::new().evaluate(&subject).is_ok());
     }
 }

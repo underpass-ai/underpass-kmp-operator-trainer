@@ -1,5 +1,6 @@
 pub mod around_cursor;
 pub mod cursor;
+pub mod cursor_kind;
 pub mod ref_cursor;
 pub mod temporal_anchor;
 pub mod temporal_cursor;

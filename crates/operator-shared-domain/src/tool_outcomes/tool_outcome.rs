@@ -7,6 +7,7 @@ use crate::tool::kernel_tool::KernelTool;
 use crate::tool_outcomes::ask_outcome::AskOutcome;
 use crate::tool_outcomes::forward_outcome::ForwardOutcome;
 use crate::tool_outcomes::goto_outcome::GotoOutcome;
+use crate::tool_outcomes::ingest_outcome::IngestOutcome;
 use crate::tool_outcomes::inspect_outcome::InspectOutcome;
 use crate::tool_outcomes::near_outcome::NearOutcome;
 use crate::tool_outcomes::rewind_outcome::RewindOutcome;
@@ -16,6 +17,7 @@ use crate::tool_outcomes::write_memory_outcome::WriteMemoryOutcome;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolOutcome {
+    Ingest(IngestOutcome),
     Wake(WakeOutcome),
     Ask(AskOutcome),
     Near(NearOutcome),
@@ -30,6 +32,7 @@ pub enum ToolOutcome {
 impl ToolOutcome {
     pub fn tool(&self) -> KernelTool {
         match self {
+            Self::Ingest(_) => KernelTool::Ingest,
             Self::Wake(_) => KernelTool::Wake,
             Self::Ask(_) => KernelTool::Ask,
             Self::Near(_) => KernelTool::Near,
@@ -49,6 +52,7 @@ mod tests {
     use crate::cursor::temporal_anchor::TemporalAnchor;
     use crate::cursor::temporal_cursor::TemporalCursor;
     use crate::cursor::temporal_cursor_key::TemporalCursorKey;
+    use crate::ids::about_id::AboutId;
     use crate::value_objects::memory_ref::MemoryRef;
     use crate::value_objects::non_empty_string::NonEmptyString;
 
@@ -62,7 +66,17 @@ mod tests {
 
     #[test]
     fn every_variant_resolves_to_its_kernel_tool() {
-        let cases: [(ToolOutcome, KernelTool); 9] = [
+        let cases: [(ToolOutcome, KernelTool); 10] = [
+            (
+                ToolOutcome::Ingest(IngestOutcome::new(
+                    summary("ingest"),
+                    AboutId::parse("about:1").unwrap(),
+                    summary("memory:1"),
+                    false,
+                    vec![],
+                )),
+                KernelTool::Ingest,
+            ),
             (
                 ToolOutcome::Wake(WakeOutcome::new(summary("w"), vec![])),
                 KernelTool::Wake,

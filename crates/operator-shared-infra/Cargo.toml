@@ -14,6 +14,7 @@ workspace = true
 operator-shared-application.workspace = true
 operator-shared-contract.workspace = true
 operator-shared-domain.workspace = true
+chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

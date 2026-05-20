@@ -1,4 +1,5 @@
 use crate::action::escalate_action::EscalateAction;
+use crate::action::operator_action_kind::OperatorActionKind;
 use crate::action::stop_action::StopAction;
 use crate::action::tool_call_action::ToolCallAction;
 use crate::tool::kernel_tool::KernelTool;
@@ -33,23 +34,6 @@ impl OperatorAction {
     /// the intent explicit at call sites.
     pub fn consumes_tool_slot(&self) -> bool {
         matches!(self, Self::ToolCall(_))
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum OperatorActionKind {
-    ToolCall,
-    Stop,
-    Escalate,
-}
-
-impl OperatorActionKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::ToolCall => "tool_call",
-            Self::Stop => "stop",
-            Self::Escalate => "escalate",
-        }
     }
 }
 

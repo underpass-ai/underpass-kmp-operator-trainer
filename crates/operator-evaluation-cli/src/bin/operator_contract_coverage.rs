@@ -23,7 +23,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use operator_shared_contract::training_trajectory_dto::TrainingTrajectoryDto;
-use operator_shared_domain::action::operator_action::OperatorActionKind;
+use operator_shared_domain::action::operator_action_kind::OperatorActionKind;
 use operator_shared_domain::contract::action_contract_validator::ActionContractValidator;
 use operator_shared_domain::contract::composite_action_contract_validator::CompositeActionContractValidator;
 use operator_shared_domain::mode::operator_mode::OperatorMode;
@@ -150,7 +150,12 @@ fn compute_report<V: ActionContractValidator>(
             .per_mode
             .entry(trajectory.mode().as_str())
             .or_insert(0) += 1;
-        match validator.validate(action, trajectory.mode(), trajectory.visible_state()) {
+        match validator.validate(
+            action,
+            trajectory.about(),
+            trajectory.mode(),
+            trajectory.visible_state(),
+        ) {
             Ok(()) => report.valid += 1,
             Err(_) => report.invalid += 1,
         }

@@ -112,7 +112,9 @@ schema validator becomes useful, it lands as a follow-up PR.
   timeout) or `with_client(endpoint, client)` to inject a caller-built
   `reqwest::blocking::Client` (custom TLS, proxies, etc.). Request id
   generation is internal, monotonic, and lock-free (`AtomicU64`).
-- `jsonrpc/tools_call_request.rs`, `jsonrpc/tools_call_response.rs`,
+- `jsonrpc/tools_call_request.rs`, `jsonrpc/tools_call_params.rs`,
+  `jsonrpc/tools_call_response.rs`, `jsonrpc/tools_call_result.rs`,
+  `jsonrpc/tools_call_result_content.rs`, `jsonrpc/envelope_violation.rs`,
   `jsonrpc/json_rpc_error.rs` — serde DTOs for the JSON-RPC 2.0
   `tools/call` envelope. `ToolsCallResponse::validate` enforces §5.1
   (`jsonrpc == "2.0"`, `id` present and matches the request, exactly
@@ -121,10 +123,8 @@ schema validator becomes useful, it lands as a follow-up PR.
   accepts both the modern `result.structuredContent` field and the
   legacy `result.content[0].text` JSON-encoded payload that older MCP
   servers return, so the adapter is wire-compatible with both shapes.
-  `tools_call_request.rs` and `tools_call_response.rs` are listed in
-  the `one_file_one_class` architecture test's `KNOWN_EXCEPTIONS`
-  allow-list as intrinsically paired envelope DTOs; `JsonRpcError`
-  lives in its own file.
+  Each public DTO or enum lives in its own source file; there is no
+  exception list for `one_file_one_class`.
 - `mappers/*_response_mapper.rs` — one mapper per tool. Each takes the
   structured `serde_json::Value`, validates required fields, and
   returns the typed `*Outcome` value object from
@@ -141,7 +141,7 @@ schema validator becomes useful, it lands as a follow-up PR.
 `crates/operator-replay-infra/tests/end_to_end.rs` covers four
 scenarios against `InMemoryKmpMcpClient`:
 
-1. Every-tool happy path — 9 successful tool calls, 100% success
+1. Every-tool happy path — 10 successful tool calls, 100% success
    rate.
 2. Stop + Escalate → `NoToolCall` and a 0% rate by convention.
 3. Always-failing client — 9 `ToolCallFailed` entries, the originally

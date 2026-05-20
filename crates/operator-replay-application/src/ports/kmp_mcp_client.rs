@@ -11,6 +11,7 @@
 use operator_shared_domain::tool_arguments::ask_arguments::AskArguments;
 use operator_shared_domain::tool_arguments::forward_arguments::ForwardArguments;
 use operator_shared_domain::tool_arguments::goto_arguments::GotoArguments;
+use operator_shared_domain::tool_arguments::ingest_arguments::IngestArguments;
 use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
 use operator_shared_domain::tool_arguments::near_arguments::NearArguments;
 use operator_shared_domain::tool_arguments::rewind_arguments::RewindArguments;
@@ -20,6 +21,7 @@ use operator_shared_domain::tool_arguments::write_memory_arguments::WriteMemoryA
 use operator_shared_domain::tool_outcomes::ask_outcome::AskOutcome;
 use operator_shared_domain::tool_outcomes::forward_outcome::ForwardOutcome;
 use operator_shared_domain::tool_outcomes::goto_outcome::GotoOutcome;
+use operator_shared_domain::tool_outcomes::ingest_outcome::IngestOutcome;
 use operator_shared_domain::tool_outcomes::inspect_outcome::InspectOutcome;
 use operator_shared_domain::tool_outcomes::near_outcome::NearOutcome;
 use operator_shared_domain::tool_outcomes::rewind_outcome::RewindOutcome;
@@ -30,6 +32,7 @@ use operator_shared_domain::tool_outcomes::write_memory_outcome::WriteMemoryOutc
 use crate::error::kmp_client_error::KmpClientError;
 
 pub trait KmpMcpClient: std::fmt::Debug + Send + Sync {
+    fn ingest(&self, args: &IngestArguments) -> Result<IngestOutcome, KmpClientError>;
     fn wake(&self, args: &WakeArguments) -> Result<WakeOutcome, KmpClientError>;
     fn ask(&self, args: &AskArguments) -> Result<AskOutcome, KmpClientError>;
     fn near(&self, args: &NearArguments) -> Result<NearOutcome, KmpClientError>;

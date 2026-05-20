@@ -39,6 +39,7 @@ mod tests {
     use crate::action::stop_action::StopAction;
     use crate::action::stop_reason::StopReason;
     use crate::action::tool_call_action::ToolCallAction;
+    use crate::ids::about_id::AboutId;
     use crate::mode::operator_mode::OperatorMode;
     use crate::tool_arguments::inspect_arguments::InspectArguments;
     use crate::tool_arguments::tool_arguments::ToolArguments;
@@ -52,13 +53,19 @@ mod tests {
         )))
     }
 
+    fn about() -> AboutId {
+        AboutId::parse("about:budget").unwrap()
+    }
+
     #[test]
     fn accepts_when_budget_allows_a_call() {
         let visible = VisibleStateBuilder::new()
             .with_budget(BudgetSnapshot::bounded(1, 100))
             .build();
         let action = inspect_action();
-        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        let case_about = about();
+        let subject =
+            ActionContractSubject::new(&action, &case_about, OperatorMode::Read, &visible);
         assert!(BudgetAllowsActionSpec::new().evaluate(&subject).is_ok());
     }
 
@@ -68,7 +75,9 @@ mod tests {
             .with_budget(BudgetSnapshot::bounded(0, 100))
             .build();
         let action = inspect_action();
-        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        let case_about = about();
+        let subject =
+            ActionContractSubject::new(&action, &case_about, OperatorMode::Read, &visible);
         let err = BudgetAllowsActionSpec::new()
             .evaluate(&subject)
             .unwrap_err();
@@ -83,7 +92,8 @@ mod tests {
         let stop = OperatorAction::Stop(
             StopAction::new(StopReason::BudgetExhausted, None, vec![]).unwrap(),
         );
-        let subject = ActionContractSubject::new(&stop, OperatorMode::Read, &visible);
+        let case_about = about();
+        let subject = ActionContractSubject::new(&stop, &case_about, OperatorMode::Read, &visible);
         assert!(BudgetAllowsActionSpec::new().evaluate(&subject).is_ok());
     }
 }

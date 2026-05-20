@@ -23,6 +23,7 @@ impl<V: ActionContractValidator> ValidateTrajectoryUseCase<V> {
         self.validator
             .validate(
                 trajectory.target_action(),
+                trajectory.about(),
                 trajectory.mode(),
                 trajectory.visible_state(),
             )

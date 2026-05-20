@@ -5,6 +5,7 @@
 //! `operator-shared-infra` translate these DTOs to and from
 //! `operator-shared-domain` types.
 
+pub mod budget_snapshot_dto;
 pub mod cursor_dto;
 pub mod escalate_action_dto;
 pub mod operator_action_dto;

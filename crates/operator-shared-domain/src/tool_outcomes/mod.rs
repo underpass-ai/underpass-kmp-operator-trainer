@@ -1,6 +1,7 @@
 pub mod ask_outcome;
 pub mod forward_outcome;
 pub mod goto_outcome;
+pub mod ingest_outcome;
 pub mod inspect_outcome;
 pub mod near_outcome;
 pub mod rewind_outcome;

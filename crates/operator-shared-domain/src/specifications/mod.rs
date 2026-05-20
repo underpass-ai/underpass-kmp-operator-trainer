@@ -1,7 +1,11 @@
+pub mod action_about_matches_trajectory_spec;
 pub mod and_spec;
 pub mod arguments_reference_known_entities_spec;
 pub mod budget_allows_action_spec;
 pub mod cursor_reachable_from_visible_spec;
+pub mod ingest_coordinate_dimensions_known_spec;
+pub mod ingest_evidence_supports_known_refs_spec;
+pub mod ingest_relation_refs_known_spec;
 pub mod or_spec;
 pub mod specification;
 pub mod tool_within_mode_spec;

@@ -6,6 +6,7 @@ use crate::tool::kernel_tool::KernelTool;
 use crate::tool_arguments::ask_arguments::AskArguments;
 use crate::tool_arguments::forward_arguments::ForwardArguments;
 use crate::tool_arguments::goto_arguments::GotoArguments;
+use crate::tool_arguments::ingest_arguments::IngestArguments;
 use crate::tool_arguments::inspect_arguments::InspectArguments;
 use crate::tool_arguments::near_arguments::NearArguments;
 use crate::tool_arguments::rewind_arguments::RewindArguments;
@@ -15,6 +16,7 @@ use crate::tool_arguments::write_memory_arguments::WriteMemoryArguments;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolArguments {
+    Ingest(IngestArguments),
     Wake(WakeArguments),
     Ask(AskArguments),
     Near(NearArguments),
@@ -29,6 +31,7 @@ pub enum ToolArguments {
 impl ToolArguments {
     pub fn tool(&self) -> KernelTool {
         match self {
+            Self::Ingest(_) => KernelTool::Ingest,
             Self::Wake(_) => KernelTool::Wake,
             Self::Ask(_) => KernelTool::Ask,
             Self::Near(_) => KernelTool::Near,

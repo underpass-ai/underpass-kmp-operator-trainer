@@ -10,6 +10,7 @@ use crate::error::domain_result::DomainResult;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KernelTool {
+    Ingest,
     Wake,
     Ask,
     Near,
@@ -25,6 +26,7 @@ impl KernelTool {
     /// Canonical name used in serialization and logs. Stable across versions.
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Ingest => "kernel_ingest",
             Self::Wake => "kernel_wake",
             Self::Ask => "kernel_ask",
             Self::Near => "kernel_near",
@@ -39,6 +41,7 @@ impl KernelTool {
 
     pub fn parse(value: &str) -> DomainResult<Self> {
         match value {
+            "kernel_ingest" => Ok(Self::Ingest),
             "kernel_wake" => Ok(Self::Wake),
             "kernel_ask" => Ok(Self::Ask),
             "kernel_near" => Ok(Self::Near),
@@ -57,7 +60,8 @@ impl KernelTool {
 
     /// All variants in a stable order; used by `AllowedTools::for_mode` and
     /// architectural tests.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
+        Self::Ingest,
         Self::Wake,
         Self::Ask,
         Self::Near,
@@ -83,6 +87,7 @@ mod tests {
     #[test]
     fn all_variants_have_stable_names() {
         assert_eq!(KernelTool::Wake.as_str(), "kernel_wake");
+        assert_eq!(KernelTool::Ingest.as_str(), "kernel_ingest");
         assert_eq!(KernelTool::Ask.as_str(), "kernel_ask");
         assert_eq!(KernelTool::Near.as_str(), "kernel_near");
         assert_eq!(KernelTool::Goto.as_str(), "kernel_goto");
@@ -95,7 +100,7 @@ mod tests {
 
     #[test]
     fn all_is_complete() {
-        assert_eq!(KernelTool::ALL.len(), 9);
+        assert_eq!(KernelTool::ALL.len(), 10);
     }
 
     #[test]

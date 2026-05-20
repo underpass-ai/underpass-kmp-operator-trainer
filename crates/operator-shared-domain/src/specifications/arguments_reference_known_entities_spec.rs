@@ -30,6 +30,7 @@ impl Specification<ActionContractSubject<'_>> for ArgumentsReferenceKnownEntitie
         let visible = subject.visible();
         match call.arguments() {
             ToolArguments::Wake(_)
+            | ToolArguments::Ingest(_)
             | ToolArguments::Ask(_)
             | ToolArguments::Rewind(_)
             | ToolArguments::Forward(_)
@@ -144,7 +145,8 @@ mod tests {
     }
 
     fn evaluate(action: &OperatorAction, visible: &VisibleState) -> Result<(), ContractViolation> {
-        let subject = ActionContractSubject::new(action, OperatorMode::Read, visible);
+        let about = AboutId::parse("about:spec").unwrap();
+        let subject = ActionContractSubject::new(action, &about, OperatorMode::Read, visible);
         ArgumentsReferenceKnownEntitiesSpec::new().evaluate(&subject)
     }
 

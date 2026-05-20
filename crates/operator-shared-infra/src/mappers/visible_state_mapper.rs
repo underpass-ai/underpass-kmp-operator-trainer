@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
 
-use operator_shared_contract::visible_state_dto::{BudgetSnapshotDto, VisibleStateDto};
+use operator_shared_contract::budget_snapshot_dto::BudgetSnapshotDto;
+use operator_shared_contract::visible_state_dto::VisibleStateDto;
 use operator_shared_domain::cursor::cursor::Cursor;
 use operator_shared_domain::value_objects::dimension_ref::DimensionRef;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
-use operator_shared_domain::visible_state::budget_snapshot::{BudgetField, BudgetSnapshot};
+use operator_shared_domain::visible_state::budget_field::BudgetField;
+use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
 use operator_shared_domain::visible_state::visible_state::VisibleState;
 
 use crate::mappers::cursor_mapper::CursorMapper;

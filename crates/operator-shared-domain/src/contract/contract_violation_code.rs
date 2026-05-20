@@ -1,5 +1,6 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ContractViolationCode {
+    AboutMismatch,
     ToolOutsideMode,
     UnknownMemoryRef,
     UnknownDimension,
@@ -10,6 +11,7 @@ pub enum ContractViolationCode {
 impl ContractViolationCode {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::AboutMismatch => "about_mismatch",
             Self::ToolOutsideMode => "tool_outside_mode",
             Self::UnknownMemoryRef => "unknown_memory_ref",
             Self::UnknownDimension => "unknown_dimension",

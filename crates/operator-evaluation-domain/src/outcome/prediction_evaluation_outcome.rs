@@ -4,7 +4,8 @@
 //! flags: exact-match and tool-match (same `ToolCall` tool, or both Stop,
 //! or both Escalate).
 
-use operator_shared_domain::action::operator_action::{OperatorAction, OperatorActionKind};
+use operator_shared_domain::action::operator_action::OperatorAction;
+use operator_shared_domain::action::operator_action_kind::OperatorActionKind;
 use operator_shared_domain::contract::contract_violations::ContractViolations;
 use operator_shared_domain::ids::training_trajectory_id::TrainingTrajectoryId;
 use operator_shared_domain::tool::kernel_tool::KernelTool;
