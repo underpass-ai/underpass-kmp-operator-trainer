@@ -1,5 +1,16 @@
 # Handoff — finish training the 0.5B Qwen operator (2026-05-20)
 
+> Status update after PR #27:
+>
+> Do **not** use this handoff as a direct training recipe anymore. PR #27
+> replaced the stale v5/v6 transition with a contract-v6 gate, and the user
+> explicitly rejected GPU training on fixture-grade data because it would
+> inflate the score. The next interpretable run must use the realistic-v7
+> corpus described in
+> [`operator-realistic-corpus-v7-plan-2026-05-20.md`](operator-realistic-corpus-v7-plan-2026-05-20.md).
+> The historical instructions below remain as context for what existed before
+> the decision, not as the current execution plan.
+
 Briefing for the next agent picking up the operator-0.5B training run.
 Read this end-to-end before doing anything; the architectural
 constraints are non-negotiable and were the reason the previous attempt

@@ -15,6 +15,11 @@ This pass establishes the skeleton. The in-memory generator covers every
 `KmpMcpCapability` with a minimal canonical fixture; an LLM-teacher
 generator and the writer/exec scenario library land in later passes.
 
+The fixture generator is not training-grade. It exists to prove the action
+contract, SFT preparation and round-trip pipeline. The realistic training
+direction is documented in
+[`../../training/operator-realistic-corpus-v7-plan-2026-05-20.md`](../../training/operator-realistic-corpus-v7-plan-2026-05-20.md).
+
 ## Crates
 
 ```
@@ -109,10 +114,11 @@ asserts:
 
 ## Pending for later passes
 
-- Teacher-backed `SyntheticCaseGenerator` adapter (LLM in the loop).
-- Scenario libraries for writer/exec, writer/pre-read, golden core,
-  generalization, rare expansion, etc. — these were folders in the
-  legacy crate; today they're explicitly out of scope.
+- Realistic episode domain model for process-level corpus generation.
+- Teacher-backed `SyntheticCaseGenerator` adapter (LLM in the loop), with
+  strict validation before any teacher output becomes a trajectory.
+- Scenario libraries for incidents, bug investigations, migrations, product
+  decisions, benchmark-like memory tasks and smart writing sessions.
 - Synthetic-context contract DTOs for persisting a
   `SyntheticDatasetGenerationReport` to disk (when a real consumer needs
   it).
