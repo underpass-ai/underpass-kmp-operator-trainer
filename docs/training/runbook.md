@@ -234,6 +234,32 @@ per-tool / per-mode metrics, and exits 0 or 1 based on the
 Useful for inspecting a historical run, comparing against a different
 contract version, or gating a publication candidate.
 
+## 4c. Or replay predictions against a live KMP with `operator-replay`
+
+If you have a running kernel MCP JSON-RPC endpoint, you can execute
+each predicted action against the real KMP and measure tool-call
+success rate / failure modes:
+
+```bash
+cargo run --release -p operator-replay-cli --bin operator-replay -- \
+    --predictions  /tmp/operator-qwen05-predictions/predictions.jsonl \
+    --ground-truth /tmp/operator-sft/eval.jsonl \
+    --mcp-endpoint http://localhost:8080 \
+    --min-success-rate 0.95
+```
+
+The binary joins predictions and ground truth by `step_id` to resolve
+the trajectory id each outcome attaches to, dispatches each predicted
+action through `HttpKmpMcpClient`, and prints the resulting
+`ReplayReport` (total, successful tool calls, failed tool calls,
+`stop/escalate` count, tool-call success rate). With
+`--min-success-rate` the exit code is 0 PASS / 1 FAIL against the
+threshold; omit it to print metrics only.
+
+Use this when you want to know whether the trained policy survives
+contact with the real kernel — not just whether it predicts the
+same bytes the SFT label has.
+
 ## Known gaps
 
 This runbook calls out the remaining CLI gaps because they require
@@ -244,14 +270,10 @@ manual workarounds today:
    `operator-synthetic-application`), but there is no command-line
    binary yet. Stage trajectories from the kernel's existing exports
    or write a small custom binary against the library API.
-2. **No `operator-replay-cli`** — `operator-replay-{application,infra}`
-   has the full MCP JSON-RPC client and the `ExecuteReplayUseCase`,
-   but no CLI binary that wires them. Use the library API for live
-   MCP replay until this lands.
-3. **`operator-evaluation-cli` is partial** — `operator-policy-eval`
-   covers prediction scoring (§4b). The `contract-coverage` and
-   `llm-baseline` siblings (kernel-equivalent binaries) are still
-   pending.
+2. **`operator-evaluation-cli` is partial** — `operator-policy-eval`
+   covers prediction scoring (§4b) and `operator-replay` covers live
+   KMP execution (§4c). The `contract-coverage` and `llm-baseline`
+   siblings (kernel-equivalent binaries) are still pending.
 
 When those CLIs land, the runbook collapses to four `kubectl apply`
 plus a few `cargo run` invocations.
