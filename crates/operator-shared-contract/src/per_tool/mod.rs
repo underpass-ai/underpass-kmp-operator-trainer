@@ -1,6 +1,14 @@
 pub mod ask_arguments_dto;
 pub mod forward_arguments_dto;
 pub mod goto_arguments_dto;
+pub mod ingest_arguments_dto;
+pub mod ingest_dimension_dto;
+pub mod ingest_entry_dto;
+pub mod ingest_evidence_dto;
+pub mod ingest_memory_dto;
+pub mod ingest_provenance_dto;
+pub mod ingest_relation_dto;
+pub mod ingest_temporal_coordinate_dto;
 pub mod inspect_arguments_dto;
 pub mod near_arguments_dto;
 pub mod rewind_arguments_dto;

@@ -39,6 +39,7 @@ use operator_shared_domain::tool::kernel_tool::KernelTool;
 use operator_shared_domain::tool_arguments::ask_arguments::AskArguments;
 use operator_shared_domain::tool_arguments::forward_arguments::ForwardArguments;
 use operator_shared_domain::tool_arguments::goto_arguments::GotoArguments;
+use operator_shared_domain::tool_arguments::ingest_arguments::IngestArguments;
 use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
 use operator_shared_domain::tool_arguments::near_arguments::NearArguments;
 use operator_shared_domain::tool_arguments::rewind_arguments::RewindArguments;
@@ -48,6 +49,7 @@ use operator_shared_domain::tool_arguments::write_memory_arguments::WriteMemoryA
 use operator_shared_domain::tool_outcomes::ask_outcome::AskOutcome;
 use operator_shared_domain::tool_outcomes::forward_outcome::ForwardOutcome;
 use operator_shared_domain::tool_outcomes::goto_outcome::GotoOutcome;
+use operator_shared_domain::tool_outcomes::ingest_outcome::IngestOutcome;
 use operator_shared_domain::tool_outcomes::inspect_outcome::InspectOutcome;
 use operator_shared_domain::tool_outcomes::near_outcome::NearOutcome;
 use operator_shared_domain::tool_outcomes::rewind_outcome::RewindOutcome;
@@ -58,11 +60,14 @@ use operator_shared_domain::value_objects::memory_ref::MemoryRef;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::jsonrpc::envelope_violation::EnvelopeViolation;
 use crate::jsonrpc::tools_call_request::ToolsCallRequest;
-use crate::jsonrpc::tools_call_response::{EnvelopeViolation, ToolsCallResponse};
+use crate::jsonrpc::tools_call_response::ToolsCallResponse;
 use crate::mappers::ask_response_mapper::AskResponseMapper;
 use crate::mappers::forward_response_mapper::ForwardResponseMapper;
 use crate::mappers::goto_response_mapper::GotoResponseMapper;
+use crate::mappers::ingest_request_mapper::IngestRequestMapper;
+use crate::mappers::ingest_response_mapper::IngestResponseMapper;
 use crate::mappers::inspect_response_mapper::InspectResponseMapper;
 use crate::mappers::mapping_error::MappingError;
 use crate::mappers::near_response_mapper::NearResponseMapper;
@@ -264,6 +269,12 @@ fn write_memory_request_arguments(args: &WriteMemoryArguments) -> Value {
 }
 
 impl KmpMcpClient for HttpKmpMcpClient {
+    fn ingest(&self, args: &IngestArguments) -> Result<IngestOutcome, KmpClientError> {
+        let structured = self.call_tool(KernelTool::Ingest, IngestRequestMapper::to_json(args))?;
+        IngestResponseMapper::to_outcome(&structured)
+            .map_err(|e| into_kmp_client_error(KernelTool::Ingest, &e))
+    }
+
     fn wake(&self, args: &WakeArguments) -> Result<WakeOutcome, KmpClientError> {
         let structured = self.call_tool(KernelTool::Wake, wake_request_arguments(args))?;
         WakeResponseMapper::to_outcome(&structured)

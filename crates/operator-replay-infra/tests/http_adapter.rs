@@ -16,8 +16,17 @@ use operator_shared_domain::cursor::cursor::Cursor;
 use operator_shared_domain::cursor::ref_cursor::RefCursor;
 use operator_shared_domain::ids::about_id::AboutId;
 use operator_shared_domain::tool_arguments::goto_arguments::GotoArguments;
+use operator_shared_domain::tool_arguments::ingest_arguments::IngestArguments;
+use operator_shared_domain::tool_arguments::ingest_dimension::IngestDimension;
+use operator_shared_domain::tool_arguments::ingest_entry::IngestEntry;
+use operator_shared_domain::tool_arguments::ingest_memory::IngestMemory;
+use operator_shared_domain::tool_arguments::ingest_temporal_coordinate::IngestTemporalCoordinate;
 use operator_shared_domain::tool_arguments::wake_arguments::WakeArguments;
+use operator_shared_domain::value_objects::dimension_ref::DimensionRef;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
+use operator_shared_domain::value_objects::non_empty_string::NonEmptyString;
+use operator_shared_domain::value_objects::positive_count::PositiveCount;
+use operator_shared_domain::value_objects::string_map::StringMap;
 
 /// Spawns a single-request HTTP server on `127.0.0.1:0`, returns the
 /// URL it is listening on, the `JoinHandle` of the responder thread,
@@ -73,6 +82,56 @@ fn spawn_mock_server_with_status(
     (url, handle, rx)
 }
 
+fn non_empty(value: &str, context: &'static str) -> NonEmptyString {
+    NonEmptyString::parse(value, context).expect("static test value is non-empty")
+}
+
+fn ingest_arguments() -> IngestArguments {
+    let dimension_ref = DimensionRef::parse("agent:solver").expect("static dimension");
+    let dimension = IngestDimension::new(
+        dimension_ref.clone(),
+        non_empty("agent", "http_adapter.ingest.dimension.kind"),
+        None,
+        StringMap::empty(),
+    );
+    let coordinate = IngestTemporalCoordinate::new(
+        dimension_ref,
+        non_empty("agent:solver", "http_adapter.ingest.coordinate.scope_id"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(PositiveCount::parse(1, "http_adapter.ingest.sequence").expect("positive")),
+        None,
+        StringMap::empty(),
+    )
+    .expect("coordinate is valid");
+    let entry = IngestEntry::new(
+        MemoryRef::parse("node:ingest-http").expect("static ref"),
+        non_empty("observation", "http_adapter.ingest.entry.kind"),
+        non_empty(
+            "HTTP adapter sends canonical ingest arguments.",
+            "http_adapter.ingest.entry.text",
+        ),
+        vec![coordinate],
+        StringMap::empty(),
+    )
+    .expect("entry is valid");
+    let memory = IngestMemory::new(vec![dimension], vec![entry], vec![], vec![])
+        .expect("memory has one entry");
+    IngestArguments::new(
+        AboutId::parse("about:test").expect("static about"),
+        memory,
+        None,
+        non_empty(
+            "idempotency:http-adapter:ingest",
+            "http_adapter.ingest.idempotency_key",
+        ),
+        true,
+    )
+}
+
 #[test]
 fn happy_path_wake_round_trips_through_real_http() {
     let canned = include_str!("../../../api/mcp/examples/kernel/v1beta1/kmp/wake.response.json");
@@ -95,6 +154,31 @@ fn happy_path_wake_round_trips_through_real_http() {
     assert!(request_body.contains(r#""method":"tools/call""#));
     assert!(request_body.contains(r#""name":"kernel_wake""#));
     assert!(request_body.contains(r#""about":"about:test""#));
+    handle.join().expect("server thread");
+}
+
+#[test]
+fn happy_path_ingest_round_trips_through_real_http() {
+    let envelope = r#"{"jsonrpc":"2.0","id":1,"result":{"structuredContent":{"summary":"ingest ok","memory":{"about":"about:test","memory_id":"memory:test","read_after_write_ready":true},"warnings":[]}}}"#;
+    let (url, handle, body_rx) = spawn_mock_server(envelope.to_string());
+
+    let client = HttpKmpMcpClient::new(url).expect("client builds");
+    let outcome = client.ingest(&ingest_arguments()).expect("ingest succeeds");
+
+    assert_eq!(outcome.summary().as_str(), "ingest ok");
+    assert_eq!(outcome.about().as_str(), "about:test");
+    assert_eq!(outcome.memory_id().as_str(), "memory:test");
+    assert!(outcome.read_after_write_ready());
+
+    let request_body = body_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("request body");
+    assert!(request_body.contains(r#""method":"tools/call""#));
+    assert!(request_body.contains(r#""name":"kernel_ingest""#));
+    assert!(request_body.contains(r#""about":"about:test""#));
+    assert!(request_body.contains(r#""idempotency_key":"idempotency:http-adapter:ingest""#));
+    assert!(request_body.contains(r#""dimensions":[{"id":"agent:solver","kind":"agent""#));
+    assert!(request_body.contains(r#""entries":[{"coordinates":[{"dimension":"agent:solver""#));
     handle.join().expect("server thread");
 }
 

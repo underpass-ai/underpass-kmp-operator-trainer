@@ -23,6 +23,11 @@ use operator_shared_domain::mode::allowed_tools::AllowedTools;
 use operator_shared_domain::tool_arguments::ask_arguments::AskArguments;
 use operator_shared_domain::tool_arguments::forward_arguments::ForwardArguments;
 use operator_shared_domain::tool_arguments::goto_arguments::GotoArguments;
+use operator_shared_domain::tool_arguments::ingest_arguments::IngestArguments;
+use operator_shared_domain::tool_arguments::ingest_dimension::IngestDimension;
+use operator_shared_domain::tool_arguments::ingest_entry::IngestEntry;
+use operator_shared_domain::tool_arguments::ingest_memory::IngestMemory;
+use operator_shared_domain::tool_arguments::ingest_temporal_coordinate::IngestTemporalCoordinate;
 use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
 use operator_shared_domain::tool_arguments::near_arguments::NearArguments;
 use operator_shared_domain::tool_arguments::rewind_arguments::RewindArguments;
@@ -33,7 +38,9 @@ use operator_shared_domain::tool_arguments::write_memory_arguments::WriteMemoryA
 use operator_shared_domain::trajectory::training_trajectory::TrainingTrajectory;
 use operator_shared_domain::value_objects::dimension_ref::DimensionRef;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
+use operator_shared_domain::value_objects::non_empty_string::NonEmptyString;
 use operator_shared_domain::value_objects::positive_count::PositiveCount;
+use operator_shared_domain::value_objects::string_map::StringMap;
 use operator_shared_domain::value_objects::task_family::TaskFamily;
 use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
 use operator_shared_domain::visible_state::visible_state::VisibleState;
@@ -71,7 +78,8 @@ impl InMemorySyntheticCaseGenerator {
         let task_family = TaskFamily::parse(format!("{}.{}", mode.as_str(), capability.name()))
             .map_err(|err| domain_to_err(spec, &err))?;
         let (visible_state, target_action) = match capability {
-            KmpMcpCapability::Wake => fixture_wake(),
+            KmpMcpCapability::Ingest => fixture_ingest(about.clone()),
+            KmpMcpCapability::Wake => fixture_wake(about.clone()),
             KmpMcpCapability::Ask => fixture_ask(),
             KmpMcpCapability::Near => fixture_near(),
             KmpMcpCapability::Goto => fixture_goto(),
@@ -120,10 +128,60 @@ fn domain_to_err(
     }
 }
 
-fn fixture_wake() -> (VisibleState, OperatorAction) {
+fn fixture_ingest(about: AboutId) -> (VisibleState, OperatorAction) {
+    let dimension = DimensionRef::parse("agent:writer").expect("static");
+    let entry = MemoryRef::parse("node:ingest").expect("static");
+    let coordinate = IngestTemporalCoordinate::new(
+        dimension.clone(),
+        NonEmptyString::parse("scope:writer", "scope").expect("static"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(PositiveCount::parse(1, "sequence").expect("static")),
+        None,
+        StringMap::empty(),
+    )
+    .expect("static");
+    let memory = IngestMemory::new(
+        vec![IngestDimension::new(
+            dimension,
+            NonEmptyString::parse("agent", "kind").expect("static"),
+            Some(NonEmptyString::parse("Writer", "title").expect("static")),
+            StringMap::empty(),
+        )],
+        vec![
+            IngestEntry::new(
+                entry,
+                NonEmptyString::parse("observation", "kind").expect("static"),
+                NonEmptyString::parse("Synthetic ingest fixture.", "text").expect("static"),
+                vec![coordinate],
+                StringMap::empty(),
+            )
+            .expect("static"),
+        ],
+        vec![],
+        vec![],
+    )
+    .expect("static");
+    let visible = VisibleState::assemble([], [], None, BudgetSnapshot::bounded(8, 4096));
+    let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Ingest(
+        IngestArguments::new(
+            about,
+            memory,
+            None,
+            NonEmptyString::parse("synthetic-ingest-fixture", "idempotency_key").expect("static"),
+            true,
+        ),
+    )));
+    (visible, action)
+}
+
+fn fixture_wake(about: AboutId) -> (VisibleState, OperatorAction) {
     let visible = VisibleState::assemble([], [], None, BudgetSnapshot::bounded(8, 4096));
     let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Wake(
-        WakeArguments::new(AboutId::parse("about:fixture-wake").expect("static")),
+        WakeArguments::new(about),
     )));
     (visible, action)
 }
@@ -293,7 +351,12 @@ mod tests {
             let trajectories = generator.generate(&s).unwrap();
             for tr in &trajectories {
                 validator
-                    .validate(tr.target_action(), tr.mode(), tr.visible_state())
+                    .validate(
+                        tr.target_action(),
+                        tr.about(),
+                        tr.mode(),
+                        tr.visible_state(),
+                    )
                     .unwrap_or_else(|err| {
                         panic!(
                             "fixture for {capability} violated contract: {:?}",

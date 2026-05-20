@@ -7,9 +7,8 @@ use operator_replay_application::use_cases::execute_replay_use_case::ExecuteRepl
 use operator_replay_domain::outcome::replay_failure_reason::ReplayFailureReason;
 use operator_replay_domain::outcome::replay_outcome::ReplayOutcome;
 use operator_replay_domain::prediction::replay_prediction::ReplayPrediction;
-use operator_replay_infra::adapters::in_memory_kmp_mcp_client::{
-    FailureMode, InMemoryKmpMcpClient,
-};
+use operator_replay_infra::adapters::failure_mode::FailureMode;
+use operator_replay_infra::adapters::in_memory_kmp_mcp_client::InMemoryKmpMcpClient;
 use operator_shared_domain::action::escalate_action::EscalateAction;
 use operator_shared_domain::action::escalate_reason::EscalateReason;
 use operator_shared_domain::action::operator_action::OperatorAction;
@@ -27,6 +26,11 @@ use operator_shared_domain::tool::kernel_tool::KernelTool;
 use operator_shared_domain::tool_arguments::ask_arguments::AskArguments;
 use operator_shared_domain::tool_arguments::forward_arguments::ForwardArguments;
 use operator_shared_domain::tool_arguments::goto_arguments::GotoArguments;
+use operator_shared_domain::tool_arguments::ingest_arguments::IngestArguments;
+use operator_shared_domain::tool_arguments::ingest_dimension::IngestDimension;
+use operator_shared_domain::tool_arguments::ingest_entry::IngestEntry;
+use operator_shared_domain::tool_arguments::ingest_memory::IngestMemory;
+use operator_shared_domain::tool_arguments::ingest_temporal_coordinate::IngestTemporalCoordinate;
 use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
 use operator_shared_domain::tool_arguments::near_arguments::NearArguments;
 use operator_shared_domain::tool_arguments::rewind_arguments::RewindArguments;
@@ -37,7 +41,9 @@ use operator_shared_domain::tool_arguments::write_memory_arguments::WriteMemoryA
 use operator_shared_domain::value_objects::dimension_ref::DimensionRef;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
 use operator_shared_domain::value_objects::model_id::ModelId;
+use operator_shared_domain::value_objects::non_empty_string::NonEmptyString;
 use operator_shared_domain::value_objects::positive_count::PositiveCount;
+use operator_shared_domain::value_objects::string_map::StringMap;
 
 fn id(s: &str) -> TrainingTrajectoryId {
     TrainingTrajectoryId::parse(s).unwrap()
@@ -49,6 +55,52 @@ fn prediction(trajectory: &str, action: OperatorAction) -> ReplayPrediction {
 
 fn tool_call(arguments: ToolArguments) -> OperatorAction {
     OperatorAction::ToolCall(ToolCallAction::new(arguments))
+}
+
+fn non_empty(value: &str, context: &'static str) -> NonEmptyString {
+    NonEmptyString::parse(value, context).unwrap()
+}
+
+fn ingest_arguments() -> IngestArguments {
+    let dimension_ref = DimensionRef::parse("agent:solver").unwrap();
+    let dimension = IngestDimension::new(
+        dimension_ref.clone(),
+        non_empty("agent", "test.ingest.dimension.kind"),
+        Some(non_empty("Solver", "test.ingest.dimension.title")),
+        StringMap::empty(),
+    );
+    let coordinate = IngestTemporalCoordinate::new(
+        dimension_ref,
+        non_empty("agent:solver", "test.ingest.coordinate.scope_id"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(PositiveCount::parse(1, "test.ingest.sequence").unwrap()),
+        None,
+        StringMap::empty(),
+    )
+    .unwrap();
+    let entry = IngestEntry::new(
+        MemoryRef::parse("node:ingest").unwrap(),
+        non_empty("observation", "test.ingest.entry.kind"),
+        non_empty(
+            "The operator writes a canonical ingest payload.",
+            "test.ingest.entry.text",
+        ),
+        vec![coordinate],
+        StringMap::empty(),
+    )
+    .unwrap();
+    let memory = IngestMemory::new(vec![dimension], vec![entry], vec![], vec![]).unwrap();
+    IngestArguments::new(
+        AboutId::parse("about:1").unwrap(),
+        memory,
+        None,
+        non_empty("idempotency:e2e:ingest", "test.ingest.idempotency_key"),
+        true,
+    )
 }
 
 fn every_tool_predictions() -> Vec<ReplayPrediction> {
@@ -113,6 +165,10 @@ fn every_tool_predictions() -> Vec<ReplayPrediction> {
             ))),
         ),
         prediction(
+            "t:ingest",
+            tool_call(ToolArguments::Ingest(ingest_arguments())),
+        ),
+        prediction(
             "t:write",
             tool_call(ToolArguments::WriteMemory(
                 WriteMemoryArguments::new("s", "b", vec![]).unwrap(),
@@ -127,8 +183,8 @@ fn happy_path_dispatches_every_tool_and_records_success() {
     let predictions = every_tool_predictions();
     let report = use_case.execute(&predictions).unwrap();
 
-    assert_eq!(report.total(), 9);
-    assert_eq!(report.successful_tool_calls(), 9);
+    assert_eq!(report.total(), 10);
+    assert_eq!(report.successful_tool_calls(), 10);
     assert_eq!(report.failed_tool_calls(), 0);
     assert_eq!(report.stop_or_escalate(), 0);
     assert!((report.tool_call_success_rate().unwrap() - 1.0).abs() < f64::EPSILON);
@@ -174,9 +230,9 @@ fn assert_every_tool_fails_with(failure_mode: FailureMode, expected_reason: Repl
     let use_case = ExecuteReplayUseCase::new(InMemoryKmpMcpClient::always_failing(failure_mode));
     let report = use_case.execute(&every_tool_predictions()).unwrap();
 
-    assert_eq!(report.total(), 9);
+    assert_eq!(report.total(), 10);
     assert_eq!(report.successful_tool_calls(), 0);
-    assert_eq!(report.failed_tool_calls(), 9);
+    assert_eq!(report.failed_tool_calls(), 10);
     assert!(report.tool_call_success_rate().unwrap().abs() < f64::EPSILON);
 
     for execution in report.executions() {

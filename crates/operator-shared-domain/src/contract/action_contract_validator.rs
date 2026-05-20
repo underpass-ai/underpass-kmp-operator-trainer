@@ -4,6 +4,7 @@
 
 use crate::action::operator_action::OperatorAction;
 use crate::contract::contract_violations::ContractViolations;
+use crate::ids::about_id::AboutId;
 use crate::mode::operator_mode::OperatorMode;
 use crate::visible_state::visible_state::VisibleState;
 
@@ -11,6 +12,7 @@ pub trait ActionContractValidator: std::fmt::Debug + Send + Sync {
     fn validate(
         &self,
         action: &OperatorAction,
+        about: &AboutId,
         mode: OperatorMode,
         visible: &VisibleState,
     ) -> Result<(), ContractViolations>;

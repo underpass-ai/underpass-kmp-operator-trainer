@@ -1,6 +1,8 @@
 pub mod ask_response_mapper;
 pub mod forward_response_mapper;
 pub mod goto_response_mapper;
+pub mod ingest_request_mapper;
+pub mod ingest_response_mapper;
 pub mod inspect_response_mapper;
 pub mod mapping_error;
 pub mod near_response_mapper;

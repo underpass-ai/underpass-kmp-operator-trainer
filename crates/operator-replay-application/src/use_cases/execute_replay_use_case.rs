@@ -55,6 +55,13 @@ impl<C: KmpMcpClient> ExecuteReplayUseCase<C> {
     fn dispatch_tool_call(&self, call: &ToolCallAction) -> ReplayOutcome {
         let tool = call.tool();
         match call.arguments() {
+            ToolArguments::Ingest(args) => match self.client.ingest(args) {
+                Ok(o) => ReplayOutcome::ToolSucceeded(ToolOutcome::Ingest(o)),
+                Err(e) => ReplayOutcome::ToolCallFailed {
+                    tool,
+                    reason: reason_from(&e),
+                },
+            },
             ToolArguments::Wake(args) => match self.client.wake(args) {
                 Ok(o) => ReplayOutcome::ToolSucceeded(ToolOutcome::Wake(o)),
                 Err(e) => ReplayOutcome::ToolCallFailed {

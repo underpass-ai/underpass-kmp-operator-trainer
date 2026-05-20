@@ -10,6 +10,7 @@ use operator_shared_domain::tool::kernel_tool::KernelTool;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KmpMcpCapability {
+    Ingest,
     Wake,
     Ask,
     Near,
@@ -22,7 +23,8 @@ pub enum KmpMcpCapability {
 }
 
 impl KmpMcpCapability {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
+        Self::Ingest,
         Self::Wake,
         Self::Ask,
         Self::Near,
@@ -36,6 +38,7 @@ impl KmpMcpCapability {
 
     pub fn tool(self) -> KernelTool {
         match self {
+            Self::Ingest => KernelTool::Ingest,
             Self::Wake => KernelTool::Wake,
             Self::Ask => KernelTool::Ask,
             Self::Near => KernelTool::Near,
@@ -50,13 +53,14 @@ impl KmpMcpCapability {
 
     pub fn mode(self) -> OperatorMode {
         match self {
-            Self::WriteMemory => OperatorMode::Write,
+            Self::Ingest | Self::WriteMemory => OperatorMode::Write,
             _ => OperatorMode::Read,
         }
     }
 
     pub fn name(self) -> &'static str {
         match self {
+            Self::Ingest => "ingest",
             Self::Wake => "wake",
             Self::Ask => "ask",
             Self::Near => "near",
@@ -93,7 +97,10 @@ mod tests {
     #[test]
     fn read_tools_use_read_mode() {
         for capability in KmpMcpCapability::ALL {
-            let expected = if capability.tool() == KernelTool::WriteMemory {
+            let expected = if matches!(
+                capability.tool(),
+                KernelTool::Ingest | KernelTool::WriteMemory
+            ) {
                 OperatorMode::Write
             } else {
                 OperatorMode::Read

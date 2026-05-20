@@ -38,6 +38,7 @@ where
         for trajectory in self.reader.read_all()? {
             match self.validator.validate(
                 trajectory.target_action(),
+                trajectory.about(),
                 trajectory.mode(),
                 trajectory.visible_state(),
             ) {

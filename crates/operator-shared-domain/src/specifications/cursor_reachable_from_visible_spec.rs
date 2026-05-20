@@ -56,6 +56,7 @@ mod tests {
     use crate::cursor::temporal_anchor::TemporalAnchor;
     use crate::cursor::temporal_cursor::TemporalCursor;
     use crate::cursor::temporal_cursor_key::TemporalCursorKey;
+    use crate::ids::about_id::AboutId;
     use crate::mode::operator_mode::OperatorMode;
     use crate::tool_arguments::forward_arguments::ForwardArguments;
     use crate::tool_arguments::inspect_arguments::InspectArguments;
@@ -66,6 +67,10 @@ mod tests {
 
     fn anchor() -> TemporalAnchor {
         TemporalAnchor::parse("2026-05-18T00:00:00Z").unwrap()
+    }
+
+    fn about() -> AboutId {
+        AboutId::parse("about:cursor").unwrap()
     }
 
     fn rewind_action(key: TemporalCursorKey) -> OperatorAction {
@@ -95,7 +100,9 @@ mod tests {
             )))
             .build();
         let action = rewind_action(TemporalCursorKey::Created);
-        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        let case_about = about();
+        let subject =
+            ActionContractSubject::new(&action, &case_about, OperatorMode::Read, &visible);
         assert!(
             CursorReachableFromVisibleSpec::new()
                 .evaluate(&subject)
@@ -112,7 +119,9 @@ mod tests {
             )))
             .build();
         let action = forward_action(TemporalCursorKey::Accessed);
-        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        let case_about = about();
+        let subject =
+            ActionContractSubject::new(&action, &case_about, OperatorMode::Read, &visible);
         let err = CursorReachableFromVisibleSpec::new()
             .evaluate(&subject)
             .unwrap_err();
@@ -123,7 +132,9 @@ mod tests {
     fn rewind_without_any_active_cursor_fails() {
         let visible = VisibleStateBuilder::new().build();
         let action = rewind_action(TemporalCursorKey::Created);
-        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        let case_about = about();
+        let subject =
+            ActionContractSubject::new(&action, &case_about, OperatorMode::Read, &visible);
         assert!(
             CursorReachableFromVisibleSpec::new()
                 .evaluate(&subject)
@@ -139,7 +150,9 @@ mod tests {
             )))
             .build();
         let action = rewind_action(TemporalCursorKey::Updated);
-        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        let case_about = about();
+        let subject =
+            ActionContractSubject::new(&action, &case_about, OperatorMode::Read, &visible);
         assert!(
             CursorReachableFromVisibleSpec::new()
                 .evaluate(&subject)
@@ -153,7 +166,9 @@ mod tests {
         let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
             InspectArguments::new(MemoryRef::parse("node:1").unwrap()),
         )));
-        let subject = ActionContractSubject::new(&action, OperatorMode::Read, &visible);
+        let case_about = about();
+        let subject =
+            ActionContractSubject::new(&action, &case_about, OperatorMode::Read, &visible);
         assert!(
             CursorReachableFromVisibleSpec::new()
                 .evaluate(&subject)

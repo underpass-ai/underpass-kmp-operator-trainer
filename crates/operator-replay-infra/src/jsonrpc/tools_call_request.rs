@@ -5,18 +5,14 @@
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::jsonrpc::tools_call_params::ToolsCallParams;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolsCallRequest {
     pub jsonrpc: &'static str,
     pub id: u64,
     pub method: &'static str,
     pub params: ToolsCallParams,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ToolsCallParams {
-    pub name: String,
-    pub arguments: Value,
 }
 
 impl ToolsCallRequest {

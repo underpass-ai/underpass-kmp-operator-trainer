@@ -27,8 +27,9 @@ impl AllowedTools {
                 KernelTool::Trace,
                 KernelTool::Inspect,
             ],
-            OperatorMode::Write => vec![KernelTool::WriteMemory],
+            OperatorMode::Write => vec![KernelTool::Ingest, KernelTool::WriteMemory],
             OperatorMode::Full => vec![
+                KernelTool::Ingest,
                 KernelTool::Wake,
                 KernelTool::Ask,
                 KernelTool::Near,
@@ -97,9 +98,12 @@ mod tests {
     }
 
     #[test]
-    fn write_mode_only_allows_write_memory() {
+    fn write_mode_only_allows_write_tools() {
         let allowed = AllowedTools::for_mode(OperatorMode::Write);
-        assert_eq!(allowed.as_slice(), &[KernelTool::WriteMemory]);
+        assert_eq!(
+            allowed.as_slice(),
+            &[KernelTool::Ingest, KernelTool::WriteMemory]
+        );
     }
 
     #[test]

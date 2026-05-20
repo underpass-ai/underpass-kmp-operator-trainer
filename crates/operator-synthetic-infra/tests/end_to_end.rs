@@ -45,6 +45,7 @@ fn every_trajectory_in_the_full_dataset_passes_the_contract_validator() {
         validator
             .validate(
                 trajectory.target_action(),
+                trajectory.about(),
                 trajectory.mode(),
                 trajectory.visible_state(),
             )

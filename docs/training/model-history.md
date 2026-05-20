@@ -26,6 +26,20 @@ classified as a useful control or a legacy experiment.
 | `google/functiongemma-270m-it` | 270M | Legacy experiment | Exact action accuracy ≈ 0.5000 with 30 strict prediction failures and zero unbounded calls | Native FunctionGemma tool schemas do not cover the full KMP action surface; treated as legacy / read-only experiment. The `functiongemma_*.py` scripts are intentionally **not** migrated into operator. |
 | `falconh1-05b` | 0.5B | Legacy experiment | LongMemEval legacy-v7 result; superseded by newer Qwen baselines | Kept for traceability via `rehydration-kernel/k8s/kernel-operator-falconh1-*` jobs. |
 
+## Contract-learning baseline
+
+The next Operator 0.5B training run must be compared against the last failed
+small conformance baseline, not against benchmark-reader results:
+
+| Run | Dataset | Size | Result | Artifact |
+| --- | --- | --- | --- | --- |
+| Qwen 0.5B LoRA conformance full v4 | legacy KMP/MCP conformance | 58 trajectories | 24.1% exact-action accuracy | `/tmp/kernel-operator-qwen05-conformance-full-v4-policy-eval.json` |
+
+This anchor matters because the current P0 is contract cleanup. If the next
+strict run improves sharply, the dataset and wire-contract cleanup mattered. If
+it stays near 24.1%, the limitation is probably the 0.5B policy or the task
+formulation rather than the legacy dataset shape.
+
 ## Why Qwen 0.5B and not something larger?
 
 The kernel's design goal (see [`feedback_small_models`] in the

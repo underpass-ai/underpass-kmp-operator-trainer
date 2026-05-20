@@ -42,8 +42,9 @@ The rules enforced today (one test file per rule under `tests/`):
    files inside `*-application/src/ports/` must not contain
    `serde_json::Value`, `tool: &str`, `cursor_key: &str` or `json!(`.
 6. **One file = one class** (`one_file_one_class`) — every `.rs` file
-   declares at most one `pub struct`, `pub enum` or `pub trait`. Exceptions
-   live in a `KNOWN_EXCEPTIONS` constant with a justification.
+   declares at most one `pub struct`, `pub enum` or `pub trait`. There is no
+   exception list; paired discriminators, DTO children and envelope variants
+   must live in their own files.
 7. **No `tool: &str` / `cursor_key: &str` anywhere** (`no_string_tool_or_cursor`)
    — bans the substrings across every operator source file.
 8. **Workspace consistency** (`no_serde_json_value_in_application_or_domain_manifests`)

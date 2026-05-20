@@ -31,6 +31,7 @@ impl<V: ActionContractValidator> EvaluateOperatorPolicyUseCase<V> {
             let prediction = pair.prediction();
             let violations = match self.validator.validate(
                 prediction.action(),
+                ground_truth.about(),
                 ground_truth.mode(),
                 ground_truth.visible_state(),
             ) {

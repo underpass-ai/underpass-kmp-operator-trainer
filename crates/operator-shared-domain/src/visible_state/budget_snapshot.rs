@@ -2,6 +2,8 @@
 //! "Unbounded" is an explicit constructor (`unbounded()`) rather than a
 //! `None` smuggled into the call sites.
 
+use crate::visible_state::budget_field::BudgetField;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BudgetSnapshot {
     calls_remaining: BudgetField,
@@ -53,12 +55,6 @@ impl BudgetSnapshot {
             BudgetField::Bounded(value) => value > 0,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BudgetField {
-    Unbounded,
-    Bounded(usize),
 }
 
 #[cfg(test)]

@@ -6,10 +6,15 @@ use crate::action::operator_action::OperatorAction;
 use crate::contract::action_contract_subject::ActionContractSubject;
 use crate::contract::action_contract_validator::ActionContractValidator;
 use crate::contract::contract_violations::ContractViolations;
+use crate::ids::about_id::AboutId;
 use crate::mode::operator_mode::OperatorMode;
+use crate::specifications::action_about_matches_trajectory_spec::ActionAboutMatchesTrajectorySpec;
 use crate::specifications::arguments_reference_known_entities_spec::ArgumentsReferenceKnownEntitiesSpec;
 use crate::specifications::budget_allows_action_spec::BudgetAllowsActionSpec;
 use crate::specifications::cursor_reachable_from_visible_spec::CursorReachableFromVisibleSpec;
+use crate::specifications::ingest_coordinate_dimensions_known_spec::IngestCoordinateDimensionsKnownSpec;
+use crate::specifications::ingest_evidence_supports_known_refs_spec::IngestEvidenceSupportsKnownRefsSpec;
+use crate::specifications::ingest_relation_refs_known_spec::IngestRelationRefsKnownSpec;
 use crate::specifications::specification::Specification;
 use crate::specifications::tool_within_mode_spec::ToolWithinModeSpec;
 use crate::visible_state::visible_state::VisibleState;
@@ -39,7 +44,11 @@ impl CompositeActionContractValidator {
     pub fn default_strict() -> Self {
         Self::new(vec![
             Box::new(ToolWithinModeSpec::new()),
+            Box::new(ActionAboutMatchesTrajectorySpec::new()),
             Box::new(ArgumentsReferenceKnownEntitiesSpec::new()),
+            Box::new(IngestCoordinateDimensionsKnownSpec::new()),
+            Box::new(IngestRelationRefsKnownSpec::new()),
+            Box::new(IngestEvidenceSupportsKnownRefsSpec::new()),
             Box::new(CursorReachableFromVisibleSpec::new()),
             Box::new(BudgetAllowsActionSpec::new()),
         ])
@@ -50,10 +59,11 @@ impl ActionContractValidator for CompositeActionContractValidator {
     fn validate(
         &self,
         action: &OperatorAction,
+        about: &AboutId,
         mode: OperatorMode,
         visible: &VisibleState,
     ) -> Result<(), ContractViolations> {
-        let subject = ActionContractSubject::new(action, mode, visible);
+        let subject = ActionContractSubject::new(action, about, mode, visible);
         let mut violations = ContractViolations::new();
         for spec in &self.specs {
             if let Err(violation) = spec.evaluate(&subject) {
@@ -74,12 +84,17 @@ mod tests {
     use crate::action::stop_action::StopAction;
     use crate::action::stop_reason::StopReason;
     use crate::action::tool_call_action::ToolCallAction;
+    use crate::ids::about_id::AboutId;
     use crate::tool_arguments::inspect_arguments::InspectArguments;
     use crate::tool_arguments::tool_arguments::ToolArguments;
     use crate::tool_arguments::write_memory_arguments::WriteMemoryArguments;
     use crate::value_objects::memory_ref::MemoryRef;
     use crate::visible_state::budget_snapshot::BudgetSnapshot;
     use crate::visible_state::visible_state_builder::VisibleStateBuilder;
+
+    fn about() -> AboutId {
+        AboutId::parse("about:contract").unwrap()
+    }
 
     #[test]
     fn accepts_consistent_inspect_in_read() {
@@ -92,7 +107,7 @@ mod tests {
         )));
         let validator = CompositeActionContractValidator::default_strict();
         validator
-            .validate(&action, OperatorMode::Read, &visible)
+            .validate(&action, &about(), OperatorMode::Read, &visible)
             .expect("consistent inspect is valid");
         assert!(format!("{validator:?}").contains("CompositeActionContractValidator"));
     }
@@ -109,7 +124,7 @@ mod tests {
         )));
         let validator = CompositeActionContractValidator::default_strict();
         let err = validator
-            .validate(&action, OperatorMode::Read, &visible)
+            .validate(&action, &about(), OperatorMode::Read, &visible)
             .unwrap_err();
         assert!(err.len() >= 2);
     }
@@ -124,7 +139,7 @@ mod tests {
         );
         let validator = CompositeActionContractValidator::default_strict();
         validator
-            .validate(&action, OperatorMode::Read, &visible)
+            .validate(&action, &about(), OperatorMode::Read, &visible)
             .expect("stop with empty budget is always valid");
     }
 }
