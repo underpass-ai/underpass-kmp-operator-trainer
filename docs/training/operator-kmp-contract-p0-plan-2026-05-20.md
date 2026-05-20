@@ -927,3 +927,71 @@ git diff --check
 ```
 
 All passed locally.
+
+## Updates 2026-05-20-T6
+
+### P0.4/P0.5 — contract-v6 corpus and SFT gate
+
+PR #27 adds a reproducible builder for the first operator-native contract-v6
+corpus:
+
+```text
+scripts/operator/build_contract_v6_corpus.sh
+```
+
+The builder writes generated artifacts outside the source repo by default:
+
+```text
+../rehydration-kernel-artifacts/operator/<run-id>/
+```
+
+The default corpus shape is intentionally explicit:
+
+- 4 synthetic trajectories per public KMP/MCP tool;
+- 40 source trajectories total;
+- `kernel_ingest`, `kernel_write_memory`, and the 8 read/navigation tools all
+  covered;
+- group split by `about`;
+- one eval `about` per tool, leaving 3 train rows per tool;
+- 30 train rows and 10 eval rows;
+- no generated JSONL committed to git.
+
+The gate order is:
+
+```text
+operator-synthesize
+  -> operator-contract-coverage on source trajectories
+  -> prepare_operator_sft_dataset.py
+  -> operator-contract-coverage on train trajectories
+  -> operator-contract-coverage on eval trajectories
+  -> audit_operator_sft_no_gold.py
+  -> train_operator_sft_lora.py --validate-only
+  -> predict_operator_sft.py --validate-only
+  -> round_trip_smoke.sh against the generated SFT
+```
+
+Executed PR #27 artifact:
+
+```text
+run_id: operator-contract-v6-pr27-20260520
+path:   ../rehydration-kernel-artifacts/operator/operator-contract-v6-pr27-20260520
+```
+
+Observed results:
+
+```text
+source trajectories: 40, valid 40, invalid 0, tool coverage 10/10
+train trajectories:  30, valid 30, invalid 0, tool coverage 10/10
+eval trajectories:   10, valid 10, invalid 0, tool coverage 10/10
+no-gold audit:       40 rows, finding_count 0
+train validate-only: 30 train rows, 10 eval rows, status ok
+predict validate:    10 rows, status ok
+oracle smoke eval:   exact_match_rate 1.0, contract_valid_rate 1.0
+```
+
+Important limitation:
+
+This is still fixture-grade synthetic data. It closes the contract and SFT
+round-trip gate, but it is not a realistic teacher-generated dataset for final
+model training. The next training attempt can use this as the first strict gate;
+the realistic corpus still needs the teacher-backed generation work.

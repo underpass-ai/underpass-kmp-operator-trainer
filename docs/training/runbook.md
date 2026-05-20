@@ -117,6 +117,43 @@ Run this in CI against any dataset destined for training to catch
 exporter regressions (missing tools, drifted action shapes) before
 they reach the trainer.
 
+## 0c. Build the P0.4/P0.5 contract-v6 corpus
+
+Use the contract-v6 builder when the goal is to regenerate the current
+operator-native corpus and SFT from the typed contract:
+
+```bash
+bash scripts/operator/build_contract_v6_corpus.sh
+```
+
+Defaults:
+
+```text
+artifact root:      ../rehydration-kernel-artifacts/operator
+minimum examples:  4 per KMP/MCP tool
+split:             group by about
+eval groups:       one about per tool
+```
+
+The builder writes generated JSONL outside the repo by default. It gates the
+run in this order:
+
+```text
+operator-synthesize
+  -> contract coverage on source trajectories
+  -> prepare SFT
+  -> contract coverage on train trajectories
+  -> contract coverage on eval trajectories
+  -> no-gold audit
+  -> trainer validate-only
+  -> predictor validate-only
+  -> round_trip_smoke against the generated SFT
+```
+
+This corpus is still contract-grade synthetic data, not the final realistic
+teacher-generated dataset. Its purpose is to close P0.4/P0.5 and prevent GPU
+training from starting until the complete KMP/MCP action surface round-trips.
+
 ## 1. Prepare the SFT dataset
 
 The Python `prepare_operator_sft_dataset.py` script turns a
