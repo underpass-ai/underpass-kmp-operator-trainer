@@ -125,8 +125,8 @@ consumes:
 
 ```bash
 python scripts/operator/prepare_operator_sft_dataset.py \
-    --input /tmp/trajectories.jsonl \
-    --output-dir /tmp/operator-sft
+    --trajectories /tmp/trajectories.jsonl \
+    --output /tmp/operator-sft
 ```
 
 That produces `/tmp/operator-sft/openai_{train,eval}.jsonl` with the
@@ -177,7 +177,7 @@ Workstation alternative:
 
 ```bash
 python scripts/operator/predict_operator_sft.py \
-    --dataset-jsonl /tmp/operator-sft/openai_eval.jsonl \
+    --dataset-jsonl /tmp/operator-sft/eval.jsonl \
     --model-id Qwen/Qwen2.5-0.5B-Instruct \
     --adapter /tmp/operator-qwen05-lora \
     --output  /tmp/operator-qwen05-predictions \
@@ -268,7 +268,7 @@ against any ground-truth JSONL without re-running the predictor:
 ```bash
 cargo run --release -p operator-evaluation-cli --bin operator-policy-eval -- \
     --predictions  /tmp/operator-qwen05-predictions/predictions.jsonl \
-    --ground-truth /tmp/operator-sft/eval.jsonl \
+    --ground-truth /tmp/operator-sft/eval_trajectories.jsonl \
     --min-pass-rate 0.9
 ```
 

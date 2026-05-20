@@ -437,8 +437,8 @@ def validate_dataset_rows(rows: list[dict[str, Any]], resolve_prepared: bool) ->
                 f"dataset row {index}: target action violates strict contract: "
                 f"{shape_error}"
             )
-        action_type = action.get("type")
-        if action_type in {"tool_call", "prepared_tool_call"}:
+        action_kind = action.get("kind")
+        if action_kind in {"tool_call", "prepared_tool_call"}:
             tool = action.get("tool")
             if tool not in allowed_tools:
                 raise SystemExit(
@@ -452,7 +452,7 @@ def validate_dataset_rows(rows: list[dict[str, Any]], resolve_prepared: bool) ->
                     f"dataset row {index}: prepared payload cannot be resolved: "
                     f"{resolve_error}"
                 )
-        elif action.get("type") == "prepared_tool_call":
+        elif action.get("kind") == "prepared_tool_call":
             raise SystemExit(
                 f"dataset row {index}: prepared_tool_call targets require "
                 "--resolve-prepared-payloads for prediction"
@@ -561,7 +561,7 @@ def validate_action_allowed_by_row(
     action: dict[str, Any],
     row: dict[str, Any],
 ) -> str | None:
-    if action.get("type") not in {"tool_call", "prepared_tool_call"}:
+    if action.get("kind") not in {"tool_call", "prepared_tool_call"}:
         return None
     tool = action.get("tool")
     if not isinstance(tool, str) or not tool:
@@ -633,9 +633,11 @@ def first_complete_json_object_end(text: str) -> int | None:
 
 
 def validate_action_shape(action: dict[str, Any]) -> str | None:
-    action_type = action.get("type")
-    if action_type == "tool_call":
-        key_error = exact_keys(action, {"type", "tool", "arguments"}, set(), "action")
+    if "type" in action:
+        return "legacy_type_discriminator_not_supported"
+    action_kind = action.get("kind")
+    if action_kind == "tool_call":
+        key_error = exact_keys(action, {"kind", "tool", "arguments"}, set(), "action")
         if key_error is not None:
             return key_error
         tool = action.get("tool")
@@ -651,8 +653,8 @@ def validate_action_shape(action: dict[str, Any]) -> str | None:
             return f"unbounded_or_invalid_tool_call:{tool}"
         return None
 
-    if action_type == "prepared_tool_call":
-        key_error = exact_keys(action, {"type", "tool", "source"}, set(), "action")
+    if action_kind == "prepared_tool_call":
+        key_error = exact_keys(action, {"kind", "tool", "source"}, set(), "action")
         if key_error is not None:
             return key_error
         tool = action.get("tool")
@@ -663,38 +665,56 @@ def validate_action_shape(action: dict[str, Any]) -> str | None:
             return None
         return "unsupported_prepared_payload_source"
 
-    if action_type == "stop":
+    if action_kind == "stop":
         key_error = exact_keys(
             action,
-            {"type", "answer_policy", "final_refs", "reason"},
+            {"kind", "reason"},
+            {"answer", "evidence"},
+            "action",
+        )
+        if key_error is not None:
+            return key_error
+        reason = action.get("reason")
+        if reason not in {"answer_ready", "no_candidate", "budget_exhausted"}:
+            return "unsupported_stop_reason"
+        answer = action.get("answer")
+        if answer is not None and (not isinstance(answer, str) or not answer):
+            return "invalid_stop_answer"
+        evidence = action.get("evidence")
+        if evidence is not None and (
+            not isinstance(evidence, list)
+            or not all(isinstance(ref, str) and ref for ref in evidence)
+        ):
+            return "invalid_stop_evidence"
+        return None
+
+    if action_kind == "escalate":
+        key_error = exact_keys(
+            action,
+            {"kind", "reason", "target_model"},
             set(),
             "action",
         )
         if key_error is not None:
             return key_error
-        answer_policy_error = validate_answer_policy(action.get("answer_policy"))
-        if answer_policy_error is not None:
-            return answer_policy_error
         reason = action.get("reason")
-        if not isinstance(reason, str) or not reason:
-            return "missing_stop_reason"
-        final_refs = action.get("final_refs")
-        if not isinstance(final_refs, list) or not all(
-            isinstance(ref, str) for ref in final_refs
-        ):
-            return "invalid_stop_final_refs"
+        if reason not in {"ambiguous_intent", "beyond_capability", "low_confidence"}:
+            return "unsupported_escalate_reason"
+        target_model = action.get("target_model")
+        if not isinstance(target_model, str) or not target_model:
+            return "missing_escalate_target_model"
         return None
 
-    if action_type is None:
-        return "missing_action_type"
-    return "unsupported_action_type"
+    if action_kind is None:
+        return "missing_action_kind"
+    return "unsupported_action_kind"
 
 
 def resolve_prepared_payload_action(
     action: dict[str, Any],
     row: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, str | None]:
-    if action.get("type") != "prepared_tool_call":
+    if action.get("kind") != "prepared_tool_call":
         return action, None
 
     user_payload, user_error = model_facing_user_payload(row)
@@ -725,7 +745,7 @@ def resolve_prepared_payload_action(
     if arguments.get("about") != about:
         return None, "about_mismatch"
 
-    resolved = {"type": "tool_call", "tool": tool, "arguments": arguments}
+    resolved = {"kind": "tool_call", "tool": tool, "arguments": arguments}
     shape_error = validate_action_shape(resolved)
     if shape_error is not None:
         return None, f"resolved_action_invalid:{shape_error}"
@@ -759,97 +779,81 @@ def model_facing_user_payload(
 
 def validate_tool_arguments(tool: str, arguments: dict[str, Any]) -> str | None:
     if tool == "kernel_wake":
-        key_error = exact_keys(
-            arguments,
-            {"about", "budget"},
-            {"role", "intent", "dimensions", "depth"},
-            "action.arguments",
-        )
+        key_error = exact_keys(arguments, {"about"}, set(), "action.arguments")
         if key_error is not None:
             return key_error
-        error = require_non_empty_string(arguments, "about", "action.arguments")
-        if error is not None:
-            return error
-        for field in ("role", "intent"):
-            error = validate_optional_non_empty_string(arguments, field, "action.arguments")
-            if error is not None:
-                return error
-        if "dimensions" in arguments:
-            error = validate_dimensions(arguments["dimensions"], "action.arguments.dimensions")
-            if error is not None:
-                return error
-        error = validate_optional_positive_int(arguments, "depth", "action.arguments")
-        if error is not None:
-            return error
-        return validate_budget(arguments.get("budget"), "action.arguments.budget")
+        return require_non_empty_string(arguments, "about", "action.arguments")
 
     if tool == "kernel_ask":
+        key_error = exact_keys(arguments, {"query"}, set(), "action.arguments")
+        if key_error is not None:
+            return key_error
+        return require_non_empty_string(arguments, "query", "action.arguments")
+
+    if tool == "kernel_near":
         key_error = exact_keys(
             arguments,
-            {"about", "answer_policy", "dimensions", "question", "budget"},
-            {"depth"},
+            {"anchor"},
+            {"dimensions", "limit"},
             "action.arguments",
         )
         if key_error is not None:
             return key_error
-        for field in ("about", "question"):
-            error = require_non_empty_string(arguments, field, "action.arguments")
+        error = require_non_empty_string(arguments, "anchor", "action.arguments")
+        if error is not None:
+            return error
+        if "dimensions" in arguments:
+            error = validate_string_array(arguments["dimensions"], "action.arguments.dimensions")
             if error is not None:
                 return error
-        error = validate_answer_policy(arguments.get("answer_policy"))
-        if error is not None:
-            return error
-        error = validate_dimensions(arguments.get("dimensions"), "action.arguments.dimensions")
-        if error is not None:
-            return error
-        error = validate_budget(arguments.get("budget"), "action.arguments.budget")
-        if error is not None:
-            return error
-        return validate_optional_positive_int(arguments, "depth", "action.arguments")
+        return validate_optional_positive_int(arguments, "limit", "action.arguments")
 
-    if tool in {"kernel_near", "kernel_goto", "kernel_rewind", "kernel_forward"}:
-        cursor_key = {
-            "kernel_near": "around",
-            "kernel_goto": "at",
-            "kernel_rewind": "from",
-            "kernel_forward": "from",
-        }[tool]
-        return validate_temporal_arguments(arguments, cursor_key)
+    if tool == "kernel_goto":
+        key_error = exact_keys(arguments, {"cursor"}, set(), "action.arguments")
+        if key_error is not None:
+            return key_error
+        return validate_cursor_dto(arguments.get("cursor"), "action.arguments.cursor")
+
+    if tool in {"kernel_rewind", "kernel_forward"}:
+        key_error = exact_keys(
+            arguments,
+            {"cursor_key", "cursor_anchor", "window"},
+            set(),
+            "action.arguments",
+        )
+        if key_error is not None:
+            return key_error
+        cursor_key = arguments.get("cursor_key")
+        if cursor_key not in {"created", "updated", "accessed"}:
+            return "action.arguments.cursor_key_unsupported"
+        error = require_non_empty_string(arguments, "cursor_anchor", "action.arguments")
+        if error is not None:
+            return error
+        return validate_optional_positive_int(arguments, "window", "action.arguments")
 
     if tool == "kernel_trace":
         key_error = exact_keys(
             arguments,
-            {"from", "to", "budget"},
-            {"goal", "role", "page"},
+            {"from", "page"},
+            {"to"},
             "action.arguments",
         )
         if key_error is not None:
             return key_error
-        for field in ("from", "to"):
-            error = require_non_empty_string(arguments, field, "action.arguments")
-            if error is not None:
-                return error
-        error = validate_budget(arguments.get("budget"), "action.arguments.budget")
+        error = require_non_empty_string(arguments, "from", "action.arguments")
         if error is not None:
             return error
-        for field in ("goal", "role"):
-            error = validate_optional_non_empty_string(arguments, field, "action.arguments")
+        if "to" in arguments:
+            error = validate_optional_non_empty_string(arguments, "to", "action.arguments")
             if error is not None:
                 return error
-        if "page" in arguments:
-            return validate_page(arguments["page"], "action.arguments.page")
-        return None
+        return validate_optional_positive_int(arguments, "page", "action.arguments")
 
     if tool == "kernel_inspect":
-        key_error = exact_keys(arguments, {"ref", "include"}, set(), "action.arguments")
+        key_error = exact_keys(arguments, {"target"}, set(), "action.arguments")
         if key_error is not None:
             return key_error
-        error = require_non_empty_string(arguments, "ref", "action.arguments")
-        if error is not None:
-            return error
-        return validate_inspect_include(
-            arguments.get("include"), "action.arguments.include"
-        )
+        return require_non_empty_string(arguments, "target", "action.arguments")
 
     if tool == "kernel_write_memory":
         return validate_write_memory_arguments(arguments)
@@ -863,68 +867,18 @@ def validate_tool_arguments(tool: str, arguments: dict[str, Any]) -> str | None:
 def validate_write_memory_arguments(arguments: dict[str, Any]) -> str | None:
     key_error = exact_keys(
         arguments,
-        {
-            "about",
-            "intent",
-            "actor",
-            "observed_at",
-            "scope",
-            "current",
-            "connect_to",
-            "read_context",
-            "idempotency_key",
-            "options",
-        },
-        {"semantic_delta", "source_kind"},
+        {"summary", "body"},
+        {"related"},
         "action.arguments",
     )
     if key_error is not None:
         return key_error
-    for field in ("about", "actor", "observed_at", "idempotency_key"):
+    for field in ("summary", "body"):
         error = require_non_empty_string(arguments, field, "action.arguments")
         if error is not None:
             return error
-    intent = arguments.get("intent")
-    if not isinstance(intent, str) or intent not in WRITER_INTENTS:
-        return "action.arguments.intent_unsupported"
-    error = validate_write_scope(arguments.get("scope"), "action.arguments.scope")
-    if error is not None:
-        return error
-    error, current_ref = validate_write_current(
-        arguments.get("current"), "action.arguments.current"
-    )
-    if error is not None:
-        return error
-    semantic_delta_ref = None
-    if "semantic_delta" in arguments:
-        error, semantic_delta_ref = validate_semantic_delta(
-            arguments.get("semantic_delta"), "action.arguments.semantic_delta"
-        )
-        if error is not None:
-            return error
-    error, observed_read_refs = read_context_refs(
-        arguments.get("read_context"), "action.arguments.read_context"
-    )
-    if error is not None:
-        return error
-    local_refs = [
-        ref for ref in (current_ref, semantic_delta_ref) if isinstance(ref, str) and ref
-    ]
-    error = validate_connect_to(
-        arguments.get("connect_to"),
-        "action.arguments.connect_to",
-        local_refs,
-        observed_read_refs,
-    )
-    if error is not None:
-        return error
-    error = validate_write_options(arguments.get("options"), "action.arguments.options")
-    if error is not None:
-        return error
-    if "source_kind" in arguments:
-        error = validate_source_kind(arguments.get("source_kind"), "action.arguments.source_kind")
-        if error is not None:
-            return error
+    if "related" in arguments:
+        return validate_string_array(arguments["related"], "action.arguments.related")
     return None
 
 
@@ -1370,6 +1324,49 @@ def validate_ingest_provenance(value: Any, context: str) -> str | None:
     return validate_source_kind(value.get("source_kind"), f"{context}.source_kind")
 
 
+def validate_cursor_dto(value: Any, context: str) -> str | None:
+    if not isinstance(value, dict):
+        return f"{context}_not_object"
+    kind = value.get("kind")
+    if kind == "ref":
+        key_error = exact_keys(value, {"kind", "target"}, set(), context)
+        if key_error is not None:
+            return key_error
+        return require_non_empty_string(value, "target", context)
+    if kind == "around":
+        key_error = exact_keys(value, {"kind", "anchor", "dimensions"}, set(), context)
+        if key_error is not None:
+            return key_error
+        error = require_non_empty_string(value, "anchor", context)
+        if error is not None:
+            return error
+        error = validate_string_array(value.get("dimensions"), f"{context}.dimensions")
+        if error is not None:
+            return error
+        if not value.get("dimensions"):
+            return f"{context}.dimensions_empty"
+        return None
+    if kind == "temporal":
+        key_error = exact_keys(value, {"kind", "key", "anchor"}, set(), context)
+        if key_error is not None:
+            return key_error
+        if value.get("key") not in {"created", "updated", "accessed"}:
+            return f"{context}.key_unsupported"
+        return require_non_empty_string(value, "anchor", context)
+    if kind == "trace":
+        key_error = exact_keys(value, {"kind", "from", "to"}, set(), context)
+        if key_error is not None:
+            return key_error
+        for field in ("from", "to"):
+            error = require_non_empty_string(value, field, context)
+            if error is not None:
+                return error
+        return None
+    if kind is None:
+        return f"{context}.kind_missing"
+    return f"{context}.kind_unsupported"
+
+
 def validate_temporal_arguments(arguments: dict[str, Any], cursor_key: str) -> str | None:
     key_error = exact_keys(
         arguments,
@@ -1591,59 +1588,28 @@ def validate_string_map(value: Any, context: str) -> str | None:
 
 
 def is_bounded_tool_call(tool: str, arguments: dict[str, Any]) -> bool:
-    if tool == "kernel_wake":
-        return (
-            path_non_empty_string(arguments, ("about",))
-            and positive_limit(arguments, ("budget", "tokens"), 16_000)
-            and optional_limit(arguments, ("budget", "depth"), 8)
-            and optional_limit(arguments, ("depth",), 8)
-        )
+    if tool in {"kernel_wake", "kernel_ask", "kernel_goto", "kernel_inspect"}:
+        return validate_tool_arguments(tool, arguments) is None
     if tool == "kernel_near":
         return (
-            positive_limit(arguments, ("limit", "entries"), 64)
-            and positive_limit(arguments, ("limit", "tokens"), 16_000)
-            and optional_limit(arguments, ("budget", "tokens"), 16_000)
-            and optional_limit(arguments, ("budget", "depth"), 8)
-            and optional_limit(arguments, ("window", "before_entries"), 64)
-            and optional_limit(arguments, ("window", "after_entries"), 64)
-            and path_cursor(arguments, ("around",)) is not None
+            validate_tool_arguments(tool, arguments) is None
+            and optional_limit(arguments, ("limit",), 64)
+            and optional_string_array_limit(arguments, ("dimensions",), 64)
+        )
+    if tool in {"kernel_rewind", "kernel_forward"}:
+        return (
+            validate_tool_arguments(tool, arguments) is None
+            and optional_limit(arguments, ("window",), 64)
         )
     if tool == "kernel_trace":
         return (
-            path_string(arguments, ("from",)) is not None
-            and path_string(arguments, ("to",)) is not None
-            and positive_limit(arguments, ("budget", "tokens"), 16_000)
-            and optional_limit(arguments, ("budget", "depth"), 8)
-            and optional_limit(arguments, ("page", "entries"), 256)
-        )
-    if tool == "kernel_inspect":
-        return (
-            path_string(arguments, ("ref",)) is not None
-            and arguments.get("include", {}).get("raw") is False
-        )
-    if tool in {"kernel_goto", "kernel_rewind", "kernel_forward"}:
-        cursor_key = "at" if tool == "kernel_goto" else "from"
-        return (
-            path_cursor(arguments, (cursor_key,)) is not None
-            and optional_limit(arguments, ("limit", "entries"), 64)
-            and optional_limit(arguments, ("limit", "tokens"), 16_000)
-            and optional_limit(arguments, ("budget", "tokens"), 16_000)
-        )
-    if tool == "kernel_ask":
-        return (
-            positive_limit(arguments, ("budget", "tokens"), 16_000)
-            and optional_limit(arguments, ("budget", "depth"), 8)
-            and optional_limit(arguments, ("depth",), 8)
+            validate_tool_arguments(tool, arguments) is None
+            and optional_limit(arguments, ("page",), 256)
         )
     if tool == "kernel_write_memory":
-        connect_to = arguments.get("connect_to")
         return (
             validate_write_memory_arguments(arguments) is None
-            and arguments.get("options", {}).get("strict") is True
-            and isinstance(arguments.get("options", {}).get("dry_run"), bool)
-            and optional_limit(arguments, ("options", "sequence"), 2**32 - 1)
-            and isinstance(connect_to, list)
-            and 0 < len(connect_to) <= 32
+            and optional_string_array_limit(arguments, ("related",), 32)
         )
     if tool == "kernel_ingest":
         memory = arguments.get("memory", {})
@@ -1738,6 +1704,21 @@ def positive_limit(value: dict[str, Any], path: tuple[str, ...], maximum: int) -
 def optional_limit(value: dict[str, Any], path: tuple[str, ...], maximum: int) -> bool:
     actual = path_int(value, path)
     return actual is None or actual <= maximum
+
+
+def optional_string_array_limit(
+    value: dict[str, Any], path: tuple[str, ...], maximum: int
+) -> bool:
+    actual: Any = value
+    for key in path:
+        if not isinstance(actual, dict):
+            return True
+        actual = actual.get(key)
+    return actual is None or (
+        isinstance(actual, list)
+        and len(actual) <= maximum
+        and all(isinstance(item, str) and item for item in actual)
+    )
 
 
 def path_int(value: dict[str, Any], path: tuple[str, ...]) -> int | None:

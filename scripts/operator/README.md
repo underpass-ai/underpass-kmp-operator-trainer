@@ -128,8 +128,8 @@ locally as:
 ```bash
 # 1. Prepare (run on whatever produces trajectory-v1 JSONL)
 python scripts/operator/prepare_operator_sft_dataset.py \
-    --input trajectories.jsonl \
-    --output-dir /tmp/operator-sft
+    --trajectories trajectories.jsonl \
+    --output /tmp/operator-sft
 
 # 2. Train
 python scripts/operator/train_operator_sft_lora.py \
@@ -142,7 +142,7 @@ python scripts/operator/train_operator_sft_lora.py \
 
 # 3. Predict
 python scripts/operator/predict_operator_sft.py \
-    --dataset-jsonl /tmp/operator-sft/openai_eval.jsonl \
+    --dataset-jsonl /tmp/operator-sft/eval.jsonl \
     --model-id Qwen/Qwen2.5-0.5B-Instruct \
     --adapter /tmp/operator-lora-out \
     --output  /tmp/operator-predictions
@@ -159,11 +159,13 @@ proven by the kernel's k8s training jobs.
 
 ## Tests
 
-These scripts are intentionally **not** unit-tested at the Operator
-repo level. They are upstream-validated by the kernel's
-`underpass_operator_policy_eval` runs and by the eventual e2e
-validation in `operator-training-application::ValidateTrainedRunUseCase`
-(PR D). Re-asserting their behaviour in Python tests would duplicate
-that signal without adding coverage. If a script needs a deterministic
-contract test, add a Rust integration test against a stub script
-(mirroring `crates/operator-training-infra/tests/process_trainer_invoker.rs`).
+Run the local contract smoke before spending GPU time:
+
+```bash
+bash scripts/operator/round_trip_smoke.sh
+```
+
+The smoke synthesizes a tiny `TrainingTrajectoryDto` dataset, audits
+10/10 KMP tool coverage, prepares 5 SFT rows, validates train/predict
+inputs without loading a model, writes stub predictions from the
+ground-truth actions, and scores them with `operator-policy-eval`.
