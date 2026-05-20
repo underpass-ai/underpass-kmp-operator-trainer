@@ -19,13 +19,7 @@
 //! gates against either `PredictorOutcome` (process-level health) or
 //! the returned `EvaluationReport` (model-level health), or both.
 
-use std::collections::HashMap;
-
-use operator_evaluation_domain::prediction::evaluation_pair::EvaluationPair;
-use operator_evaluation_domain::prediction::predicted_action::PredictedAction;
-use operator_evaluation_domain::prediction::step_keyed_prediction::StepKeyedPrediction;
-use operator_shared_domain::ids::step_id::StepId;
-use operator_shared_domain::trajectory::training_trajectory::TrainingTrajectory;
+use operator_evaluation_domain::prediction::step_prediction_join::join_step_predictions;
 
 use crate::errors::training_application_result::TrainingApplicationResult;
 use crate::ports::policy_evaluator::PolicyEvaluator;
@@ -61,7 +55,7 @@ where
     ) -> TrainingApplicationResult<ValidateTrainedRunOutcome> {
         let predictor_outcome = self.predictor.predict(request.predictor_target())?;
         let predictions = self.reader.read()?;
-        let pairs = join_predictions(request.ground_truth(), &predictions);
+        let pairs = join_step_predictions(request.ground_truth(), &predictions);
         let evaluation_report = self.evaluator.evaluate(&pairs)?;
         Ok(ValidateTrainedRunOutcome::new(
             predictor_outcome,
@@ -70,59 +64,22 @@ where
     }
 }
 
-fn join_predictions(
-    ground_truth: &[TrainingTrajectory],
-    predictions: &[StepKeyedPrediction],
-) -> Vec<EvaluationPair> {
-    let mut truth_by_step: HashMap<&StepId, &TrainingTrajectory> =
-        HashMap::with_capacity(ground_truth.len());
-    for trajectory in ground_truth {
-        // Refuse silently-shadowed step_ids. The HashMap pattern hides
-        // duplicates by letting the second insert win, which would
-        // produce a misleading evaluation report. A duplicate step_id
-        // is a caller invariant violation, never expected in
-        // production data — treat it as a programmer error via a
-        // debug assertion. In release builds the second trajectory
-        // wins, matching the previous behaviour, so we never panic
-        // on user data.
-        let previous = truth_by_step.insert(trajectory.step_id(), trajectory);
-        debug_assert!(
-            previous.is_none(),
-            "ground truth has duplicate step_id `{}` — caller invariant violated",
-            trajectory.step_id().as_str()
-        );
-    }
-    let mut pairs = Vec::new();
-    for prediction in predictions {
-        let Some(trajectory) = truth_by_step.get(prediction.step_id()) else {
-            // Predictions for steps not in the ground-truth set are
-            // ignored: this is the same shape the kernel evaluator
-            // takes when a row is missing from the holdout.
-            continue;
-        };
-        let predicted = PredictedAction::new(trajectory.id().clone(), prediction.action().clone());
-        // The pair is constructed with the matched trajectory's id,
-        // so `EvaluationPair::new`'s id check cannot fail. Treat a
-        // violation as a programmer error: it would mean the
-        // ground-truth lookup broke its own invariants.
-        let pair = EvaluationPair::new((*trajectory).clone(), predicted)
-            .expect("EvaluationPair: ids match by construction");
-        pairs.push(pair);
-    }
-    pairs
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use operator_evaluation_domain::prediction::evaluation_pair::EvaluationPair;
+    use operator_evaluation_domain::prediction::step_keyed_prediction::StepKeyedPrediction;
+    use operator_evaluation_domain::report::evaluation_report::EvaluationReport;
     use operator_shared_domain::action::operator_action::OperatorAction;
     use operator_shared_domain::action::tool_call_action::ToolCallAction;
     use operator_shared_domain::ids::about_id::AboutId;
+    use operator_shared_domain::ids::step_id::StepId;
     use operator_shared_domain::ids::training_trajectory_id::TrainingTrajectoryId;
     use operator_shared_domain::mode::allowed_tools::AllowedTools;
     use operator_shared_domain::mode::operator_mode::OperatorMode;
     use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
     use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
+    use operator_shared_domain::trajectory::training_trajectory::TrainingTrajectory;
     use operator_shared_domain::value_objects::memory_ref::MemoryRef;
     use operator_shared_domain::value_objects::task_family::TaskFamily;
     use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
@@ -137,7 +94,6 @@ mod tests {
     use crate::errors::predictor_error::PredictorError;
     use crate::errors::training_application_error::TrainingApplicationError;
     use crate::ports::predictor_outcome::PredictorOutcome;
-    use operator_evaluation_domain::report::evaluation_report::EvaluationReport;
 
     #[derive(Debug)]
     struct StubPredictor {
