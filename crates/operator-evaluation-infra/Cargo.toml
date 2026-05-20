@@ -11,10 +11,12 @@ description = "Operator: evaluation bounded context — JSONL adapters for predi
 workspace = true
 
 [dependencies]
+operator-evaluation-application.workspace = true
 operator-evaluation-domain.workspace = true
 operator-shared-contract.workspace = true
 operator-shared-domain.workspace = true
 operator-shared-infra.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

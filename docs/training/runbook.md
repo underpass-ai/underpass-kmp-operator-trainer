@@ -305,6 +305,35 @@ Use this when you want to know whether the trained policy survives
 contact with the real kernel — not just whether it predicts the
 same bytes the SFT label has.
 
+## 4d. Or call a frontier LLM with `operator-llm-baseline`
+
+To measure the ceiling for your dataset, drive the same SFT JSONL
+through a frontier LLM via its OpenAI-compatible chat-completions
+endpoint and reuse `operator-policy-eval` on the result:
+
+```bash
+cargo run --release -p operator-evaluation-cli --bin operator-llm-baseline -- \
+    --sft        /tmp/operator-sft/eval.jsonl \
+    --output     /tmp/operator-baseline-gpt4o \
+    --api-base   https://api.openai.com/v1 \
+    --api-key-file /tmp/openai.txt \
+    --model      gpt-4o-mini \
+    --max-failures 0
+```
+
+For vLLM behind the kernel ingress, point `--api-base` at
+`https://llm.underpassai.com/v1`; for Anthropic, at
+`https://api.anthropic.com/v1` — every backend the pipeline targets
+speaks the same OpenAI chat-completions contract. The CLI writes
+`predictions.jsonl` (same shape as `predict_operator_sft.py`),
+`failures.jsonl` (per-row HTTP / parse failures with the raw
+response preserved), and `summary.json`. Pipe the predictions back
+through `operator-policy-eval` (§4b) to compare the fine-tuned
+0.5B against the frontier model under the same strict KMP contract.
+
+This run hits a paid endpoint per row — use `--limit N` for smoke
+checks before turning it loose on a full holdout.
+
 ## Known gaps
 
 This runbook calls out the remaining CLI gaps because they require
@@ -315,12 +344,10 @@ manual workarounds today:
    `KmpMcpCapability`, cloned N times. The trajectories satisfy the
    strict KMP action contract but do not reflect realistic operator
    behaviour. A teacher-model-backed generator is on the roadmap.
-2. **`operator-evaluation-cli` is partial** — `operator-policy-eval`
-   covers prediction scoring (§4b), `operator-replay` covers live
-   KMP execution (§4c), and `operator-contract-coverage` covers
-   dataset audits (§0b). The `llm-baseline` sibling (kernel-equivalent
-   binary that runs a frontier LLM on the holdout to measure
-   ceiling) is still pending.
-
-When that CLI lands, the runbook collapses to four `kubectl apply`
-plus a few `cargo run` invocations.
+2. **CLI parity with the pre-disaster kernel is complete.**
+   `operator-policy-eval` covers prediction scoring (§4b),
+   `operator-replay` covers live KMP execution (§4c),
+   `operator-contract-coverage` covers dataset audits (§0b), and
+   `operator-llm-baseline` covers frontier-LLM ceilings (§4d). The
+   only outstanding work is the teacher-model-backed synthetic
+   generator listed above.

@@ -1,1 +1,8 @@
+pub mod openai_chat_completion_error_dto;
+pub mod openai_chat_completion_error_envelope_dto;
+pub mod openai_chat_completion_request_dto;
+pub mod openai_chat_completion_request_message_dto;
+pub mod openai_chat_completion_response_choice_dto;
+pub mod openai_chat_completion_response_dto;
+pub mod openai_chat_completion_response_message_dto;
 pub mod prediction_row_dto;

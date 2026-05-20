@@ -18,6 +18,10 @@ path = "src/bin/operator_policy_eval.rs"
 name = "operator-contract-coverage"
 path = "src/bin/operator_contract_coverage.rs"
 
+[[bin]]
+name = "operator-llm-baseline"
+path = "src/bin/operator_llm_baseline.rs"
+
 [dependencies]
 operator-evaluation-application.workspace = true
 operator-evaluation-domain.workspace = true
@@ -26,5 +30,6 @@ operator-shared-contract.workspace = true
 operator-shared-domain.workspace = true
 operator-shared-infra.workspace = true
 clap.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
