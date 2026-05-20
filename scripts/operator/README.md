@@ -169,3 +169,34 @@ The smoke synthesizes a tiny `TrainingTrajectoryDto` dataset, audits
 10/10 KMP tool coverage, prepares 5 SFT rows, validates train/predict
 inputs without loading a model, writes stub predictions from the
 ground-truth actions, and scores them with `operator-policy-eval`.
+
+To run the same gate against an already generated corpus/SFT pair, pass the
+prepared SFT directory. If `OPERATOR_SMOKE_TRAJECTORIES` is omitted, the smoke
+uses `${OPERATOR_SMOKE_SFT_DIR}/all_trajectories.jsonl`:
+
+```bash
+OPERATOR_SMOKE_SFT_DIR=/path/to/sft \
+  bash scripts/operator/round_trip_smoke.sh
+```
+
+## Contract v6 corpus
+
+PR #27 introduced a reproducible builder for the P0.4/P0.5 contract corpus:
+
+```bash
+bash scripts/operator/build_contract_v6_corpus.sh
+```
+
+By default it writes outside the git repo under
+`../rehydration-kernel-artifacts/operator/<run-id>/` so generated JSONL does
+not pollute source control. The builder:
+
+- synthesizes a new `TrainingTrajectoryDto` JSONL from the current typed
+  Operator contract;
+- requires full `operator-contract-coverage` over the source, train and eval
+  trajectory files;
+- prepares SFT with one explicit eval group per KMP/MCP tool, so both train and
+  eval keep 10/10 tool coverage;
+- audits model-facing rows for gold leakage;
+- validates train and predict inputs without loading a model;
+- runs `round_trip_smoke.sh` against the generated SFT, not the tiny fixture.

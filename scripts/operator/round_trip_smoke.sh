@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 TMP_DIR="${TMPDIR:-/tmp}/operator-round-trip-smoke-$$"
+EXTERNAL_SFT_DIR="${OPERATOR_SMOKE_SFT_DIR:-}"
+EXTERNAL_TRAJECTORIES="${OPERATOR_SMOKE_TRAJECTORIES:-}"
 
 cleanup() {
   rm -rf "${TMP_DIR}"
@@ -11,27 +13,54 @@ trap cleanup EXIT
 
 mkdir -p "${TMP_DIR}"
 
-TRAJECTORIES="${TMP_DIR}/trajectories.jsonl"
-SFT_DIR="${TMP_DIR}/sft"
+SFT_DIR="${EXTERNAL_SFT_DIR:-${TMP_DIR}/sft}"
+if [[ -n "${EXTERNAL_TRAJECTORIES}" ]]; then
+  TRAJECTORIES="${EXTERNAL_TRAJECTORIES}"
+elif [[ -n "${EXTERNAL_SFT_DIR}" ]]; then
+  TRAJECTORIES="${SFT_DIR}/all_trajectories.jsonl"
+else
+  TRAJECTORIES="${TMP_DIR}/trajectories.jsonl"
+fi
 PREDICTIONS_DIR="${TMP_DIR}/predictions"
 PREDICTIONS="${PREDICTIONS_DIR}/predictions.jsonl"
 
-cargo run --quiet -p operator-synthetic-cli --bin operator-synthesize -- \
-  --dataset-id "dataset:round-trip-smoke" \
-  --minimum-examples 1 \
-  --output "${TRAJECTORIES}"
+if [[ -z "${EXTERNAL_SFT_DIR}" && -z "${EXTERNAL_TRAJECTORIES}" ]]; then
+  cargo run --quiet -p operator-synthetic-cli --bin operator-synthesize -- \
+    --dataset-id "dataset:round-trip-smoke" \
+    --minimum-examples 1 \
+    --output "${TRAJECTORIES}"
+fi
+
+if [[ ! -f "${TRAJECTORIES}" ]]; then
+  printf 'missing trajectory JSONL: %s\n' "${TRAJECTORIES}" >&2
+  exit 1
+fi
 
 cargo run --quiet -p operator-evaluation-cli --bin operator-contract-coverage -- \
   --trajectories "${TRAJECTORIES}" \
   --require-full-coverage \
   --require-zero-invalid
 
-python3 "${ROOT}/scripts/operator/prepare_operator_sft_dataset.py" \
-  --trajectories "${TRAJECTORIES}" \
-  --output "${SFT_DIR}" \
-  --limit 5 \
-  --eval-ratio 0.4 \
-  --force
+if [[ -z "${EXTERNAL_SFT_DIR}" ]]; then
+  python3 "${ROOT}/scripts/operator/prepare_operator_sft_dataset.py" \
+    --trajectories "${TRAJECTORIES}" \
+    --output "${SFT_DIR}" \
+    --limit 5 \
+    --eval-ratio 0.4 \
+    --force
+fi
+
+for required in \
+  "${SFT_DIR}/openai_train.jsonl" \
+  "${SFT_DIR}/openai_eval.jsonl" \
+  "${SFT_DIR}/eval.jsonl" \
+  "${SFT_DIR}/eval_trajectories.jsonl"
+do
+  if [[ ! -f "${required}" ]]; then
+    printf 'missing prepared SFT artifact: %s\n' "${required}" >&2
+    exit 1
+  fi
+done
 
 python3 "${ROOT}/scripts/operator/audit_operator_sft_no_gold.py" \
   "${SFT_DIR}/openai_train.jsonl" \
