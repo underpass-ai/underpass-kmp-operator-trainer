@@ -258,7 +258,7 @@ fn process_row(baseliner: &dyn LlmBaseliner, row: &SftRow) -> RowOutcome {
         }
     };
 
-    let raw = match baseliner.complete(&messages) {
+    let completion_text = match baseliner.complete(&messages) {
         Ok(content) => content,
         Err(err) => {
             return RowOutcome::Failure {
@@ -268,9 +268,12 @@ fn process_row(baseliner: &dyn LlmBaseliner, row: &SftRow) -> RowOutcome {
         }
     };
 
-    match parse_action_payload(&raw) {
+    match parse_action_payload(&completion_text) {
         Ok(action) => RowOutcome::Success { action },
-        Err(reason) => RowOutcome::Failure { reason, raw },
+        Err(reason) => RowOutcome::Failure {
+            reason,
+            raw: completion_text,
+        },
     }
 }
 
