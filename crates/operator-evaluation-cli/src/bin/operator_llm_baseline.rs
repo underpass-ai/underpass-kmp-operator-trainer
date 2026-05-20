@@ -162,14 +162,12 @@ fn baseline_rows(
     rows: &[SftRow],
     output_dir: &Path,
 ) -> Result<BatchOutcome, CliError> {
-    let mut predictions = BufWriter::new(
-        File::create(output_dir.join("predictions.jsonl"))
-            .map_err(|err| CliError::Generic(format!("create predictions.jsonl: {err}")))?,
-    );
-    let mut failures = BufWriter::new(
-        File::create(output_dir.join("failures.jsonl"))
-            .map_err(|err| CliError::Generic(format!("create failures.jsonl: {err}")))?,
-    );
+    let predictions_file = File::create(output_dir.join("predictions.jsonl"))
+        .map_err(|err| CliError::Generic(format!("create predictions.jsonl: {err}")))?;
+    let failures_file = File::create(output_dir.join("failures.jsonl"))
+        .map_err(|err| CliError::Generic(format!("create failures.jsonl: {err}")))?;
+    let mut predictions = BufWriter::new(predictions_file);
+    let mut failures = BufWriter::new(failures_file);
 
     let mut succeeded = 0usize;
     let mut failed = 0usize;
@@ -215,14 +213,22 @@ fn baseline_rows(
         }
     }
 
-    predictions
-        .flush()
-        .map_err(|err| CliError::Generic(format!("flush predictions: {err}")))?;
-    failures
-        .flush()
-        .map_err(|err| CliError::Generic(format!("flush failures: {err}")))?;
+    // Flush the BufWriter, recover the inner File, and sync_all to
+    // disk so paid LLM-call results survive a crash. Mirrors the
+    // durability pattern from operator-synthesize.
+    flush_and_sync(predictions, "predictions.jsonl")?;
+    flush_and_sync(failures, "failures.jsonl")?;
 
     Ok(BatchOutcome { succeeded, failed })
+}
+
+fn flush_and_sync(writer: BufWriter<File>, label: &'static str) -> Result<(), CliError> {
+    let file = writer
+        .into_inner()
+        .map_err(|err| CliError::Generic(format!("flush {label}: {err}")))?;
+    file.sync_all()
+        .map_err(|err| CliError::Generic(format!("sync_all {label}: {err}")))?;
+    Ok(())
 }
 
 fn write_jsonl<T: Serialize>(
@@ -279,7 +285,7 @@ fn build_messages(row: &SftRow) -> Result<Vec<ChatMessage>, String> {
     let mut out = Vec::with_capacity(take);
     for (index, message) in row.messages.iter().take(take).enumerate() {
         let chat = ChatMessage::new(&message.role, &message.content)
-            .map_err(|err| format!("row {} message {index}: {err}", row.step_id,))?;
+            .map_err(|err| format!("row {} message {index}: {err}", row.step_id))?;
         out.push(chat);
     }
     Ok(out)

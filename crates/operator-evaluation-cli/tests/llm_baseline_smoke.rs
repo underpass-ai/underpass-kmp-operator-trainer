@@ -96,10 +96,14 @@ fn spawn_mock_server(responses: Vec<MockResponse>) -> String {
 }
 
 fn inspect_sft_row() -> String {
+    inspect_sft_row_for_step("step:1")
+}
+
+fn inspect_sft_row_for_step(step_id: &str) -> String {
     // One row with system + user + assistant; the baseliner sends only
     // the first two to the LLM.
     let row = serde_json::json!({
-        "step_id": "step:1",
+        "step_id": step_id,
         "messages": [
             {"role": "system", "content": "You are the kernel operator."},
             {"role": "user", "content": "{\"about\":\"about:1\",\"allowed_tools\":[\"kernel_inspect\"]}"},
@@ -311,6 +315,77 @@ fn empty_sft_surface_an_error() {
         .status()
         .unwrap();
     assert!(!status.success(), "empty SFT input must exit non-zero");
+
+    fs::remove_dir_all(&output).ok();
+    fs::remove_file(&sft).ok();
+}
+
+#[test]
+fn limit_truncates_rows_and_skips_extra_requests() {
+    // Write three rows but cap with --limit 2. The mock server is
+    // primed with exactly two canned responses; if --limit silently
+    // failed and a third request were sent, the test would see a
+    // transport failure recorded in failures.jsonl.
+    let sft = tmp("limit-sft");
+    let content = format!(
+        "{}\n{}\n{}\n",
+        inspect_sft_row_for_step("step:1"),
+        inspect_sft_row_for_step("step:2"),
+        inspect_sft_row_for_step("step:3"),
+    );
+    fs::write(&sft, content).unwrap();
+
+    let output = tmp("limit-out");
+    let action_payload = r#"{"action":{"kind":"tool_call","tool":"kernel_inspect","arguments":{"target":"node:1"}}}"#;
+    let url = spawn_mock_server(vec![
+        ok(chat_completion_envelope(action_payload)),
+        ok(chat_completion_envelope(action_payload)),
+    ]);
+
+    let status = cli()
+        .args([
+            "--sft",
+            sft.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--api-base",
+            &url,
+            "--model",
+            "test-model",
+            "--limit",
+            "2",
+            "--max-failures",
+            "0",
+        ])
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "--limit 2 must cap rows at 2 successes with --max-failures=0"
+    );
+
+    let predictions = fs::read_to_string(output.join("predictions.jsonl")).unwrap();
+    let prediction_lines = predictions.lines().filter(|l| !l.is_empty()).count();
+    assert_eq!(
+        prediction_lines, 2,
+        "predictions.jsonl must have exactly 2 lines under --limit 2: {predictions}"
+    );
+
+    let failures = fs::read_to_string(output.join("failures.jsonl")).unwrap();
+    assert!(
+        failures.trim().is_empty(),
+        "no failures expected under --limit 2 with mock: {failures}"
+    );
+
+    let summary = fs::read_to_string(output.join("summary.json")).unwrap();
+    assert!(
+        summary.contains("\"selected\": 2"),
+        "summary.json must report selected=2: {summary}"
+    );
+    assert!(
+        !summary.contains("\"step:3\""),
+        "summary.json must not reference the truncated step:3 row: {summary}"
+    );
 
     fs::remove_dir_all(&output).ok();
     fs::remove_file(&sft).ok();

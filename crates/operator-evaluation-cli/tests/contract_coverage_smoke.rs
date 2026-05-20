@@ -151,3 +151,67 @@ fn nonexistent_path_surfaces_an_error() {
         .unwrap();
     assert!(!status.success());
 }
+
+/// Inspect trajectory whose `target_action` references a `MemoryRef`
+/// not in `visible_state.known_refs`. The DTO parses, the domain
+/// mapper accepts the row (knowing-refs is a contract-level rule, not
+/// a structural invariant), and `CompositeActionContractValidator`
+/// flags the action as invalid.
+fn write_invalid_inspect(path: &std::path::Path) {
+    let row = r#"{
+        "id": "traj:1",
+        "step_id": "step:1",
+        "about": "about:1",
+        "mode": "read",
+        "task_family": "read.inspect",
+        "allowed_tools": [
+            "kernel_wake","kernel_ask","kernel_near","kernel_goto",
+            "kernel_rewind","kernel_forward","kernel_trace","kernel_inspect"
+        ],
+        "visible_state": {
+            "known_refs": ["node:1"],
+            "known_dimensions": [],
+            "active_cursor": null,
+            "budget": {"calls_remaining": null, "tokens_remaining": null}
+        },
+        "target_action": {
+            "kind": "tool_call",
+            "tool": "kernel_inspect",
+            "arguments": {"target": "node:not-in-visible-state"}
+        }
+    }"#
+    .replace('\n', " ");
+    fs::write(path, format!("{row}\n")).unwrap();
+}
+
+#[test]
+fn invalid_action_fails_require_zero_invalid() {
+    let trajectories = tmp("invalid", "jsonl");
+    write_invalid_inspect(&trajectories);
+
+    // Without the gate, the CLI reports metrics and exits 0.
+    let baseline = cli()
+        .args(["--trajectories", trajectories.to_str().unwrap()])
+        .status()
+        .unwrap();
+    assert!(
+        baseline.success(),
+        "no-gate run must exit 0 even when an action is invalid"
+    );
+
+    // With the gate, the CLI must surface the violation as a non-zero
+    // exit. This is the production CI signal.
+    let gated = cli()
+        .args([
+            "--trajectories",
+            trajectories.to_str().unwrap(),
+            "--require-zero-invalid",
+        ])
+        .status()
+        .unwrap();
+    assert!(
+        !gated.success(),
+        "--require-zero-invalid must fail when any target_action violates the strict contract"
+    );
+    fs::remove_file(&trajectories).ok();
+}
