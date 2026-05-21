@@ -168,6 +168,21 @@ If a capability fails:
 If the teacher output does not parse as `OperatorActionDto`, it counts as
 `shape_failed_count`; the runner does not repair JSON or strip Markdown.
 
+For prepared write or ingest cases, be stricter:
+
+- if the subject only describes the payload narratively, classify repeated
+  structured mismatches as a case-design or subject-contract problem;
+- do not add accepted variants for structured fields just because the teacher
+  produced a contract-valid but different payload;
+- narrative variants are only appropriate for fields such as `kernel_ask.query`
+  or `stop.answer`;
+- if a prepared payload must be copied exactly, prefer exposing it as typed
+  prepared arguments in the subject rather than asking the teacher to compile
+  prose into JSON.
+
+Observed 2026-05-21 calibration evidence is recorded in
+`teacher-calibration-results-2026-05-21.md`.
+
 ## Versioning
 
 Increment the dataset version when cases change:

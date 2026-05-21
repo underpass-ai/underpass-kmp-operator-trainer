@@ -257,8 +257,9 @@ no synthetic <-> evaluation dependency
 - `adapters/openai_compatible_teacher_policy.rs` —
   OpenAI-compatible teacher adapter for calibration. It performs no JSON
   repair; invalid assistant content is a shape failure.
-- `prompts/teacher_calibration_v1.md` — versioned teacher prompt used by the
-  calibration CLI.
+- `prompts/teacher_calibration_vN.md` — versioned teacher prompts used by the
+  calibration CLI. New prompt versions are evidence artifacts, not automatic
+  approval to generate training corpus.
 
 ## End-to-end test
 

@@ -557,6 +557,26 @@ calibration-cases-vN/cases.jsonl
 If the teacher fails, do not edit cases to match the model. Fix the prompt or
 teacher policy, rerun, and keep the report as evidence.
 
+### Update 2026-05-21-T9 — first real calibration evidence
+
+The first v7.2.5 manual runs are recorded in
+`teacher-calibration-results-2026-05-21.md`.
+
+The important result is not a pass. It is a design finding:
+
+- multi-accepted actions are correct for narrative arguments such as
+  `kernel_ask.query` and `stop.answer`;
+- structured arguments must remain exact;
+- `kernel_ingest` is currently the blocking capability;
+- the current calibration subject can only carry a narrative `goal`, so prepared
+  ingest payloads are being reconstructed from prose;
+- that is not the desired long-term Operator responsibility.
+
+Before v7.3 teacher-backed corpus generation, prepared write/ingest payloads
+need a typed subject shape or equivalent typed prepared-arguments carrier. The
+teacher should decide whether to execute a prepared KMP/MCP action, not learn to
+compile long prose into canonical ingest JSON.
+
 ## Non-goals
 
 This corpus is not:
