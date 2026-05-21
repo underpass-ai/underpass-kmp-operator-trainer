@@ -503,6 +503,60 @@ v7.2 fixes the seed-fixture shape:
 This is still architecture validation only. It must not be used as training
 data or as calibration data for the teacher.
 
+## Updates 2026-05-21-T11
+
+v7.2.5 adds the teacher calibration suite before the v7.3 teacher-backed
+generator:
+
+- calibration cases live outside the repo under
+  `../rehydration-kernel-artifacts/operator/calibration-cases-v1/cases.jsonl`;
+- the committed prompt lives at
+  `crates/operator-synthetic-infra/prompts/teacher_calibration_v1.md`;
+- the runner is `operator-teacher-calibration`;
+- the application owns two ports: `CalibrationEpisodeSource` and
+  `TeacherPolicy`;
+- infra owns the JSONL source and OpenAI-compatible teacher adapter;
+- the teacher receives only the `CalibrationSubject` (`about`, mode,
+  task_family, goal, allowed tools and visible KMP state);
+- accepted actions and human rationale never cross the LLM boundary;
+- reports include overall, per-capability and per-category metrics.
+
+The v1 dataset is intentionally small but policy-focused:
+
+| Property | Value |
+| --- | --- |
+| cases | 25 |
+| category split | 18 happy / 7 adversarial |
+| capabilities | 12/12 covered |
+| writer-pre-read cases | 3 |
+| multi-accepted case | yes |
+| contract-valid rows | 25/25 in stub parse check |
+
+The calibration gate requires both:
+
+```text
+overall_accuracy >= 0.80
+per_capability_accuracy >= 0.60 for every capability
+```
+
+Per-category metrics are diagnostic. They do not fail the gate yet, but they
+make teacher bias visible: a high happy-case score with weak adversarial
+behavior is not acceptable evidence for moving to v7.3.
+
+The calibration flow is:
+
+```text
+calibration-cases-vN/cases.jsonl
+  -> JsonlCalibrationEpisodeSource
+  -> OpenAiCompatibleTeacherPolicy
+  -> EvaluateTeacherCalibrationUseCase
+  -> report.json
+  -> gate pass/fail
+```
+
+If the teacher fails, do not edit cases to match the model. Fix the prompt or
+teacher policy, rerun, and keep the report as evidence.
+
 ## Non-goals
 
 This corpus is not:

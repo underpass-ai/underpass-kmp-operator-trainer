@@ -721,7 +721,9 @@ dependencies = [
  "operator-synthetic-application",
  "operator-synthetic-domain",
  "operator-synthetic-infra",
+ "reqwest",
  "serde_json",
+ "sha2",
  "thiserror",
 ]
 
@@ -737,9 +739,15 @@ dependencies = [
 name = "operator-synthetic-infra"
 version = "0.1.0"
 dependencies = [
+ "operator-shared-contract",
  "operator-shared-domain",
+ "operator-shared-infra",
  "operator-synthetic-application",
  "operator-synthetic-domain",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

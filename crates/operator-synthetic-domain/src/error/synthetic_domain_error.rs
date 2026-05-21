@@ -38,6 +38,15 @@ pub enum SyntheticDomainError {
     #[error("synthetic case '{case_id}' has duplicate occurrences in the blueprint")]
     DuplicateCase { case_id: String },
 
+    #[error("calibration case must contain at least one accepted action")]
+    EmptyAcceptedActions,
+
+    #[error("calibration case accepted action count {actual} exceeds maximum {maximum}")]
+    TooManyAcceptedActions { maximum: usize, actual: usize },
+
+    #[error("calibration case accepted actions mix capabilities '{expected}' and '{actual}'")]
+    MixedAcceptedActionCapability { expected: String, actual: String },
+
     #[error(transparent)]
     Shared(#[from] DomainError),
 }

@@ -133,6 +133,53 @@ When adding a new corpus-quality spec:
 4. Extend `CompositeCorpusQualityValidator::default_strict()` only after the
    fixture exists.
 
+### Teacher calibration
+
+Teacher calibration lives in the synthetic bounded context because it measures
+the policy quality of the teacher that will later generate synthetic operator
+trajectories.
+
+Layer placement:
+
+- `operator-synthetic-domain/src/calibration/` defines the typed calibration
+  aggregate and value objects: case id, theme, category, subject, accepted
+  actions, capability bucket and rationale.
+- `operator-synthetic-application/src/ports/` defines
+  `CalibrationEpisodeSource` and `TeacherPolicy`.
+- `operator-synthetic-application/src/use_cases/evaluate_teacher_calibration_use_case.rs`
+  loads cases through the source port, asks the teacher for one action per
+  subject, validates the predicted action through the shared strict contract,
+  and builds a report.
+- `operator-synthetic-infra/src/adapters/jsonl_calibration_episode_source.rs`
+  reads runtime JSONL artifacts.
+- `operator-synthetic-infra/src/adapters/openai_compatible_teacher_policy.rs`
+  calls an OpenAI-compatible chat endpoint.
+- `operator-synthetic-cli/src/bin/operator_teacher_calibration.rs` wires the
+  adapters and writes `report.json`.
+
+The teacher sees only `CalibrationSubject`: `about`, mode, task family, goal,
+allowed tools and visible KMP state. It never receives accepted actions or the
+human rationale.
+
+Reports include:
+
+- overall exact-action accuracy;
+- tool-selection count;
+- strict-contract-valid count;
+- shape-failed count;
+- per-capability metrics;
+- per-category metrics (`happy` vs `adversarial`).
+
+The OpenAI-compatible client is intentionally implemented in
+`operator-synthetic-infra` instead of importing evaluation infra. This duplicates
+a small HTTP adapter but keeps bounded-context edges clean:
+
+```text
+synthetic -> shared
+evaluation -> shared
+no synthetic <-> evaluation dependency
+```
+
 ### Errors
 
 - `error/synthetic_domain_error.rs` — `SyntheticDomainError` with
@@ -150,6 +197,10 @@ When adding a new corpus-quality spec:
 - `ports/corpus_source.rs` — `CorpusSource` trait: loads a typed
   `CorpusSnapshot` for quality evaluation. v7.1b defines the port only;
   adapters land later.
+- `ports/calibration_episode_source.rs` — reads calibration cases for teacher
+  policy evaluation.
+- `ports/teacher_policy.rs` — asks a teacher model to choose one operator
+  action from a model-facing `CalibrationSubject`.
 
 ### Services
 
@@ -171,6 +222,13 @@ When adding a new corpus-quality spec:
   `CorpusQualityReport`.
 - `use_cases/corpus_quality_report.rs` — valid/invalid quality result plus
   accumulated violations.
+- `use_cases/evaluate_teacher_calibration_use_case.rs` —
+  `EvaluateTeacherCalibrationUseCase`. Loads calibration cases, invokes the
+  teacher, compares against multi-accepted gold actions, validates predicted
+  actions through the shared strict contract, and returns a
+  `TeacherCalibrationReport`.
+- `use_cases/teacher_calibration_report.rs` — calibration metrics and gate
+  result for v7.2.5.
 
 ### Errors
 
@@ -183,6 +241,9 @@ When adding a new corpus-quality spec:
 - `error/corpus_source_error.rs`
 - `error/evaluate_corpus_quality_error.rs`
 - `error/episode_split_error.rs`
+- `error/calibration_episode_source_error.rs`
+- `error/teacher_policy_error.rs`
+- `error/evaluate_teacher_calibration_error.rs`
 
 ## Infra map
 
@@ -191,6 +252,13 @@ When adding a new corpus-quality spec:
   `KmpMcpCapability` and clones it N times to satisfy the spec minimum.
   Used by the end-to-end test and by future contexts that need a stub
   generator (replay smoke tests, training pipeline dry-runs).
+- `adapters/jsonl_calibration_episode_source.rs` —
+  runtime JSONL adapter for `CalibrationCaseDto`.
+- `adapters/openai_compatible_teacher_policy.rs` —
+  OpenAI-compatible teacher adapter for calibration. It performs no JSON
+  repair; invalid assistant content is a shape failure.
+- `prompts/teacher_calibration_v1.md` — versioned teacher prompt used by the
+  calibration CLI.
 
 ## End-to-end test
 

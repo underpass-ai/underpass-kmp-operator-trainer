@@ -14,6 +14,10 @@ workspace = true
 name = "operator-synthesize"
 path = "src/bin/operator_synthesize.rs"
 
+[[bin]]
+name = "operator-teacher-calibration"
+path = "src/bin/operator_teacher_calibration.rs"
+
 [dependencies]
 operator-shared-contract.workspace = true
 operator-shared-domain.workspace = true
@@ -23,4 +27,6 @@ operator-synthetic-domain.workspace = true
 operator-synthetic-infra.workspace = true
 clap.workspace = true
 serde_json.workspace = true
+reqwest.workspace = true
+sha2.workspace = true
 thiserror.workspace = true

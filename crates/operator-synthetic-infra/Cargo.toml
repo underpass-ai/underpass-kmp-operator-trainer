@@ -11,6 +11,12 @@ description = "Operator: synthetic bounded context — adapters (in-memory gener
 workspace = true
 
 [dependencies]
+operator-shared-contract.workspace = true
 operator-shared-domain.workspace = true
+operator-shared-infra.workspace = true
 operator-synthetic-application.workspace = true
 operator-synthetic-domain.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

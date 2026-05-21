@@ -1,3 +1,10 @@
 pub mod corpus_quality_report;
 pub mod evaluate_corpus_quality_use_case;
+pub mod evaluate_teacher_calibration_use_case;
 pub mod generate_synthetic_dataset_use_case;
+pub mod teacher_calibration_capability_metric;
+pub mod teacher_calibration_case_result;
+pub mod teacher_calibration_category_metric;
+pub mod teacher_calibration_prediction_outcome;
+pub mod teacher_calibration_ratio;
+pub mod teacher_calibration_report;
