@@ -330,3 +330,118 @@ No training should start from v7.2.5 until:
 - structured write/ingest inputs match the intended Operator responsibility;
 - the passing report path is recorded in this document and in the PR
   description.
+
+## PR #33 Result — Prepared Action Subject
+
+PR #33 implements the recommended architectural fix: calibration subjects can
+now carry an optional typed `prepared_action`.
+
+This changes the write/ingest task from:
+
+```text
+compile a long narrative goal into canonical KMP JSON
+```
+
+to:
+
+```text
+decide whether to execute this typed prepared KMP/MCP action
+```
+
+That is the intended Operator responsibility.
+
+The field is visible to the teacher as part of `subject`. The teacher still
+never sees `accepted_actions` or `expected_action_rationale`.
+
+## PR #33 Calibration Evidence
+
+Two follow-up datasets were produced after PR #32:
+
+| Dataset | Prompt | Result | Notes |
+| --- | --- | --- | --- |
+| `calibration-cases-v4` | `teacher_calibration_v3.md` | failed | 36 cases, 3 per capability; exposed two ambiguous escalation cases and narrative exact-match misses |
+| `calibration-cases-v5` | `teacher_calibration_v4.md` | passed | keeps 36 cases, 3 per capability; fixes ambiguous cases without weakening structured write/ingest expectations |
+
+The important failed v4 run is:
+
+```text
+../rehydration-kernel-artifacts/operator/calibration-runs/2026-05-21T-pr33-v4-gpt4o-mini-full/report.json
+```
+
+Summary:
+
+| Metric | Value |
+| --- | ---: |
+| total cases | 36 |
+| exact matches | 31 |
+| tool matches | 34 |
+| contract-valid predictions | 36 |
+| shape failures | 0 |
+| overall accuracy | 86.11% |
+| gate | failed |
+
+The v4 gate failed because `kernel_ask` scored 1/3 and `escalate` scored 1/3.
+The audit showed:
+
+- the `kernel_ask` misses were valid query paraphrases;
+- the `stop no_candidate` miss added a valid explanation and visible evidence;
+- two escalation cases were underspecified because the subject still permitted
+  reasonable memory retrieval.
+
+The passing v5 run is:
+
+```text
+../rehydration-kernel-artifacts/operator/calibration-runs/2026-05-21T-pr33-v5-gpt4o-mini-full/report.json
+```
+
+Summary:
+
+| Metric | Value |
+| --- | ---: |
+| total cases | 36 |
+| exact matches | 35 |
+| tool matches | 36 |
+| contract-valid predictions | 36 |
+| shape failures | 0 |
+| overall accuracy | 97.22% |
+| happy accuracy | 96.30% |
+| adversarial accuracy | 100.00% |
+| gate | passed |
+
+Dataset and prompt hashes from the passing report:
+
+```text
+dataset_sha256=f5bddce15ad3ff3f719de5bc1cd4d1b541633afbc57373ff3eb2e2da7381410e
+prompt_sha256=fc2d12f7fdea60f09cc4717aed214f3177ba0436752c536341aff8e00f8e207c
+```
+
+Per-capability accuracy:
+
+| Capability | Accuracy |
+| --- | ---: |
+| `kernel_wake` | 100% |
+| `kernel_ask` | 100% |
+| `kernel_near` | 100% |
+| `kernel_goto` | 66.67% |
+| `kernel_rewind` | 100% |
+| `kernel_forward` | 100% |
+| `kernel_trace` | 100% |
+| `kernel_inspect` | 100% |
+| `kernel_write_memory` | 100% |
+| `kernel_ingest` | 100% |
+| `stop` | 100% |
+| `escalate` | 100% |
+
+The only remaining mismatch was `kernel_goto`: the teacher selected a ref cursor
+to the trace start instead of the accepted trace cursor. This is a real
+structured-argument miss, but it remains above the 60% per-capability floor.
+
+## Decision After PR #33
+
+The v7.2.5 teacher gate is now closed for the current scope.
+
+`gpt-4o-mini` remains the recommended teacher for v7.3 because it passed the
+calibration gate while preserving typed prepared write/ingest payloads exactly.
+
+v7.3 may start, but generated corpus rows must still pass the existing strict
+contract, no-gold audit, coverage gates and later frontier ceiling checks.

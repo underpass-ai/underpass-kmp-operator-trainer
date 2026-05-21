@@ -353,6 +353,7 @@ mod tests {
                 active_cursor,
                 BudgetSnapshot::bounded(4, 1024),
             ),
+            None,
         )
         .unwrap()
     }

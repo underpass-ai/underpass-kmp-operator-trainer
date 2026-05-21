@@ -589,6 +589,50 @@ least three cases per capability, a typed prepared-payload carrier, and a full
 PR #32 is therefore infrastructure plus findings. It is not evidence that the
 v7.2.5 teacher gate passed.
 
+## Updates 2026-05-21-T12
+
+PR #33 closes the v7.2.5 calibration gate.
+
+Implemented:
+
+- `CalibrationSubject` now has an optional typed `prepared_action`;
+- prepared actions are domain values and must be tool calls;
+- prepared action tools must be allowed by the subject mode;
+- DTO and mapper layers preserve `prepared_action`;
+- the CLI stub returns `prepared_action` exactly when present;
+- prompt `teacher_calibration_v3.md` tells the teacher to copy a prepared action
+  verbatim;
+- prompt `teacher_calibration_v4.md` adds an explicit escalation rule for goals
+  that say `Escalate with beyond_capability`.
+
+External datasets:
+
+| Dataset | Purpose | Result |
+| --- | --- | --- |
+| `calibration-cases-v4` | first 36-case prepared-action suite | failed; exposed ambiguous escalation cases |
+| `calibration-cases-v5` | corrected 36-case suite, still 3 cases per capability | passed |
+
+Passing report:
+
+```text
+../rehydration-kernel-artifacts/operator/calibration-runs/2026-05-21T-pr33-v5-gpt4o-mini-full/report.json
+```
+
+Measured result:
+
+| Metric | Value |
+| --- | ---: |
+| total cases | 36 |
+| exact matches | 35 |
+| tool matches | 36 |
+| contract-valid predictions | 36 |
+| shape failures | 0 |
+| overall accuracy | 97.22% |
+| gate | passed |
+
+This means v7.2.5 is complete for the current scope. v7.3 may start with
+`gpt-4o-mini` as the calibrated teacher, subject to the downstream corpus gates.
+
 ## Non-goals
 
 This corpus is not:
