@@ -1,1 +1,2 @@
 pub mod in_memory_synthetic_case_generator;
+pub mod teacher_backed_synthetic_case_generator;

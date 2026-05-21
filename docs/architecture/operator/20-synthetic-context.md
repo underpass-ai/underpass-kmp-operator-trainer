@@ -12,8 +12,9 @@ the `shared` bounded context, plus a per-case metric so downstream
 consumers can enforce coverage.
 
 This pass establishes the skeleton. The in-memory generator covers every
-`KmpMcpCapability` with a minimal canonical fixture; an LLM-teacher
-generator and the writer/exec scenario library land in later passes.
+`KmpMcpCapability` with a minimal canonical fixture. The teacher-backed
+generator adds an LLM-teacher path over the same port, while the richer
+writer/exec scenario library lands in later passes.
 
 The fixture generator is not training-grade. It exists to prove the action
 contract, SFT preparation and round-trip pipeline. The realistic training
@@ -26,7 +27,8 @@ direction is documented in
 operator-synthetic-domain    capabilities, episodes, corpus quality specs,
                              case specs, blueprints, reports
 operator-synthetic-application use cases, services + generation/corpus ports
-operator-synthetic-infra     in-memory adapter; teacher adapter pending
+operator-synthetic-infra     in-memory adapter; teacher-backed adapter;
+                             calibration JSONL/LLM adapters
 ```
 
 No `operator-synthetic-contract` crate today. See
@@ -257,6 +259,11 @@ see the candidate KMP/MCP action it is being asked to execute, while gold
   `KmpMcpCapability` and clones it N times to satisfy the spec minimum.
   Used by the end-to-end test and by future contexts that need a stub
   generator (replay smoke tests, training pipeline dry-runs).
+- `generators/teacher_backed_synthetic_case_generator.rs` —
+  `TeacherBackedSyntheticCaseGenerator`. Builds a model-facing
+  `CalibrationSubject`, calls a `TeacherPolicy`, validates that the teacher
+  selected the expected KMP/MCP tool and runs the shared strict action
+  contract before returning a `TrainingTrajectory`.
 - `adapters/jsonl_calibration_episode_source.rs` —
   runtime JSONL adapter for `CalibrationCaseDto`.
 - `adapters/openai_compatible_teacher_policy.rs` —
@@ -286,10 +293,11 @@ asserts:
 
 ## Pending for later passes
 
-- Teacher-backed `SyntheticCaseGenerator` adapter (LLM in the loop), with
-  strict validation before any teacher output becomes a trajectory.
 - Scenario libraries for incidents, bug investigations, migrations, product
   decisions, benchmark-like memory tasks and smart writing sessions.
+- A broader generation target model beyond `KmpMcpCapability`. The current
+  synthetic blueprint covers the 10 KMP tools, but it cannot yet express
+  `stop` or `escalate` as generation targets.
 - Synthetic-context contract DTOs for persisting a
   `SyntheticDatasetGenerationReport` to disk (when a real consumer needs
   it).

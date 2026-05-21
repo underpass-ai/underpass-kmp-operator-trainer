@@ -648,6 +648,36 @@ A repeat run reproduced the same `kernel_ask` shape failure, so prompt v4
 remains the cleanest run-level calibration evidence while prompt v5 documents
 the reusable trace-cursor example.
 
+## Updates 2026-05-22-T13
+
+v7.3 has started with the first teacher-backed `SyntheticCaseGenerator`
+adapter.
+
+Implemented in this slice:
+
+- `TeacherBackedSyntheticCaseGenerator<T: TeacherPolicy>` in
+  `operator-synthetic-infra`;
+- one generated `CalibrationSubject` per requested synthetic row;
+- typed prepared actions for `kernel_ingest` and `kernel_write_memory`;
+- fail-fast rejection when the teacher chooses the wrong tool;
+- fail-fast rejection when the teacher action fails the shared strict action
+  contract;
+- propagation of teacher policy failures without repair;
+- focused tests covering all current `KmpMcpCapability` variants.
+
+Important scope boundary:
+
+`SyntheticCaseSpec` is still keyed by `KmpMcpCapability`, and
+`KmpMcpCapability` currently mirrors the 10 KMP tools. That means this first
+v7.3 adapter can generate tool-call trajectories, but it cannot yet target
+`stop` or `escalate` rows.
+
+That is a real planning gap before any v7.4 dry run claims full 12-capability
+coverage. The next slice must either extend the synthetic target model beyond
+`KmpMcpCapability` or introduce a separate operator-action target model that
+can represent KMP tools plus `stop` and `escalate` without weakening the KMP
+tool contract.
+
 ## Non-goals
 
 This corpus is not:
