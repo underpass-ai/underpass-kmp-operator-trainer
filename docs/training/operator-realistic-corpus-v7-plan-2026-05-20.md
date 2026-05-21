@@ -604,6 +604,8 @@ Implemented:
   verbatim;
 - prompt `teacher_calibration_v4.md` adds an explicit escalation rule for goals
   that say `Escalate with beyond_capability`.
+- prompt `teacher_calibration_v5.md` adds the missing canonical
+  `kernel_goto` trace-cursor example.
 
 External datasets:
 
@@ -632,6 +634,16 @@ Measured result:
 
 This means v7.2.5 is complete for the current scope. v7.3 may start with
 `gpt-4o-mini` as the calibrated teacher, subject to the downstream corpus gates.
+
+Prompt v5 was checked once after this gate:
+
+```text
+../rehydration-kernel-artifacts/operator/calibration-runs/2026-05-22T-pr33-v5-promptv5-gpt4o-mini-full/report.json
+```
+
+It passed the gate and fixed the previous trace-cursor mismatch, but produced
+one unrelated `kernel_ask` shape failure. Do not iterate the calibration prompt
+again before v7.3; the next signal should come from the generated corpus gates.
 
 ## Non-goals
 

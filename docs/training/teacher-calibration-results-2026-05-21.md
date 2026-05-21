@@ -361,6 +361,7 @@ Two follow-up datasets were produced after PR #32:
 | --- | --- | --- | --- |
 | `calibration-cases-v4` | `teacher_calibration_v3.md` | failed | 36 cases, 3 per capability; exposed two ambiguous escalation cases and narrative exact-match misses |
 | `calibration-cases-v5` | `teacher_calibration_v4.md` | passed | keeps 36 cases, 3 per capability; fixes ambiguous cases without weakening structured write/ingest expectations |
+| `calibration-cases-v5` | `teacher_calibration_v5.md` | passed | adds a canonical `kernel_goto` trace-cursor example; fixes the trace-cursor case but exposes one unrelated `kernel_ask` shape failure |
 
 The important failed v4 run is:
 
@@ -435,6 +436,55 @@ Per-capability accuracy:
 The only remaining mismatch was `kernel_goto`: the teacher selected a ref cursor
 to the trace start instead of the accepted trace cursor. This is a real
 structured-argument miss, but it remains above the 60% per-capability floor.
+
+## Prompt v5 Check
+
+Prompt v5 adds only one canonical action-shape example:
+
+```json
+{"kind":"tool_call","tool":"kernel_goto","arguments":{"cursor":{"kind":"trace","from":"about:id:node:from","to":"about:id:node:to"}}}
+```
+
+It does not change the dataset and does not reinforce the failing case goal.
+
+Run:
+
+```text
+../rehydration-kernel-artifacts/operator/calibration-runs/2026-05-22T-pr33-v5-promptv5-gpt4o-mini-full/report.json
+```
+
+Summary:
+
+| Metric | Value |
+| --- | ---: |
+| total cases | 36 |
+| exact matches | 35 |
+| tool matches | 35 |
+| contract-valid predictions | 35 |
+| shape failures | 1 |
+| overall accuracy | 97.22% |
+| happy accuracy | 100.00% |
+| adversarial accuracy | 88.89% |
+| gate | passed |
+
+Dataset and prompt hashes:
+
+```text
+dataset_sha256=f5bddce15ad3ff3f719de5bc1cd4d1b541633afbc57373ff3eb2e2da7381410e
+prompt_sha256=87e26adf71049c165daa68ea016091846f576b9d4902de5276ce37e81956913c
+```
+
+The previous `kernel_goto` trace-cursor mismatch is fixed in this run.
+
+The new single failure is unrelated: `calib:product_planning:ask-ambiguous-scope`
+returned a shape-invalid action with `kind:"kernel_ask"` instead of
+`kind:"tool_call"`. This is not a dataset issue and should not trigger another
+prompt iteration before v7.3.
+
+For v7.3, `teacher_calibration_v5.md` is still useful because the trace-cursor
+example is reusable. The strongest clean calibration evidence remains the
+prompt v4 run because it has `36/36` contract-valid predictions and `0` shape
+failures. Both runs pass the gate.
 
 ## Decision After PR #33
 

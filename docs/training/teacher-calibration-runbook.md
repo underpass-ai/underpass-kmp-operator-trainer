@@ -219,6 +219,7 @@ Increment the prompt version when policy or examples change:
 teacher_calibration_v1.md
 teacher_calibration_v2.md
 teacher_calibration_v4.md
+teacher_calibration_v5.md
 ```
 
 Every report records both sha256 values so calibration results remain
