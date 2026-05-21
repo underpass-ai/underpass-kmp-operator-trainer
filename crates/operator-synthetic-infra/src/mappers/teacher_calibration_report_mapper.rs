@@ -2,6 +2,9 @@
 
 use std::collections::BTreeMap;
 
+use operator_shared_contract::operator_action_dto::OperatorActionDto;
+use operator_shared_domain::action::operator_action::OperatorAction;
+use operator_shared_infra::mappers::operator_action_mapper::OperatorActionMapper;
 use operator_synthetic_application::use_cases::teacher_calibration_report::TeacherCalibrationReport;
 
 use crate::dto::teacher_calibration_capability_metric_dto::TeacherCalibrationCapabilityMetricDto;
@@ -97,8 +100,15 @@ impl TeacherCalibrationReportMapper {
                     failure_message: row
                         .failure_message()
                         .map(|message| message.as_str().to_string()),
+                    predicted_action: row.predicted_action().map(action_to_dto),
+                    accepted_actions: row.accepted_actions().iter().map(action_to_dto).collect(),
                 })
                 .collect(),
         }
     }
+}
+
+fn action_to_dto(action: &OperatorAction) -> OperatorActionDto {
+    OperatorActionMapper::to_dto(action)
+        .expect("teacher calibration report contains a domain-valid operator action")
 }

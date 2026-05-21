@@ -64,6 +64,7 @@ where
                             },
                         ),
                     ),
+                    case.accepted_actions().as_slice().to_vec(),
                 ))
             }
             Err(err) => Err(err.into()),
@@ -87,19 +88,21 @@ fn result_for_action(
             case.subject().visible_state(),
         )
         .is_ok();
-    let expected_action_rationale = if matched {
-        None
-    } else {
-        Some(case.expected_action_rationale().clone())
-    };
-    TeacherCalibrationCaseResult::prediction(
+    let result = TeacherCalibrationCaseResult::prediction(
         case.case_id().clone(),
         case.capability(),
         case.category(),
         TeacherCalibrationPredictionOutcome::new(matched, tool_matched, contract_valid),
-        expected_action_rationale,
-        None,
-    )
+    );
+    if matched {
+        result
+    } else {
+        result.with_failure_debug(
+            case.expected_action_rationale().clone(),
+            action.clone(),
+            case.accepted_actions().as_slice().to_vec(),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -229,6 +232,13 @@ mod tests {
         .unwrap();
         assert!(!report.gate_passed());
         assert!(report.overall_accuracy() < 0.80);
+        let failed = report
+            .case_results()
+            .iter()
+            .find(|row| !row.matched())
+            .expect("at least one case fails");
+        assert!(failed.predicted_action().is_some());
+        assert!(!failed.accepted_actions().is_empty());
     }
 
     #[test]
@@ -283,6 +293,8 @@ mod tests {
         .execute()
         .unwrap();
         assert_eq!(report.shape_failed_count().as_usize(), 1);
+        assert_eq!(report.case_results()[0].accepted_actions().len(), 1);
+        assert!(report.case_results()[0].predicted_action().is_none());
         assert!(!report.gate_passed());
     }
 

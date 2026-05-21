@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use operator_shared_contract::operator_action_dto::OperatorActionDto;
+
 use crate::dto::teacher_calibration_prediction_outcome_dto::TeacherCalibrationPredictionOutcomeDto;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -13,4 +15,8 @@ pub struct TeacherCalibrationCaseResultDto {
     pub expected_action_rationale: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub predicted_action: Option<OperatorActionDto>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accepted_actions: Vec<OperatorActionDto>,
 }

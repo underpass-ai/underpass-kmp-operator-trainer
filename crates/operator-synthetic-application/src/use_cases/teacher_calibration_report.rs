@@ -250,8 +250,6 @@ mod tests {
             capability,
             CalibrationCaseCategory::Happy,
             TeacherCalibrationPredictionOutcome::new(matched, matched, true),
-            None,
-            None,
         )
     }
 }

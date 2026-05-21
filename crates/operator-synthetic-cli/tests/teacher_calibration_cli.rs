@@ -42,6 +42,8 @@ fn below_threshold_with_stub_teacher_exits_non_zero() {
     assert!(!output.status.success());
     let report = fs::read_to_string(fixture.output.join("report.json")).unwrap();
     assert!(report.contains("\"gate_passed\": false"));
+    assert!(report.contains("\"predicted_action\""));
+    assert!(report.contains("\"accepted_actions\""));
 }
 
 #[test]

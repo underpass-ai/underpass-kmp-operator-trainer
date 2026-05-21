@@ -1,5 +1,6 @@
 //! Evaluation result for one teacher calibration case.
 
+use operator_shared_domain::action::operator_action::OperatorAction;
 use operator_shared_domain::value_objects::non_empty_string::NonEmptyString;
 use operator_synthetic_domain::calibration::calibration_capability::CalibrationCapability;
 use operator_synthetic_domain::calibration::calibration_case_category::CalibrationCaseCategory;
@@ -17,6 +18,8 @@ pub struct TeacherCalibrationCaseResult {
     shape_status: ShapeStatus,
     expected_action_rationale: Option<ExpectedActionRationale>,
     failure_message: Option<NonEmptyString>,
+    predicted_action: Option<OperatorAction>,
+    accepted_actions: Vec<OperatorAction>,
 }
 
 impl TeacherCalibrationCaseResult {
@@ -25,8 +28,6 @@ impl TeacherCalibrationCaseResult {
         capability: CalibrationCapability,
         category: CalibrationCaseCategory,
         prediction_outcome: TeacherCalibrationPredictionOutcome,
-        expected_action_rationale: Option<ExpectedActionRationale>,
-        failure_message: Option<NonEmptyString>,
     ) -> Self {
         Self {
             case_id,
@@ -34,9 +35,24 @@ impl TeacherCalibrationCaseResult {
             category,
             prediction_outcome,
             shape_status: ShapeStatus::Valid,
-            expected_action_rationale,
-            failure_message,
+            expected_action_rationale: None,
+            failure_message: None,
+            predicted_action: None,
+            accepted_actions: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub fn with_failure_debug(
+        mut self,
+        expected_action_rationale: ExpectedActionRationale,
+        predicted_action: OperatorAction,
+        accepted_actions: Vec<OperatorAction>,
+    ) -> Self {
+        self.expected_action_rationale = Some(expected_action_rationale);
+        self.predicted_action = Some(predicted_action);
+        self.accepted_actions = accepted_actions;
+        self
     }
 
     pub fn shape_failure(
@@ -45,6 +61,7 @@ impl TeacherCalibrationCaseResult {
         category: CalibrationCaseCategory,
         expected_action_rationale: Option<ExpectedActionRationale>,
         failure_message: Option<NonEmptyString>,
+        accepted_actions: Vec<OperatorAction>,
     ) -> Self {
         Self {
             case_id,
@@ -54,6 +71,8 @@ impl TeacherCalibrationCaseResult {
             shape_status: ShapeStatus::Failed,
             expected_action_rationale,
             failure_message,
+            predicted_action: None,
+            accepted_actions,
         }
     }
 
@@ -91,6 +110,14 @@ impl TeacherCalibrationCaseResult {
 
     pub fn failure_message(&self) -> Option<&NonEmptyString> {
         self.failure_message.as_ref()
+    }
+
+    pub fn predicted_action(&self) -> Option<&OperatorAction> {
+        self.predicted_action.as_ref()
+    }
+
+    pub fn accepted_actions(&self) -> &[OperatorAction] {
+        &self.accepted_actions
     }
 }
 

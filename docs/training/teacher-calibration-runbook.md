@@ -137,7 +137,8 @@ precheck errors, or provider failures.
 - `overall_accuracy`;
 - `per_capability_accuracy`;
 - `per_category_accuracy`;
-- `case_results` with rationale only on failures.
+- `case_results`; failed cases include the human rationale plus the
+  teacher's `predicted_action` and the case `accepted_actions`.
 
 Primary gate:
 
@@ -156,10 +157,13 @@ Do not patch the cases to fit the teacher.
 If a capability fails:
 
 1. Inspect failing `case_results`.
-2. Confirm the case is honest and has enough subject information.
-3. If the case is bad, create `calibration-cases-v2` and document the fix.
-4. If the case is good, adjust `teacher_calibration_vN.md`.
-5. Rerun smoke, then full calibration.
+2. Compare `predicted_action` against `accepted_actions`.
+3. Confirm the case is honest and has enough subject information.
+4. If the mismatch is a genuine alternate valid action, create a new dataset
+   version and add that action to `accepted_actions`.
+5. If the case is bad, create `calibration-cases-v2` and document the fix.
+6. If the case is good, adjust `teacher_calibration_vN.md`.
+7. Rerun smoke, then full calibration.
 
 If the teacher output does not parse as `OperatorActionDto`, it counts as
 `shape_failed_count`; the runner does not repair JSON or strip Markdown.
