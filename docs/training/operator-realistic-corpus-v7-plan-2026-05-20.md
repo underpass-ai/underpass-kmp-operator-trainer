@@ -644,6 +644,9 @@ Prompt v5 was checked once after this gate:
 It passed the gate and fixed the previous trace-cursor mismatch, but produced
 one unrelated `kernel_ask` shape failure. Do not iterate the calibration prompt
 again before v7.3; the next signal should come from the generated corpus gates.
+A repeat run reproduced the same `kernel_ask` shape failure, so prompt v4
+remains the cleanest run-level calibration evidence while prompt v5 documents
+the reusable trace-cursor example.
 
 ## Non-goals
 

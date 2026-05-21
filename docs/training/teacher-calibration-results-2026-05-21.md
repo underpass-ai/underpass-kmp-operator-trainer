@@ -481,6 +481,17 @@ returned a shape-invalid action with `kind:"kernel_ask"` instead of
 `kind:"tool_call"`. This is not a dataset issue and should not trigger another
 prompt iteration before v7.3.
 
+A repeat run with the same dataset, prompt, model and temperature produced the
+same result:
+
+```text
+../rehydration-kernel-artifacts/operator/calibration-runs/2026-05-22T-pr33-v5-promptv5-gpt4o-mini-repeat1/report.json
+```
+
+The repeated failure was the same `calib:product_planning:ask-ambiguous-scope`
+shape error. This confirms that prompt v5 fixes `kernel_goto` trace cursors but
+is not cleaner than prompt v4 at the full-run level.
+
 For v7.3, `teacher_calibration_v5.md` is still useful because the trace-cursor
 example is reusable. The strongest clean calibration evidence remains the
 prompt v4 run because it has `36/36` contract-valid predictions and `0` shape
