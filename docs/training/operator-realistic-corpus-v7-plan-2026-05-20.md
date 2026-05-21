@@ -567,6 +567,11 @@ The important result is not a pass. It is a design finding:
 - multi-accepted actions are correct for narrative arguments such as
   `kernel_ask.query` and `stop.answer`;
 - structured arguments must remain exact;
+- `gpt-4o-mini` is the better teacher candidate observed so far because this
+  task rewards literal KMP/MCP argument preservation more than creative
+  paraphrasing;
+- the current 60% per-capability floor is brittle with only two cases per
+  capability: one failure scores 50%, so the floor behaves like a 100% floor;
 - `kernel_ingest` is currently the blocking capability;
 - the current calibration subject can only carry a narrative `goal`, so prepared
   ingest payloads are being reconstructed from prose;
@@ -576,6 +581,13 @@ Before v7.3 teacher-backed corpus generation, prepared write/ingest payloads
 need a typed subject shape or equivalent typed prepared-arguments carrier. The
 teacher should decide whether to execute a prepared KMP/MCP action, not learn to
 compile long prose into canonical ingest JSON.
+
+The next architectural slice should produce a v4 calibration dataset with at
+least three cases per capability, a typed prepared-payload carrier, and a full
+`gpt-4o-mini` calibration report with `gate_passed: true`.
+
+PR #32 is therefore infrastructure plus findings. It is not evidence that the
+v7.2.5 teacher gate passed.
 
 ## Non-goals
 

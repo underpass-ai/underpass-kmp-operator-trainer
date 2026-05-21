@@ -180,6 +180,10 @@ For prepared write or ingest cases, be stricter:
   prepared arguments in the subject rather than asking the teacher to compile
   prose into JSON.
 
+Avoid prompt patching as the default fix. A narrow prompt rule for a single
+observed failure is acceptable as temporary evidence, but repeated narrow rules
+mean the subject contract or dataset shape is wrong.
+
 Observed 2026-05-21 calibration evidence is recorded in
 `teacher-calibration-results-2026-05-21.md`.
 
