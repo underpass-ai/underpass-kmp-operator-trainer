@@ -19,7 +19,7 @@ final answers.
 Calibration cases are runtime artifacts outside the repo:
 
 ```text
-../rehydration-kernel-artifacts/operator/calibration-cases-v1/cases.jsonl
+../rehydration-kernel-artifacts/operator/calibration-cases-vN/cases.jsonl
 ```
 
 Reports are written outside the repo:
@@ -31,7 +31,7 @@ Reports are written outside the repo:
 The committed prompt is:
 
 ```text
-crates/operator-synthetic-infra/prompts/teacher_calibration_v1.md
+crates/operator-synthetic-infra/prompts/teacher_calibration_vN.md
 ```
 
 ## Case Shape
@@ -48,12 +48,22 @@ Each JSONL row is one `CalibrationCaseDto`:
     "mode": "read",
     "task_family": "calibration.kernel_wake.technical_incident.current_about",
     "goal": "Load the current incident memory before selecting evidence.",
-    "allowed_tools": ["kernel_wake", "kernel_ask"],
+    "allowed_tools": [
+      "kernel_wake",
+      "kernel_ask",
+      "kernel_near",
+      "kernel_goto",
+      "kernel_rewind",
+      "kernel_forward",
+      "kernel_trace",
+      "kernel_inspect"
+    ],
     "visible_state": {
       "known_refs": [],
       "known_dimensions": [],
       "budget": { "calls_remaining": 4, "tokens_remaining": 1800 }
-    }
+    },
+    "prepared_action": null
   },
   "accepted_actions": [
     {
@@ -69,6 +79,11 @@ Each JSONL row is one `CalibrationCaseDto`:
 The teacher sees only `subject`. It never sees `accepted_actions` or
 `expected_action_rationale`.
 
+`prepared_action` is optional. Use it when the subject already contains a typed
+write or ingest payload that the teacher should either execute exactly or avoid
+because the surrounding subject makes it invalid. It must be an
+`OperatorActionDto` tool call. Do not use it for `stop` or `escalate`.
+
 ## Adding A Case
 
 1. Pick one of the five domain themes:
@@ -83,9 +98,9 @@ The teacher sees only `subject`. It never sees `accepted_actions` or
 6. Write `expected_action_rationale` for humans. Do not rely on it as model
    input.
 
-For prepared writes or ingests, the `goal` must contain the prepared data the
-teacher needs to build the action. Do not hide required write fields in the
-accepted action only.
+For prepared writes or ingests, prefer `subject.prepared_action` over a long
+narrative payload in `goal`. The goal may explain why the action is prepared,
+but the typed action is the source of truth for structured arguments.
 
 ## Smoke Run
 
@@ -93,8 +108,8 @@ Use a small limit before any paid run:
 
 ```bash
 cargo run --release -p operator-synthetic-cli --bin operator-teacher-calibration -- \
-  --cases ../rehydration-kernel-artifacts/operator/calibration-cases-v1/cases.jsonl \
-  --prompt crates/operator-synthetic-infra/prompts/teacher_calibration_v1.md \
+  --cases ../rehydration-kernel-artifacts/operator/calibration-cases-v5/cases.jsonl \
+  --prompt crates/operator-synthetic-infra/prompts/teacher_calibration_v4.md \
   --api-base https://api.openai.com/v1 \
   --api-key-file /tmp/openai.txt \
   --model gpt-4o-mini \
@@ -109,8 +124,8 @@ cargo run --release -p operator-synthetic-cli --bin operator-teacher-calibration
 
 ```bash
 cargo run --release -p operator-synthetic-cli --bin operator-teacher-calibration -- \
-  --cases ../rehydration-kernel-artifacts/operator/calibration-cases-v1/cases.jsonl \
-  --prompt crates/operator-synthetic-infra/prompts/teacher_calibration_v1.md \
+  --cases ../rehydration-kernel-artifacts/operator/calibration-cases-v5/cases.jsonl \
+  --prompt crates/operator-synthetic-infra/prompts/teacher_calibration_v4.md \
   --api-base https://api.openai.com/v1 \
   --api-key-file /tmp/openai.txt \
   --model gpt-4o-mini \
@@ -172,6 +187,7 @@ For prepared write or ingest cases, be stricter:
 
 - if the subject only describes the payload narratively, classify repeated
   structured mismatches as a case-design or subject-contract problem;
+- if the payload is already known, expose it as `subject.prepared_action`;
 - do not add accepted variants for structured fields just because the teacher
   produced a contract-valid but different payload;
 - narrative variants are only appropriate for fields such as `kernel_ask.query`
@@ -194,6 +210,7 @@ Increment the dataset version when cases change:
 ```text
 calibration-cases-v1/
 calibration-cases-v2/
+calibration-cases-v5/
 ```
 
 Increment the prompt version when policy or examples change:
@@ -201,6 +218,8 @@ Increment the prompt version when policy or examples change:
 ```text
 teacher_calibration_v1.md
 teacher_calibration_v2.md
+teacher_calibration_v4.md
+teacher_calibration_v5.md
 ```
 
 Every report records both sha256 values so calibration results remain

@@ -230,6 +230,11 @@ no synthetic <-> evaluation dependency
 - `use_cases/teacher_calibration_report.rs` — calibration metrics and gate
   result for v7.2.5.
 
+Teacher calibration subjects may include an optional typed `prepared_action`.
+This is the boundary used for prepared write/ingest calibration: the teacher can
+see the candidate KMP/MCP action it is being asked to execute, while gold
+`accepted_actions` and human rationales remain outside the LLM boundary.
+
 ### Errors
 
 - `error/generate_synthetic_case_error.rs` — `GenerateSyntheticCaseError`
@@ -260,6 +265,10 @@ no synthetic <-> evaluation dependency
 - `prompts/teacher_calibration_vN.md` — versioned teacher prompts used by the
   calibration CLI. New prompt versions are evidence artifacts, not automatic
   approval to generate training corpus.
+
+`teacher_calibration_v3.md` introduced the prepared-action rule. v4 kept that
+rule and made explicit that goals requiring `beyond_capability` escalation must
+not be avoided by speculative memory reads.
 
 ## End-to-end test
 

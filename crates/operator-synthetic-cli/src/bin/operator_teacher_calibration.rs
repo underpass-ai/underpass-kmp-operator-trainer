@@ -277,6 +277,9 @@ impl TeacherPolicy for StubTeacherPolicy {
 }
 
 fn stub_action_for_subject(subject: &CalibrationSubject) -> OperatorAction {
+    if let Some(prepared) = subject.prepared_action() {
+        return prepared.action().clone();
+    }
     let family = subject.task_family().as_str();
     if family.contains("kernel_ingest") {
         return ingest(subject);

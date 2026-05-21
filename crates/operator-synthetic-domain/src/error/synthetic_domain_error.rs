@@ -47,6 +47,12 @@ pub enum SyntheticDomainError {
     #[error("calibration case accepted actions mix capabilities '{expected}' and '{actual}'")]
     MixedAcceptedActionCapability { expected: String, actual: String },
 
+    #[error("prepared calibration action must be a tool call, got '{kind}'")]
+    PreparedActionMustBeToolCall { kind: String },
+
+    #[error("prepared calibration tool '{tool}' is not allowed in mode '{mode}'")]
+    PreparedActionToolOutsideMode { mode: String, tool: String },
+
     #[error(transparent)]
     Shared(#[from] DomainError),
 }

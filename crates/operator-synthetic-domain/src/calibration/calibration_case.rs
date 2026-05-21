@@ -93,6 +93,7 @@ mod tests {
                 TrajectoryGoal::parse("Stop with answer.").unwrap(),
                 AllowedTools::for_mode(OperatorMode::Read),
                 VisibleState::assemble([], [], None, BudgetSnapshot::unbounded()),
+                None,
             )
             .unwrap(),
             AcceptedActions::new(vec![OperatorAction::Stop(

@@ -41,6 +41,7 @@ mod tests {
     use super::*;
     use operator_shared_contract::budget_snapshot_dto::BudgetSnapshotDto;
     use operator_shared_contract::operator_action_dto::OperatorActionDto;
+    use operator_shared_contract::stop_action_dto::StopActionDto;
     use operator_shared_contract::tool_arguments_dto::ToolArgumentsDto;
     use operator_shared_contract::tool_call_action_dto::ToolCallActionDto;
     use operator_shared_contract::visible_state_dto::VisibleStateDto;
@@ -65,6 +66,26 @@ mod tests {
     #[test]
     fn rejects_case_with_empty_accepted_actions() {
         assert!(CalibrationCaseMapper::to_domain(&case_dto(vec![])).is_err());
+    }
+
+    #[test]
+    fn parses_subject_with_prepared_tool_call() {
+        let mut dto = case_dto(vec![inspect_action()]);
+        dto.subject.prepared_action = Some(inspect_action());
+        let case = CalibrationCaseMapper::to_domain(&dto).unwrap();
+        let prepared = case.subject().prepared_action().unwrap();
+        assert_eq!(prepared.action(), &case.accepted_actions().as_slice()[0]);
+    }
+
+    #[test]
+    fn rejects_subject_with_prepared_stop() {
+        let mut dto = case_dto(vec![inspect_action()]);
+        dto.subject.prepared_action = Some(OperatorActionDto::Stop(StopActionDto {
+            reason: "answer_ready".to_string(),
+            answer: None,
+            evidence: vec![],
+        }));
+        assert!(CalibrationCaseMapper::to_domain(&dto).is_err());
     }
 
     fn case_dto(accepted_actions: Vec<OperatorActionDto>) -> CalibrationCaseDto {
@@ -96,6 +117,7 @@ mod tests {
                         tokens_remaining: Some(1024),
                     },
                 },
+                prepared_action: None,
             },
             accepted_actions,
             expected_action_rationale: "The ref is already visible.".to_string(),
