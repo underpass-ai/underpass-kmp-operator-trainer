@@ -34,7 +34,10 @@ impl Specification<CorpusSnapshot> for NoGoldAuditSpec {
 mod tests {
     use super::*;
     use crate::quality::corpus_audit_snapshot::CorpusAuditSnapshot;
-    use crate::quality::test_support::snapshot_with_audit;
+    use crate::quality::test_support::{
+        clean_corpus_snapshot, corpus_with_target_action_leaked_in_system_prompt,
+        snapshot_with_audit,
+    };
     use operator_shared_domain::value_objects::example_count::ExampleCount;
 
     #[test]
@@ -52,5 +55,21 @@ mod tests {
             ))
             .unwrap_err();
         assert_eq!(err.code(), ContractViolationCode::NoGoldAudit);
+    }
+
+    #[test]
+    fn no_gold_audit_spec_accepts_clean_corpus() {
+        NoGoldAuditSpec::new()
+            .evaluate(&clean_corpus_snapshot())
+            .unwrap();
+    }
+
+    #[test]
+    fn no_gold_audit_spec_rejects_target_action_leaked_in_system_prompt() {
+        let err = NoGoldAuditSpec::new()
+            .evaluate(&corpus_with_target_action_leaked_in_system_prompt())
+            .unwrap_err();
+        assert_eq!(err.code(), ContractViolationCode::NoGoldAudit);
+        assert!(err.field().contains("gold_leak"));
     }
 }

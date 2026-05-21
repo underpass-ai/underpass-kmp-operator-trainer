@@ -329,11 +329,52 @@ episode specs need to be persisted.
 
 Create a small hand-authored fixture set:
 
-- 3-5 episodes;
-- all tool categories touched;
+- exactly 5 episodes;
+- all KMP/MCP tools plus `stop` and `escalate` touched;
 - unit tests for parsing, split policy and corpus-quality specs.
 
 This is not for training. It is for architecture and gate validation.
+
+The v7.2 fixture set is fixed:
+
+| Episode | Theme | Dominant mode | Required actions |
+| --- | --- | --- | --- |
+| `episode_incident_payments_timeout` | technical incident | read -> stop | `kernel_wake`, `kernel_ask`, `kernel_near`, `kernel_trace`, `kernel_inspect`, `kernel_rewind`, `stop(answer_ready)` |
+| `episode_software_migration` | software migration | read -> write -> stop | `kernel_wake`, `kernel_ask`, `kernel_near`, `kernel_forward`, `kernel_inspect`, `kernel_ingest`, `stop(answer_ready)` |
+| `episode_bug_investigation` | bug investigation | read -> escalate | `kernel_wake`, `kernel_ask`, `kernel_trace`, `kernel_inspect`, `kernel_goto`, `kernel_rewind`, `escalate` |
+| `episode_product_planning` | product planning | read -> write -> stop | `kernel_wake`, `kernel_ask`, `kernel_near`, `kernel_trace`, `kernel_inspect`, `kernel_write_memory`, `stop(answer_ready)` |
+| `episode_smart_writing` | smart writing session | read -> write -> stop | `kernel_wake`, `kernel_ask`, `kernel_near`, `kernel_inspect`, `kernel_ingest`, `stop(answer_ready)` |
+
+The combined seed corpus must additionally cover:
+
+- `kernel_forward` at least once;
+- `kernel_rewind` in at least two episodes;
+- paginated trace state through an active cursor;
+- budget pressure on at least one stop/escalate row;
+- exactly one rich `kernel_ingest` relation with explicit `why` and evidence;
+- exactly one anemic fallback relation;
+- exactly one `escalate`.
+
+The spec fixture matrix is:
+
+| Spec | Failing fixture | Expected code |
+| --- | --- | --- |
+| `schema_parse_spec` | `corpus_with_unparseable_row()` | `SchemaParse` |
+| `action_parse_spec` | `corpus_with_invalid_action_target()` | `ActionParse` |
+| `contract_coverage_spec` | `corpus_missing_kernel_forward()` | `ContractCoverage` |
+| `mode_safety_spec` | `corpus_with_ingest_in_read_mode()` | `ModeSafety` |
+| `reference_safety_spec` | `corpus_with_unknown_memory_ref()` | `ReferenceSafety` |
+| `scope_safety_spec` | `corpus_with_about_not_in_known()` | `ScopeSafety` |
+| `pagination_safety_spec` | `corpus_with_trace_lacking_cursor_continuation()` | `PaginationSafety` |
+| `write_proof_spec` | `corpus_with_write_lacking_read_before_write()` | `WriteProof` |
+| `no_gold_audit_spec` | `corpus_with_target_action_leaked_in_system_prompt()` | `NoGoldAudit` |
+| `episode_split_spec` | `corpus_with_train_and_eval_sharing_about()` | `EpisodeSplit` |
+| `duplicate_audit_spec` | `corpus_with_duplicate_model_facing_rows()` | `DuplicateAudit` |
+| `replay_smoke_spec` | `corpus_with_action_failing_mcp_request_shape()` | `ReplaySmoke` |
+| `frontier_ceiling_spec` | `corpus_without_frontier_baseline_recorded()` | `FrontierCeiling` |
+
+v7.2 validates the architecture. It is not training data, not calibration
+data, and not a teacher-policy measurement.
 
 ### v7.2.5 — teacher calibration
 
@@ -446,6 +487,21 @@ synthetic bounded context:
 
 No infra adapters, DTO mappers, fixtures, teacher policy or training data are
 introduced in this slice.
+
+## Updates 2026-05-21-T10
+
+v7.2 fixes the seed-fixture shape:
+
+- exactly five handcrafted episodes;
+- approximately 40-50 typed trajectory rows total;
+- every row built with domain constructors and validated against the strict
+  action contract;
+- one clean corpus snapshot shared by all specs;
+- one focused failing fixture per corpus-quality spec;
+- one composite fixture that fails at least five specs at once.
+
+This is still architecture validation only. It must not be used as training
+data or as calibration data for the teacher.
 
 ## Non-goals
 

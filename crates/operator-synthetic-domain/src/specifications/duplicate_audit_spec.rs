@@ -36,7 +36,10 @@ impl Specification<CorpusSnapshot> for DuplicateAuditSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::quality::test_support::{duplicate_step_snapshot, full_quality_snapshot};
+    use crate::quality::test_support::{
+        clean_corpus_snapshot, corpus_with_duplicate_model_facing_rows, duplicate_step_snapshot,
+        full_quality_snapshot,
+    };
 
     #[test]
     fn accepts_unique_step_ids() {
@@ -51,5 +54,21 @@ mod tests {
             .evaluate(&duplicate_step_snapshot())
             .unwrap_err();
         assert_eq!(err.code(), ContractViolationCode::DuplicateAudit);
+    }
+
+    #[test]
+    fn duplicate_audit_spec_accepts_clean_corpus() {
+        DuplicateAuditSpec::new()
+            .evaluate(&clean_corpus_snapshot())
+            .unwrap();
+    }
+
+    #[test]
+    fn duplicate_audit_spec_rejects_duplicate_model_facing_rows() {
+        let err = DuplicateAuditSpec::new()
+            .evaluate(&corpus_with_duplicate_model_facing_rows())
+            .unwrap_err();
+        assert_eq!(err.code(), ContractViolationCode::DuplicateAudit);
+        assert!(err.field().contains("step_id"));
     }
 }

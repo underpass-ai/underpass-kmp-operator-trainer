@@ -61,10 +61,14 @@ mod tests {
     use operator_synthetic_domain::episode::episode_step_plan::EpisodeStepPlan;
     use operator_synthetic_domain::episode::episode_theme::EpisodeTheme;
     use operator_synthetic_domain::episode::synthetic_episode_spec::SyntheticEpisodeSpec;
+    use operator_synthetic_domain::quality::composite_corpus_quality_validator::CompositeCorpusQualityValidator;
     use operator_synthetic_domain::quality::corpus_audit_snapshot::CorpusAuditSnapshot;
     use operator_synthetic_domain::quality::corpus_quality_validator::CorpusQualityValidator;
     use operator_synthetic_domain::quality::corpus_quality_violations::CorpusQualityViolations;
     use operator_synthetic_domain::quality::corpus_snapshot::CorpusSnapshot;
+    use operator_synthetic_domain::quality::test_support::{
+        clean_corpus_snapshot, corpus_failing_five_specs,
+    };
 
     #[derive(Debug)]
     struct StubSource {
@@ -191,6 +195,43 @@ mod tests {
     #[test]
     fn propagates_source_failure() {
         let use_case = EvaluateCorpusQualityUseCase::new(FailingSource, AlwaysValidValidator);
+        assert!(matches!(
+            use_case.execute(),
+            Err(EvaluateCorpusQualityError::Source(_))
+        ));
+    }
+
+    #[test]
+    fn use_case_reports_passed_on_clean_corpus() {
+        let use_case = EvaluateCorpusQualityUseCase::new(
+            StubSource {
+                snapshot: clean_corpus_snapshot(),
+            },
+            CompositeCorpusQualityValidator::default_strict(),
+        );
+        let report = use_case.execute().unwrap();
+        assert!(report.is_valid());
+    }
+
+    #[test]
+    fn use_case_reports_failed_on_multi_violation_corpus() {
+        let use_case = EvaluateCorpusQualityUseCase::new(
+            StubSource {
+                snapshot: corpus_failing_five_specs(),
+            },
+            CompositeCorpusQualityValidator::default_strict(),
+        );
+        let report = use_case.execute().unwrap();
+        assert!(!report.is_valid());
+        assert!(report.violations().len() >= 5);
+    }
+
+    #[test]
+    fn use_case_propagates_source_error_for_seed_flow() {
+        let use_case = EvaluateCorpusQualityUseCase::new(
+            FailingSource,
+            CompositeCorpusQualityValidator::default_strict(),
+        );
         assert!(matches!(
             use_case.execute(),
             Err(EvaluateCorpusQualityError::Source(_))

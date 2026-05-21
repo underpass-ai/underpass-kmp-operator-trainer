@@ -34,7 +34,9 @@ impl Specification<CorpusSnapshot> for PaginationSafetySpec {
 mod tests {
     use super::*;
     use crate::quality::corpus_audit_snapshot::CorpusAuditSnapshot;
-    use crate::quality::test_support::snapshot_with_audit;
+    use crate::quality::test_support::{
+        clean_corpus_snapshot, corpus_with_trace_lacking_cursor_continuation, snapshot_with_audit,
+    };
     use operator_shared_domain::value_objects::example_count::ExampleCount;
 
     #[test]
@@ -52,5 +54,21 @@ mod tests {
             ))
             .unwrap_err();
         assert_eq!(err.code(), ContractViolationCode::PaginationSafety);
+    }
+
+    #[test]
+    fn pagination_safety_spec_accepts_clean_corpus() {
+        PaginationSafetySpec::new()
+            .evaluate(&clean_corpus_snapshot())
+            .unwrap();
+    }
+
+    #[test]
+    fn pagination_safety_spec_rejects_trace_lacking_cursor_continuation() {
+        let err = PaginationSafetySpec::new()
+            .evaluate(&corpus_with_trace_lacking_cursor_continuation())
+            .unwrap_err();
+        assert_eq!(err.code(), ContractViolationCode::PaginationSafety);
+        assert!(err.field().contains("pagination_safety"));
     }
 }

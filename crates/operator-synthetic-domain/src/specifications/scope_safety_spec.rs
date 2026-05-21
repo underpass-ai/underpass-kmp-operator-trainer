@@ -34,7 +34,9 @@ impl Specification<CorpusSnapshot> for ScopeSafetySpec {
 mod tests {
     use super::*;
     use crate::quality::corpus_audit_snapshot::CorpusAuditSnapshot;
-    use crate::quality::test_support::snapshot_with_audit;
+    use crate::quality::test_support::{
+        clean_corpus_snapshot, corpus_with_about_not_in_known, snapshot_with_audit,
+    };
     use operator_shared_domain::value_objects::example_count::ExampleCount;
 
     #[test]
@@ -52,5 +54,21 @@ mod tests {
             ))
             .unwrap_err();
         assert_eq!(err.code(), ContractViolationCode::ScopeSafety);
+    }
+
+    #[test]
+    fn scope_safety_spec_accepts_clean_corpus() {
+        ScopeSafetySpec::new()
+            .evaluate(&clean_corpus_snapshot())
+            .unwrap();
+    }
+
+    #[test]
+    fn scope_safety_spec_rejects_about_not_in_known() {
+        let err = ScopeSafetySpec::new()
+            .evaluate(&corpus_with_about_not_in_known())
+            .unwrap_err();
+        assert_eq!(err.code(), ContractViolationCode::ScopeSafety);
+        assert!(err.field().contains("scope_safety"));
     }
 }

@@ -47,7 +47,10 @@ impl Specification<CorpusSnapshot> for ContractCoverageSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::quality::test_support::{full_quality_snapshot, inspect_snapshot_without_split};
+    use crate::quality::test_support::{
+        clean_corpus_snapshot, corpus_missing_kernel_forward, full_quality_snapshot,
+        inspect_snapshot_without_split,
+    };
 
     #[test]
     fn accepts_full_tool_coverage() {
@@ -62,5 +65,21 @@ mod tests {
             .evaluate(&inspect_snapshot_without_split())
             .unwrap_err();
         assert_eq!(err.code(), ContractViolationCode::ContractCoverage);
+    }
+
+    #[test]
+    fn contract_coverage_spec_accepts_clean_corpus() {
+        ContractCoverageSpec::new()
+            .evaluate(&clean_corpus_snapshot())
+            .unwrap();
+    }
+
+    #[test]
+    fn contract_coverage_spec_rejects_missing_kernel_forward() {
+        let err = ContractCoverageSpec::new()
+            .evaluate(&corpus_missing_kernel_forward())
+            .unwrap_err();
+        assert_eq!(err.code(), ContractViolationCode::ContractCoverage);
+        assert!(err.field().contains("target_action.tool"));
     }
 }

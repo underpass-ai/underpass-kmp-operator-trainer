@@ -41,7 +41,9 @@ impl Specification<CorpusSnapshot> for ReplaySmokeSpec {
 mod tests {
     use super::*;
     use crate::quality::corpus_audit_snapshot::CorpusAuditSnapshot;
-    use crate::quality::test_support::snapshot_with_audit;
+    use crate::quality::test_support::{
+        clean_corpus_snapshot, corpus_with_action_failing_mcp_request_shape, snapshot_with_audit,
+    };
     use operator_shared_domain::value_objects::example_count::ExampleCount;
 
     #[test]
@@ -66,5 +68,21 @@ mod tests {
             ))
             .unwrap_err();
         assert_eq!(failing.code(), ContractViolationCode::ReplaySmoke);
+    }
+
+    #[test]
+    fn replay_smoke_spec_accepts_clean_corpus() {
+        ReplaySmokeSpec::new()
+            .evaluate(&clean_corpus_snapshot())
+            .unwrap();
+    }
+
+    #[test]
+    fn replay_smoke_spec_rejects_action_failing_mcp_request_shape() {
+        let err = ReplaySmokeSpec::new()
+            .evaluate(&corpus_with_action_failing_mcp_request_shape())
+            .unwrap_err();
+        assert_eq!(err.code(), ContractViolationCode::ReplaySmoke);
+        assert!(err.field().contains("replay"));
     }
 }

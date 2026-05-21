@@ -78,7 +78,10 @@ impl CorpusQualityValidator for CompositeCorpusQualityValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::quality::test_support::{full_quality_snapshot, inspect_snapshot_without_split};
+    use crate::quality::test_support::{
+        corpus_failing_five_specs, full_quality_snapshot, inspect_snapshot_without_split,
+    };
+    use operator_shared_domain::contract::contract_violation_code::ContractViolationCode;
 
     #[test]
     fn default_strict_registers_all_specs() {
@@ -102,5 +105,24 @@ mod tests {
             .validate(&inspect_snapshot_without_split())
             .expect_err("partial snapshot violates several specs");
         assert!(violations.len() >= 2);
+    }
+
+    #[test]
+    fn composite_reports_all_violations_when_corpus_breaks_five_specs() {
+        let validator = CompositeCorpusQualityValidator::default_strict();
+        let violations = validator
+            .validate(&corpus_failing_five_specs())
+            .expect_err("snapshot should fail at least five specs");
+        assert!(violations.len() >= 5);
+        let codes: Vec<_> = violations
+            .as_slice()
+            .iter()
+            .map(operator_shared_domain::contract::contract_violation::ContractViolation::code)
+            .collect();
+        assert!(codes.contains(&ContractViolationCode::ReferenceSafety));
+        assert!(codes.contains(&ContractViolationCode::ModeSafety));
+        assert!(codes.contains(&ContractViolationCode::WriteProof));
+        assert!(codes.contains(&ContractViolationCode::NoGoldAudit));
+        assert!(codes.contains(&ContractViolationCode::EpisodeSplit));
     }
 }

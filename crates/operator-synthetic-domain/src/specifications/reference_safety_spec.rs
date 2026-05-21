@@ -34,7 +34,9 @@ impl Specification<CorpusSnapshot> for ReferenceSafetySpec {
 mod tests {
     use super::*;
     use crate::quality::corpus_audit_snapshot::CorpusAuditSnapshot;
-    use crate::quality::test_support::snapshot_with_audit;
+    use crate::quality::test_support::{
+        clean_corpus_snapshot, corpus_with_unknown_memory_ref, snapshot_with_audit,
+    };
     use operator_shared_domain::value_objects::example_count::ExampleCount;
 
     #[test]
@@ -52,5 +54,21 @@ mod tests {
             ))
             .unwrap_err();
         assert_eq!(err.code(), ContractViolationCode::ReferenceSafety);
+    }
+
+    #[test]
+    fn reference_safety_spec_accepts_clean_corpus() {
+        ReferenceSafetySpec::new()
+            .evaluate(&clean_corpus_snapshot())
+            .unwrap();
+    }
+
+    #[test]
+    fn reference_safety_spec_rejects_unknown_memory_ref() {
+        let err = ReferenceSafetySpec::new()
+            .evaluate(&corpus_with_unknown_memory_ref())
+            .unwrap_err();
+        assert_eq!(err.code(), ContractViolationCode::ReferenceSafety);
+        assert!(err.field().contains("reference_safety"));
     }
 }
