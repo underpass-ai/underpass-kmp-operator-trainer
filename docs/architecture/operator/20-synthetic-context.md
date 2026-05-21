@@ -23,8 +23,9 @@ direction is documented in
 ## Crates
 
 ```
-operator-synthetic-domain    capabilities, case specs, blueprints, reports
-operator-synthetic-application use cases + the SyntheticCaseGenerator port
+operator-synthetic-domain    capabilities, episodes, corpus quality specs,
+                             case specs, blueprints, reports
+operator-synthetic-application use cases, services + generation/corpus ports
 operator-synthetic-infra     in-memory adapter; teacher adapter pending
 ```
 
@@ -47,6 +48,21 @@ No `operator-synthetic-contract` crate today. See
 - `case/synthetic_case_generation_metric.rs` — per-case generation
   metric with `satisfies_minimum()`.
 
+### Episode
+
+- `episode/episode_id.rs` — stable identifier for one realistic synthetic
+  episode.
+- `episode/episode_theme.rs` — closed theme taxonomy: incident,
+  investigation, migration, product decision, memory task and smart writing.
+- `episode/episode_objective.rs` — non-empty objective text.
+- `episode/capability_target.rs` — capability + minimum examples target.
+- `episode/episode_step_plan.rs` — one planned operator step in an episode.
+- `episode/synthetic_episode_spec.rs` — aggregate root: episode id + theme +
+  objective + non-empty step plan.
+- `episode/episode_split_policy.rs` — closed split strategy enum.
+- `episode/bounded_ratio.rs` and `episode/stratum_key.rs` — typed parameters
+  used by split policies.
+
 ### Dataset
 
 - `dataset/synthetic_dataset_blueprint.rs` — `SyntheticDatasetBlueprint`
@@ -56,6 +72,37 @@ No `operator-synthetic-contract` crate today. See
   trajectories.
 - `dataset/synthetic_dataset_generation_report.rs` — dataset +
   per-case metrics + `total_generated()` + `every_case_satisfies_minimum()`.
+
+### Corpus quality
+
+Corpus quality is modeled with the same tactical pattern as the shared action
+contract:
+
+- one `Specification<CorpusSnapshot>` per rule under `specifications/`;
+- `quality/composite_corpus_quality_validator.rs` composes them in stable
+  order;
+- `quality/corpus_quality_violations.rs` accumulates every violation rather
+  than failing fast.
+
+The strict corpus validator registers 13 specs:
+
+- `schema_parse_spec.rs`
+- `action_parse_spec.rs`
+- `contract_coverage_spec.rs`
+- `mode_safety_spec.rs`
+- `reference_safety_spec.rs`
+- `scope_safety_spec.rs`
+- `pagination_safety_spec.rs`
+- `write_proof_spec.rs`
+- `no_gold_audit_spec.rs`
+- `episode_split_spec.rs`
+- `duplicate_audit_spec.rs`
+- `replay_smoke_spec.rs`
+- `frontier_ceiling_spec.rs`
+
+`quality/corpus_snapshot.rs` is the typed subject those specs evaluate.
+`quality/corpus_audit_snapshot.rs` carries external audit signals that are
+produced by adapters or scripts outside the domain.
 
 ### Errors
 
@@ -71,6 +118,15 @@ No `operator-synthetic-contract` crate today. See
   takes a `&SyntheticCaseSpec`, returns `Result<Vec<TrainingTrajectory>,
   GenerateSyntheticCaseError>`. Adapters in `operator-synthetic-infra`
   implement this.
+- `ports/corpus_source.rs` — `CorpusSource` trait: loads a typed
+  `CorpusSnapshot` for quality evaluation. v7.1b defines the port only;
+  adapters land later.
+
+### Services
+
+- `services/episode_splitter.rs` — applies an `EpisodeSplitPolicy` to a
+  slice of `SyntheticEpisodeSpec`.
+- `services/episode_split.rs` — result value returned by `EpisodeSplitter`.
 
 ### Use cases
 
@@ -80,6 +136,12 @@ No `operator-synthetic-contract` crate today. See
   `SyntheticDatasetGenerationReport`. Adapter and shared-domain
   errors propagate; per-case minimum failures are surfaced in the report,
   not as hard errors.
+- `use_cases/evaluate_corpus_quality_use_case.rs` —
+  `EvaluateCorpusQualityUseCase`. Loads a corpus through `CorpusSource`,
+  evaluates it through an injected `CorpusQualityValidator`, and returns a
+  `CorpusQualityReport`.
+- `use_cases/corpus_quality_report.rs` — valid/invalid quality result plus
+  accumulated violations.
 
 ### Errors
 
@@ -89,6 +151,9 @@ No `operator-synthetic-contract` crate today. See
   message).
 - `error/generate_synthetic_dataset_error.rs` —
   `GenerateSyntheticDatasetError` aggregating `Case` and `Domain`.
+- `error/corpus_source_error.rs`
+- `error/evaluate_corpus_quality_error.rs`
+- `error/episode_split_error.rs`
 
 ## Infra map
 
@@ -114,7 +179,6 @@ asserts:
 
 ## Pending for later passes
 
-- Realistic episode domain model for process-level corpus generation.
 - Teacher-backed `SyntheticCaseGenerator` adapter (LLM in the loop), with
   strict validation before any teacher output becomes a trajectory.
 - Scenario libraries for incidents, bug investigations, migrations, product
