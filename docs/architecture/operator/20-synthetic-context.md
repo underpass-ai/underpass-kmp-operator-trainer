@@ -46,7 +46,9 @@ No `operator-synthetic-contract` crate today. See
 ### Case
 
 - `case/synthetic_case_spec.rs` — `SyntheticCaseSpec` = case_id +
-  capability + minimum_examples.
+  generation target + minimum_examples.
+- `case/synthetic_generation_target.rs` — closed generation target enum:
+  all 10 KMP tools plus `stop` and `escalate`.
 - `case/synthetic_case_generation_metric.rs` — per-case generation
   metric with `satisfies_minimum()`.
 
@@ -69,7 +71,8 @@ No `operator-synthetic-contract` crate today. See
 
 - `dataset/synthetic_dataset_blueprint.rs` — `SyntheticDatasetBlueprint`
   with constructors `new` (refuses empty + duplicate case ids) and
-  `for_all_capabilities` (one case per `KmpMcpCapability`).
+  `for_all_capabilities` (one case per `KmpMcpCapability`) plus
+  `for_all_generation_targets` (10 KMP tools + `stop` + `escalate`).
 - `dataset/synthetic_dataset.rs` — `SyntheticDataset` = dataset_id +
   trajectories.
 - `dataset/synthetic_dataset_generation_report.rs` — dataset +
@@ -258,12 +261,14 @@ see the candidate KMP/MCP action it is being asked to execute, while gold
   `InMemorySyntheticCaseGenerator`. Produces one fixed fixture per
   `KmpMcpCapability` and clones it N times to satisfy the spec minimum.
   Used by the end-to-end test and by future contexts that need a stub
-  generator (replay smoke tests, training pipeline dry-runs).
+  generator (replay smoke tests, training pipeline dry-runs). It rejects
+  non-KMP generation targets fail-fast.
 - `generators/teacher_backed_synthetic_case_generator.rs` —
   `TeacherBackedSyntheticCaseGenerator`. Builds a model-facing
   `CalibrationSubject`, calls a `TeacherPolicy`, validates that the teacher
-  selected the expected KMP/MCP tool and runs the shared strict action
-  contract before returning a `TrainingTrajectory`.
+  selected the expected generation target and runs the shared strict action
+  contract before returning a `TrainingTrajectory`. It covers all
+  `SyntheticGenerationTarget` variants: KMP tool calls, `stop` and `escalate`.
 - `adapters/jsonl_calibration_episode_source.rs` —
   runtime JSONL adapter for `CalibrationCaseDto`.
 - `adapters/openai_compatible_teacher_policy.rs` —
@@ -295,9 +300,6 @@ asserts:
 
 - Scenario libraries for incidents, bug investigations, migrations, product
   decisions, benchmark-like memory tasks and smart writing sessions.
-- A broader generation target model beyond `KmpMcpCapability`. The current
-  synthetic blueprint covers the 10 KMP tools, but it cannot yet express
-  `stop` or `escalate` as generation targets.
 - Synthetic-context contract DTOs for persisting a
   `SyntheticDatasetGenerationReport` to disk (when a real consumer needs
   it).

@@ -1,7 +1,8 @@
 //! Operator: synthetic bounded context — domain.
 //!
 //! Owns the canonical vocabulary for synthetic trajectory generation:
-//! `KmpMcpCapability`, episode specs, corpus quality specs,
+//! `KmpMcpCapability`, `SyntheticGenerationTarget`, episode specs,
+//! corpus quality specs,
 //! `SyntheticCaseSpec`, `SyntheticDatasetBlueprint`, `SyntheticDataset`,
 //! `SyntheticCaseGenerationMetric` and `SyntheticDatasetGenerationReport`.
 //! Depends only on

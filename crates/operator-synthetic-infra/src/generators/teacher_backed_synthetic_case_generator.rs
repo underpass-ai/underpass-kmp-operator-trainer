@@ -36,6 +36,7 @@ use operator_synthetic_domain::calibration::calibration_subject::CalibrationSubj
 use operator_synthetic_domain::calibration::prepared_operator_action::PreparedOperatorAction;
 use operator_synthetic_domain::capability::kmp_mcp_capability::KmpMcpCapability;
 use operator_synthetic_domain::case::synthetic_case_spec::SyntheticCaseSpec;
+use operator_synthetic_domain::case::synthetic_generation_target::SyntheticGenerationTarget;
 
 const ADAPTER: &str = "teacher_backed_synthetic_case_generator";
 
@@ -53,13 +54,13 @@ impl<T: TeacherPolicy> TeacherBackedSyntheticCaseGenerator<T> {
         spec: &SyntheticCaseSpec,
         index: usize,
     ) -> Result<CalibrationSubject, GenerateSyntheticCaseError> {
-        let capability = spec.capability();
-        let mode = capability.mode();
-        let about = about_for(capability, index)?;
-        let goal = goal_for(capability)?;
-        let task_family = TaskFamily::parse(format!("teacher_backed.{}", capability.name()))
+        let target = spec.target();
+        let mode = target.canonical_mode();
+        let about = about_for(target, index)?;
+        let goal = goal_for(target)?;
+        let task_family = TaskFamily::parse(format!("teacher_backed.{}", target.name()))
             .map_err(|err| generator_error(spec, err.to_string()))?;
-        let (visible_state, prepared_action) = subject_state_for(capability, &about, index)?;
+        let (visible_state, prepared_action) = subject_state_for(target, &about, index)?;
         CalibrationSubject::new(
             about,
             mode,
@@ -84,7 +85,7 @@ impl<T: TeacherPolicy> TeacherBackedSyntheticCaseGenerator<T> {
         let step_id = StepId::parse(format!(
             "step:{}:{}:{index:04}",
             spec.case_id().as_str(),
-            spec.capability().name()
+            spec.target().name()
         ))
         .map_err(|err| generator_error(spec, err.to_string()))?;
         TrainingTrajectory::new(
@@ -106,15 +107,14 @@ impl<T: TeacherPolicy> TeacherBackedSyntheticCaseGenerator<T> {
         subject: &CalibrationSubject,
         action: &OperatorAction,
     ) -> Result<(), GenerateSyntheticCaseError> {
-        let expected = spec.capability().tool();
-        let actual = action.tool();
-        if actual != Some(expected) {
+        let expected = spec.target();
+        if !expected.matches_action(action) {
             return Err(generator_error(
                 spec,
                 format!(
-                    "teacher selected capability {:?}; expected {}",
-                    actual.map(operator_shared_domain::tool::kernel_tool::KernelTool::as_str),
-                    expected.as_str()
+                    "teacher selected action kind {:?}; expected {}",
+                    action.kind(),
+                    expected.name()
                 ),
             ));
         }
@@ -149,63 +149,104 @@ impl<T: TeacherPolicy> SyntheticCaseGenerator for TeacherBackedSyntheticCaseGene
 }
 
 fn about_for(
-    capability: KmpMcpCapability,
+    target: SyntheticGenerationTarget,
     index: usize,
 ) -> Result<AboutId, GenerateSyntheticCaseError> {
-    AboutId::parse(format!(
-        "teacher:realistic-v7:{}:{index:04}",
-        capability.name()
-    ))
-    .map_err(|err| GenerateSyntheticCaseError::Generator {
-        adapter: ADAPTER,
-        case_id: format!("kmp_mcp:{}", capability.name()),
-        message: err.to_string(),
+    AboutId::parse(format!("teacher:realistic-v7:{}:{index:04}", target.name())).map_err(|err| {
+        GenerateSyntheticCaseError::Generator {
+            adapter: ADAPTER,
+            case_id: format!("operator_action:{}", target.name()),
+            message: err.to_string(),
+        }
     })
 }
 
-fn goal_for(capability: KmpMcpCapability) -> Result<TrajectoryGoal, GenerateSyntheticCaseError> {
-    let goal = match capability {
-        KmpMcpCapability::Ingest => "Execute the typed prepared kernel_ingest action exactly.",
-        KmpMcpCapability::Wake => "Use kernel_wake to load the current about before navigation.",
-        KmpMcpCapability::Ask => {
+fn goal_for(
+    target: SyntheticGenerationTarget,
+) -> Result<TrajectoryGoal, GenerateSyntheticCaseError> {
+    let goal = match target {
+        SyntheticGenerationTarget::Kmp(KmpMcpCapability::Ingest) => {
+            "Execute the typed prepared kernel_ingest action exactly."
+        }
+        SyntheticGenerationTarget::Kmp(KmpMcpCapability::Wake) => {
+            "Use kernel_wake to load the current about before navigation."
+        }
+        SyntheticGenerationTarget::Kmp(KmpMcpCapability::Ask) => {
             "Use kernel_ask to retrieve deterministic evidence for the current objective."
         }
-        KmpMcpCapability::Near => {
+        SyntheticGenerationTarget::Kmp(KmpMcpCapability::Near) => {
             "Use kernel_near around the visible anchor in the listed dimension with limit=4."
         }
-        KmpMcpCapability::Goto => "Use kernel_goto to jump directly to the visible target ref.",
-        KmpMcpCapability::Rewind => {
+        SyntheticGenerationTarget::Kmp(KmpMcpCapability::Goto) => {
+            "Use kernel_goto to jump directly to the visible target ref."
+        }
+        SyntheticGenerationTarget::Kmp(KmpMcpCapability::Rewind) => {
             "Use kernel_rewind on the active temporal cursor with window=2."
         }
-        KmpMcpCapability::Forward => {
+        SyntheticGenerationTarget::Kmp(KmpMcpCapability::Forward) => {
             "Use kernel_forward on the active temporal cursor with window=2."
         }
-        KmpMcpCapability::Trace => {
+        SyntheticGenerationTarget::Kmp(KmpMcpCapability::Trace) => {
             "Use kernel_trace from the stale hypothesis to the final fix with page=8."
         }
-        KmpMcpCapability::Inspect => {
+        SyntheticGenerationTarget::Kmp(KmpMcpCapability::Inspect) => {
             "Use kernel_inspect to read the visible decisive evidence ref."
         }
-        KmpMcpCapability::WriteMemory => {
+        SyntheticGenerationTarget::Kmp(KmpMcpCapability::WriteMemory) => {
             "Execute the typed prepared kernel_write_memory action exactly."
+        }
+        SyntheticGenerationTarget::Stop => {
+            "Stop with answer_ready because the visible evidence is already sufficient."
+        }
+        SyntheticGenerationTarget::Escalate => {
+            "Escalate with beyond_capability because the next decision needs a larger reasoner."
         }
     };
     TrajectoryGoal::parse(goal).map_err(|err| GenerateSyntheticCaseError::Generator {
         adapter: ADAPTER,
-        case_id: format!("kmp_mcp:{}", capability.name()),
+        case_id: format!("operator_action:{}", target.name()),
         message: err.to_string(),
     })
 }
 
 fn subject_state_for(
-    capability: KmpMcpCapability,
+    target: SyntheticGenerationTarget,
     about: &AboutId,
     index: usize,
 ) -> Result<(VisibleState, Option<PreparedOperatorAction>), GenerateSyntheticCaseError> {
     let budget = BudgetSnapshot::bounded(4, 2000);
-    let decision = memory_ref(capability, index, "decision")?;
-    let evidence = memory_ref(capability, index, "evidence")?;
-    let dimension = dimension_ref(capability, index)?;
+    let decision = memory_ref(target, index, "decision")?;
+    let evidence = memory_ref(target, index, "evidence")?;
+    let dimension = dimension_ref(target, index)?;
+    match target {
+        SyntheticGenerationTarget::Stop => Ok((
+            VisibleState::assemble(
+                [evidence],
+                [dimension],
+                None,
+                BudgetSnapshot::bounded(0, 600),
+            ),
+            None,
+        )),
+        SyntheticGenerationTarget::Escalate => Ok((
+            VisibleState::assemble([], [dimension], None, BudgetSnapshot::bounded(1, 800)),
+            None,
+        )),
+        SyntheticGenerationTarget::Kmp(capability) => subject_state_for_kmp(
+            capability, about, index, budget, decision, evidence, dimension,
+        ),
+    }
+}
+
+fn subject_state_for_kmp(
+    capability: KmpMcpCapability,
+    about: &AboutId,
+    index: usize,
+    budget: BudgetSnapshot,
+    decision: MemoryRef,
+    evidence: MemoryRef,
+    dimension: DimensionRef,
+) -> Result<(VisibleState, Option<PreparedOperatorAction>), GenerateSyntheticCaseError> {
     match capability {
         KmpMcpCapability::Ingest => Ok((
             VisibleState::assemble(
@@ -261,7 +302,11 @@ fn prepared_ingest(
     evidence: &MemoryRef,
     index: usize,
 ) -> Result<OperatorAction, GenerateSyntheticCaseError> {
-    let new_entry = memory_ref(KmpMcpCapability::Ingest, index, "new-entry")?;
+    let new_entry = memory_ref(
+        SyntheticGenerationTarget::from(KmpMcpCapability::Ingest),
+        index,
+        "new-entry",
+    )?;
     let coordinate = prepared_ingest_coordinate(&about, &dimension, index)?;
     let memory = prepared_ingest_memory(dimension, new_entry, coordinate)?;
     let key = prepared_ingest_key(&about, evidence)?;
@@ -396,32 +441,32 @@ fn temporal_cursor(index: usize) -> Result<TemporalCursor, GenerateSyntheticCase
 }
 
 fn memory_ref(
-    capability: KmpMcpCapability,
+    target: SyntheticGenerationTarget,
     index: usize,
     suffix: &str,
 ) -> Result<MemoryRef, GenerateSyntheticCaseError> {
     MemoryRef::parse(format!(
         "teacher:realistic-v7:{}:{index:04}:node:{suffix}",
-        capability.name()
+        target.name()
     ))
     .map_err(|err| GenerateSyntheticCaseError::Generator {
         adapter: ADAPTER,
-        case_id: format!("kmp_mcp:{}", capability.name()),
+        case_id: format!("operator_action:{}", target.name()),
         message: err.to_string(),
     })
 }
 
 fn dimension_ref(
-    capability: KmpMcpCapability,
+    target: SyntheticGenerationTarget,
     index: usize,
 ) -> Result<DimensionRef, GenerateSyntheticCaseError> {
     DimensionRef::parse(format!(
         "teacher:realistic-v7:{}:{index:04}:agent:operator",
-        capability.name()
+        target.name()
     ))
     .map_err(|err| GenerateSyntheticCaseError::Generator {
         adapter: ADAPTER,
-        case_id: format!("kmp_mcp:{}", capability.name()),
+        case_id: format!("operator_action:{}", target.name()),
         message: err.to_string(),
     })
 }
@@ -439,6 +484,8 @@ mod tests {
     use super::*;
     use operator_shared_domain::action::escalate_action::EscalateAction;
     use operator_shared_domain::action::escalate_reason::EscalateReason;
+    use operator_shared_domain::action::stop_action::StopAction;
+    use operator_shared_domain::action::stop_reason::StopReason;
     use operator_shared_domain::cursor::ref_cursor::RefCursor;
     use operator_shared_domain::tool_arguments::ask_arguments::AskArguments;
     use operator_shared_domain::tool_arguments::forward_arguments::ForwardArguments;
@@ -513,6 +560,18 @@ mod tests {
                 "inspect" => Ok(tool(ToolArguments::Inspect(InspectArguments::new(
                     first_ref(subject),
                 )))),
+                "stop" => Ok(OperatorAction::Stop(
+                    StopAction::new(
+                        StopReason::AnswerReady,
+                        Some("The visible evidence is sufficient.".to_string()),
+                        vec![first_ref(subject)],
+                    )
+                    .unwrap(),
+                )),
+                "escalate" => Ok(OperatorAction::Escalate(EscalateAction::new(
+                    EscalateReason::BeyondCapability,
+                    ModelId::parse("frontier-reasoner").unwrap(),
+                ))),
                 _ => Err(TeacherPolicyError::Shape {
                     adapter: "valid_teacher",
                     message: "unsupported task family".to_string(),
@@ -566,13 +625,13 @@ mod tests {
     }
 
     #[test]
-    fn valid_teacher_generates_contract_valid_rows_for_every_current_tool_capability() {
+    fn valid_teacher_generates_contract_valid_rows_for_every_generation_target() {
         let generator = TeacherBackedSyntheticCaseGenerator::new(ValidTeacher);
-        for capability in KmpMcpCapability::ALL {
-            let rows = generator.generate(&spec(capability, 2)).unwrap();
+        for target in SyntheticGenerationTarget::ALL {
+            let rows = generator.generate(&spec(target, 2)).unwrap();
             assert_eq!(rows.len(), 2);
             for row in rows {
-                assert_eq!(row.target_action().tool(), Some(capability.tool()));
+                assert!(target.matches_action(row.target_action()));
                 CompositeActionContractValidator::default_strict()
                     .validate(
                         row.target_action(),
@@ -589,16 +648,22 @@ mod tests {
     fn rejects_teacher_action_for_wrong_capability() {
         let generator = TeacherBackedSyntheticCaseGenerator::new(WrongCapabilityTeacher);
         let err = generator
-            .generate(&spec(KmpMcpCapability::Inspect, 1))
+            .generate(&spec(
+                SyntheticGenerationTarget::from(KmpMcpCapability::Inspect),
+                1,
+            ))
             .unwrap_err();
-        assert!(format!("{err}").contains("expected kernel_inspect"));
+        assert!(format!("{err}").contains("expected inspect"));
     }
 
     #[test]
     fn rejects_teacher_action_that_violates_the_strict_contract() {
         let generator = TeacherBackedSyntheticCaseGenerator::new(InvalidContractTeacher);
         let err = generator
-            .generate(&spec(KmpMcpCapability::Inspect, 1))
+            .generate(&spec(
+                SyntheticGenerationTarget::from(KmpMcpCapability::Inspect),
+                1,
+            ))
             .unwrap_err();
         assert!(format!("{err}").contains("unknown"));
     }
@@ -607,20 +672,23 @@ mod tests {
     fn propagates_teacher_policy_failures_without_repair() {
         let generator = TeacherBackedSyntheticCaseGenerator::new(FailingTeacher);
         let err = generator
-            .generate(&spec(KmpMcpCapability::Inspect, 1))
+            .generate(&spec(
+                SyntheticGenerationTarget::from(KmpMcpCapability::Inspect),
+                1,
+            ))
             .unwrap_err();
         assert!(format!("{err}").contains("teacher policy failed"));
         assert!(format!("{err}").contains("bad shape"));
     }
 
-    fn spec(capability: KmpMcpCapability, minimum: usize) -> SyntheticCaseSpec {
-        SyntheticCaseSpec::new(
+    fn spec(target: SyntheticGenerationTarget, minimum: usize) -> SyntheticCaseSpec {
+        SyntheticCaseSpec::for_target(
             operator_shared_domain::ids::synthetic_case_id::SyntheticCaseId::parse(format!(
                 "case:{}",
-                capability.name()
+                target.name()
             ))
             .unwrap(),
-            capability,
+            target,
             PositiveCount::parse(minimum, "minimum").unwrap(),
         )
     }

@@ -655,6 +655,12 @@ adapter.
 
 Implemented in this slice:
 
+- `SyntheticGenerationTarget`, a domain target model for 10 KMP tools plus
+  `stop` and `escalate`;
+- `SyntheticCaseSpec` now stores a generation target instead of assuming every
+  case is a KMP capability;
+- `SyntheticDatasetBlueprint::for_all_generation_targets` for 12-target corpus
+  planning;
 - `TeacherBackedSyntheticCaseGenerator<T: TeacherPolicy>` in
   `operator-synthetic-infra`;
 - one generated `CalibrationSubject` per requested synthetic row;
@@ -663,20 +669,18 @@ Implemented in this slice:
 - fail-fast rejection when the teacher action fails the shared strict action
   contract;
 - propagation of teacher policy failures without repair;
-- focused tests covering all current `KmpMcpCapability` variants.
+- focused tests covering all `SyntheticGenerationTarget` variants.
 
 Important scope boundary:
 
-`SyntheticCaseSpec` is still keyed by `KmpMcpCapability`, and
-`KmpMcpCapability` currently mirrors the 10 KMP tools. That means this first
-v7.3 adapter can generate tool-call trajectories, but it cannot yet target
-`stop` or `escalate` rows.
+`KmpMcpCapability` remains the 10-tool KMP/MCP contract. It was not widened to
+include non-tool actions. `stop` and `escalate` live in the new synthetic
+generation target model, which keeps corpus planning separate from the KMP tool
+contract.
 
-That is a real planning gap before any v7.4 dry run claims full 12-capability
-coverage. The next slice must either extend the synthetic target model beyond
-`KmpMcpCapability` or introduce a separate operator-action target model that
-can represent KMP tools plus `stop` and `escalate` without weakening the KMP
-tool contract.
+The in-memory fixture generator still only supports KMP targets and now rejects
+`stop`/`escalate` fail-fast. The teacher-backed generator is the path that can
+produce all 12 target kinds.
 
 ## Non-goals
 
