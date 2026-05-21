@@ -7,6 +7,7 @@
 //! Depends only on
 //! `operator-shared-domain` and `thiserror`.
 
+pub mod calibration;
 pub mod capability;
 pub mod case;
 pub mod dataset;

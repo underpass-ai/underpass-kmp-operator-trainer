@@ -503,6 +503,92 @@ v7.2 fixes the seed-fixture shape:
 This is still architecture validation only. It must not be used as training
 data or as calibration data for the teacher.
 
+## Updates 2026-05-21-T11
+
+v7.2.5 adds the teacher calibration suite before the v7.3 teacher-backed
+generator:
+
+- calibration cases live outside the repo under
+  `../rehydration-kernel-artifacts/operator/calibration-cases-v1/cases.jsonl`;
+- the committed prompt lives at
+  `crates/operator-synthetic-infra/prompts/teacher_calibration_v1.md`;
+- the runner is `operator-teacher-calibration`;
+- the application owns two ports: `CalibrationEpisodeSource` and
+  `TeacherPolicy`;
+- infra owns the JSONL source and OpenAI-compatible teacher adapter;
+- the teacher receives only the `CalibrationSubject` (`about`, mode,
+  task_family, goal, allowed tools and visible KMP state);
+- accepted actions and human rationale never cross the LLM boundary;
+- reports include overall, per-capability and per-category metrics.
+
+The v1 dataset is intentionally small but policy-focused:
+
+| Property | Value |
+| --- | --- |
+| cases | 25 |
+| category split | 18 happy / 7 adversarial |
+| capabilities | 12/12 covered |
+| writer-pre-read cases | 3 |
+| multi-accepted case | yes |
+| contract-valid rows | 25/25 in stub parse check |
+
+The calibration gate requires both:
+
+```text
+overall_accuracy >= 0.80
+per_capability_accuracy >= 0.60 for every capability
+```
+
+Per-category metrics are diagnostic. They do not fail the gate yet, but they
+make teacher bias visible: a high happy-case score with weak adversarial
+behavior is not acceptable evidence for moving to v7.3.
+
+The calibration flow is:
+
+```text
+calibration-cases-vN/cases.jsonl
+  -> JsonlCalibrationEpisodeSource
+  -> OpenAiCompatibleTeacherPolicy
+  -> EvaluateTeacherCalibrationUseCase
+  -> report.json
+  -> gate pass/fail
+```
+
+If the teacher fails, do not edit cases to match the model. Fix the prompt or
+teacher policy, rerun, and keep the report as evidence.
+
+### Update 2026-05-21-T9 — first real calibration evidence
+
+The first v7.2.5 manual runs are recorded in
+`teacher-calibration-results-2026-05-21.md`.
+
+The important result is not a pass. It is a design finding:
+
+- multi-accepted actions are correct for narrative arguments such as
+  `kernel_ask.query` and `stop.answer`;
+- structured arguments must remain exact;
+- `gpt-4o-mini` is the better teacher candidate observed so far because this
+  task rewards literal KMP/MCP argument preservation more than creative
+  paraphrasing;
+- the current 60% per-capability floor is brittle with only two cases per
+  capability: one failure scores 50%, so the floor behaves like a 100% floor;
+- `kernel_ingest` is currently the blocking capability;
+- the current calibration subject can only carry a narrative `goal`, so prepared
+  ingest payloads are being reconstructed from prose;
+- that is not the desired long-term Operator responsibility.
+
+Before v7.3 teacher-backed corpus generation, prepared write/ingest payloads
+need a typed subject shape or equivalent typed prepared-arguments carrier. The
+teacher should decide whether to execute a prepared KMP/MCP action, not learn to
+compile long prose into canonical ingest JSON.
+
+The next architectural slice should produce a v4 calibration dataset with at
+least three cases per capability, a typed prepared-payload carrier, and a full
+`gpt-4o-mini` calibration report with `gate_passed: true`.
+
+PR #32 is therefore infrastructure plus findings. It is not evidence that the
+v7.2.5 teacher gate passed.
+
 ## Non-goals
 
 This corpus is not:
