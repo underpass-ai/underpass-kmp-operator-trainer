@@ -11,6 +11,30 @@ pub enum SyntheticDomainError {
     #[error("synthetic dataset must contain at least one trajectory")]
     EmptyDataset,
 
+    #[error("synthetic episode must contain at least one step")]
+    EmptyEpisodeSteps,
+
+    #[error("corpus snapshot must contain at least one episode")]
+    EmptyEpisodes,
+
+    #[error("episode split must contain at least one train episode")]
+    EmptyTrainSplit,
+
+    #[error("episode split must contain at least one eval episode")]
+    EmptyEvalSplit,
+
+    #[error("episode split contains duplicate episode '{episode_id}'")]
+    DuplicateEpisodeInSplit { episode_id: String },
+
+    #[error("episode split has overlapping train/eval episode '{episode_id}'")]
+    OverlappingEpisodeSplit { episode_id: String },
+
+    #[error("requested eval episode count {requested} exceeds available episodes {available}")]
+    EvalSplitTooLarge { requested: usize, available: usize },
+
+    #[error("corpus quality validator must contain at least one specification")]
+    EmptyCorpusQualityValidator,
+
     #[error("synthetic case '{case_id}' has duplicate occurrences in the blueprint")]
     DuplicateCase { case_id: String },
 

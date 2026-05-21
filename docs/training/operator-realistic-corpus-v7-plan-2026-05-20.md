@@ -305,8 +305,15 @@ Add typed synthetic-domain concepts:
 - `EpisodeObjective`;
 - `EpisodeStepPlan`;
 - `CapabilityTarget`;
-- `CorpusQualityGate`;
 - `EpisodeSplitPolicy`.
+
+Add the corpus-quality model without introducing a `CorpusQualityGate` code
+type:
+
+- one `Specification<CorpusSnapshot>` per quality rule;
+- `CompositeCorpusQualityValidator` as the domain composite;
+- `EvaluateCorpusQualityUseCase` as the application orchestrator;
+- `CorpusSource` as the application port.
 
 Also add the explicit row objective:
 
@@ -324,7 +331,7 @@ Create a small hand-authored fixture set:
 
 - 3-5 episodes;
 - all tool categories touched;
-- unit tests for parsing, split policy and quality gates.
+- unit tests for parsing, split policy and corpus-quality specs.
 
 This is not for training. It is for architecture and gate validation.
 
@@ -421,6 +428,24 @@ v7.1 implementation checklist before review:
 | SFT validation/prediction | `scripts/operator/predict_operator_sft.py`, `scripts/operator/train_operator_sft_lora.py` | model-facing user payloads require non-empty `goal` |
 | smoke fixtures | `operator-*-cli/tests/*.rs` and shared infra tests | every hand-written JSONL trajectory includes `goal` |
 | documentation | shared architecture docs | `TaskFamily` is taxonomy; `TrajectoryGoal` is the row objective |
+
+## Updates 2026-05-21-T9
+
+v7.1b implements the synthetic episode and corpus-quality model in the
+synthetic bounded context:
+
+- episode aggregate and value objects live in `operator-synthetic-domain/src/episode/`;
+- the word "gate" is not a code type; quality rules are individual
+  `Specification<CorpusSnapshot>` implementations;
+- `CompositeCorpusQualityValidator` composes the 13 corpus-quality specs in
+  stable order and accumulates violations;
+- `EpisodeSplitPolicy` is only a strategy value object;
+- `EpisodeSplitter` is the application service that applies that policy;
+- `EvaluateCorpusQualityUseCase` loads a corpus via a port and invokes the
+  injected validator.
+
+No infra adapters, DTO mappers, fixtures, teacher policy or training data are
+introduced in this slice.
 
 ## Non-goals
 
