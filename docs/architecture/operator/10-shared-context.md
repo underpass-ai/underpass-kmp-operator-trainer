@@ -35,6 +35,7 @@ Located in `operator-shared-domain/src/value_objects/`:
 - `memory_ref.rs` — reference to a KMP memory node.
 - `dimension_ref.rs` — reference to a memory dimension.
 - `task_family.rs` — name of a task family.
+- `trajectory_goal.rs` — explicit objective for one operator decision row.
 - `model_id.rs` — name of a model that may be escalated to.
 
 Located in `operator-shared-domain/src/ids/`:
@@ -50,8 +51,8 @@ Located in `operator-shared-domain/src/ids/`:
 
 Located in `operator-shared-domain/src/tool/`:
 
-- `kernel_tool.rs` — the `KernelTool` enum: `Wake`, `Ask`, `Near`, `Goto`,
-  `Rewind`, `Forward`, `Trace`, `Inspect`, `WriteMemory`.
+- `kernel_tool.rs` — the `KernelTool` enum: `Ingest`, `Wake`, `Ask`,
+  `Near`, `Goto`, `Rewind`, `Forward`, `Trace`, `Inspect`, `WriteMemory`.
 
 Located in `operator-shared-domain/src/mode/`:
 
@@ -123,8 +124,11 @@ Located in `operator-shared-domain/src/visible_state/`:
 Located in `operator-shared-domain/src/trajectory/`:
 
 - `training_trajectory.rs` — aggregate root. Constructor enforces tool ∈
-  allowed_tools, mode ⇔ allowed_tools, visible_state consistency with
-  target_action.
+  allowed_tools and mode ⇔ allowed_tools. Visibility consistency between
+  `target_action` and `visible_state` belongs to the strict contract validator.
+  It also carries a required `TrajectoryGoal`; `TaskFamily` classifies the row,
+  while `TrajectoryGoal` states the objective the operator is expected to
+  pursue.
 
 ### Specifications and contract
 

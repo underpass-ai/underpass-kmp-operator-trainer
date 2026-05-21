@@ -87,6 +87,7 @@ mod tests {
         use operator_shared_domain::trajectory::training_trajectory::TrainingTrajectory;
         use operator_shared_domain::value_objects::memory_ref::MemoryRef;
         use operator_shared_domain::value_objects::task_family::TaskFamily;
+        use operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal;
         use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
         use operator_shared_domain::visible_state::visible_state::VisibleState;
 
@@ -103,6 +104,7 @@ mod tests {
                 AboutId::parse("a:1").unwrap(),
                 OperatorMode::Read,
                 TaskFamily::parse("read.inspect").unwrap(),
+                TrajectoryGoal::parse("Inspect the visible memory node.").unwrap(),
                 AllowedTools::for_mode(OperatorMode::Read),
                 visible,
                 action,

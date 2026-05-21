@@ -63,6 +63,10 @@ mod tests {
             AboutId::parse("a:1").unwrap(),
             OperatorMode::Read,
             TaskFamily::parse("read.inspect").unwrap(),
+            operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal::parse(
+                "Inspect the visible memory node.",
+            )
+            .unwrap(),
             AllowedTools::for_mode(OperatorMode::Read),
             visible,
             action,
@@ -90,6 +94,10 @@ mod tests {
             AboutId::parse("a:1").unwrap(),
             OperatorMode::Read,
             TaskFamily::parse("read.inspect").unwrap(),
+            operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal::parse(
+                "Inspect the unknown memory node.",
+            )
+            .unwrap(),
             AllowedTools::for_mode(OperatorMode::Read),
             visible,
             action,

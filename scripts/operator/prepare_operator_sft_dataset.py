@@ -587,6 +587,7 @@ def main() -> None:
     if args.inject_target_request_fields:
         selected = [inject_target_request_fields(item) for item in selected]
     validate_unique_step_ids(selected, "selected trajectories")
+    validate_required_goals(selected, "selected trajectories")
     debug_audit = {
         item["step_id"]: build_debug_audit_row(item)
         for item in selected
@@ -1128,6 +1129,21 @@ def validate_unique_step_ids(rows: list[dict[str, Any]], label: str) -> None:
                 "operator SFT data requires unique decision ids"
             )
         seen[step_id] = index
+
+
+def trajectory_goal(item: dict[str, Any]) -> str:
+    goal = item.get("goal")
+    if not isinstance(goal, str) or not goal.strip():
+        raise ValueError(f"{item.get('step_id')} missing non-empty goal")
+    return goal
+
+
+def validate_required_goals(rows: list[dict[str, Any]], label: str) -> None:
+    for index, row in enumerate(rows, start=1):
+        try:
+            trajectory_goal(row)
+        except ValueError as exc:
+            raise ValueError(f"{label} row {index}: {exc}") from exc
 
 
 def split_pairs(
@@ -2086,7 +2102,7 @@ def to_sft_row(
         "task_family": item["task_family"],
         "mode": item["mode"],
         "about": item["about"],
-        "goal": item.get("goal"),
+        "goal": trajectory_goal(item),
         "allowed_tools": allowed_tools,
         "visible_state": visible_state,
     }
@@ -2361,7 +2377,7 @@ def build_debug_audit_row(item: dict[str, Any]) -> dict[str, Any]:
         "mode": item.get("mode"),
         "task_family": item.get("task_family"),
         "about": item.get("about"),
-        "goal": item.get("goal"),
+        "goal": trajectory_goal(item),
         "status": "candidate",
         "split": None,
         "drop_reasons": [],

@@ -18,6 +18,7 @@ from predict_operator_sft import (
     resolve_prepared_payload_action,
     validate_action_shape,
     validate_allowed_tools_for_user_payload,
+    validate_required_user_payload_fields,
 )
 
 
@@ -243,6 +244,9 @@ def validate_sft_rows(rows: list[dict[str, Any]], label: str) -> None:
         seen_message_hashes[message_hash] = index
 
         user_payload = parse_message_json(messages[1]["content"], label, index, "user")
+        required_user_error = validate_required_user_payload_fields(user_payload)
+        if required_user_error is not None:
+            raise SystemExit(f"{label} row {index}: {required_user_error}")
         allowed_tools = user_payload.get("allowed_tools")
         if not isinstance(allowed_tools, list) or not all(
             isinstance(tool, str) and tool for tool in allowed_tools

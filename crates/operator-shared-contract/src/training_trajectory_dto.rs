@@ -10,6 +10,7 @@ pub struct TrainingTrajectoryDto {
     pub about: String,
     pub mode: String,
     pub task_family: String,
+    pub goal: String,
     pub allowed_tools: Vec<String>,
     pub visible_state: VisibleStateDto,
     pub target_action: OperatorActionDto,

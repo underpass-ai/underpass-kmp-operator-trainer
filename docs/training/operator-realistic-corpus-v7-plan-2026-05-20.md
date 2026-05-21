@@ -407,6 +407,21 @@ The following gaps were closed before starting v7.1:
 This prevents v7.3 from silently choosing a mock kernel, silently omitting the
 objective, or reinventing the existing OpenAI-compatible LLM client path.
 
+## Updates 2026-05-21-T8
+
+v7.1 implementation checklist before review:
+
+| Area | Files to verify | Requirement |
+| --- | --- | --- |
+| shared domain | `operator-shared-domain/src/value_objects/trajectory_goal.rs`, `operator-shared-domain/src/trajectory/training_trajectory.rs` | `TrajectoryGoal` is a non-empty value object and `TrainingTrajectory` requires it |
+| shared contract | `operator-shared-contract/src/training_trajectory_dto.rs` | `goal` is a required wire field; old rows without it are invalid |
+| shared infra | `operator-shared-infra/src/mappers/training_trajectory_mapper.rs` | DTO/domain mapping preserves `goal` both ways |
+| synthetic generation | `operator-synthetic-infra/src/generators/in_memory_synthetic_case_generator.rs` | generated contract rows carry a visible objective |
+| SFT preparation | `scripts/operator/prepare_operator_sft_dataset.py` | raw trajectories without non-empty `goal` fail before prompt construction |
+| SFT validation/prediction | `scripts/operator/predict_operator_sft.py`, `scripts/operator/train_operator_sft_lora.py` | model-facing user payloads require non-empty `goal` |
+| smoke fixtures | `operator-*-cli/tests/*.rs` and shared infra tests | every hand-written JSONL trajectory includes `goal` |
+| documentation | shared architecture docs | `TaskFamily` is taxonomy; `TrajectoryGoal` is the row objective |
+
 ## Non-goals
 
 This corpus is not:

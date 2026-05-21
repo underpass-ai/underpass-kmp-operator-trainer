@@ -416,6 +416,9 @@ def validate_dataset_rows(rows: list[dict[str, Any]], resolve_prepared: bool) ->
         if user_error is not None:
             raise SystemExit(f"dataset row {index}: {user_error}")
         assert user_payload is not None
+        required_user_error = validate_required_user_payload_fields(user_payload)
+        if required_user_error is not None:
+            raise SystemExit(f"dataset row {index}: {required_user_error}")
         allowed_tools = user_payload.get("allowed_tools")
         if not isinstance(allowed_tools, list) or not all(
             isinstance(tool, str) and tool for tool in allowed_tools
@@ -570,6 +573,9 @@ def validate_action_allowed_by_row(
     if user_error is not None:
         return f"allowed_tools_unavailable:{user_error}"
     assert user_payload is not None
+    required_user_error = validate_required_user_payload_fields(user_payload)
+    if required_user_error is not None:
+        return required_user_error
     allowed_tools = user_payload.get("allowed_tools")
     if not isinstance(allowed_tools, list) or not all(
         isinstance(value, str) and value for value in allowed_tools
@@ -595,6 +601,17 @@ def validate_allowed_tools_for_user_payload(user_payload: dict[str, Any]) -> str
     unsupported = sorted(set(allowed_tools) - MODE_ALLOWED_TOOLS[mode])
     if unsupported:
         return f"allowed_tools_outside_mode:{mode}:{','.join(unsupported)}"
+    return None
+
+
+def validate_required_user_payload_fields(user_payload: dict[str, Any]) -> str | None:
+    for field in ("task_family", "mode", "about", "goal"):
+        value = user_payload.get(field)
+        if not isinstance(value, str) or not value.strip():
+            return f"user_payload_missing_non_empty_{field}"
+    visible_state = user_payload.get("visible_state")
+    if not isinstance(visible_state, dict):
+        return "user_payload_missing_visible_state"
     return None
 
 
@@ -721,6 +738,9 @@ def resolve_prepared_payload_action(
     if user_error is not None:
         return None, user_error
     assert user_payload is not None
+    required_user_error = validate_required_user_payload_fields(user_payload)
+    if required_user_error is not None:
+        return None, required_user_error
     visible_state = user_payload.get("visible_state")
     if not isinstance(visible_state, dict):
         return None, "missing_visible_state"

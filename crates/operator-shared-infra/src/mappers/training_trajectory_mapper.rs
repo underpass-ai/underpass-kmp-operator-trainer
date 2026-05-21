@@ -7,6 +7,7 @@ use operator_shared_domain::mode::operator_mode::OperatorMode;
 use operator_shared_domain::tool::kernel_tool::KernelTool;
 use operator_shared_domain::trajectory::training_trajectory::TrainingTrajectory;
 use operator_shared_domain::value_objects::task_family::TaskFamily;
+use operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal;
 
 use crate::mappers::mapping_error::MappingError;
 use crate::mappers::operator_action_mapper::OperatorActionMapper;
@@ -22,6 +23,7 @@ impl TrainingTrajectoryMapper {
         let about = AboutId::parse(dto.about.clone())?;
         let mode = OperatorMode::parse(&dto.mode)?;
         let task_family = TaskFamily::parse(dto.task_family.clone())?;
+        let goal = TrajectoryGoal::parse(dto.goal.clone())?;
         let mut tools = Vec::with_capacity(dto.allowed_tools.len());
         for raw in &dto.allowed_tools {
             tools.push(KernelTool::parse(raw)?);
@@ -35,6 +37,7 @@ impl TrainingTrajectoryMapper {
             about,
             mode,
             task_family,
+            goal,
             allowed_tools,
             visible_state,
             target_action,
@@ -49,6 +52,7 @@ impl TrainingTrajectoryMapper {
             about: domain.about().as_str().to_string(),
             mode: domain.mode().as_str().to_string(),
             task_family: domain.task_family().as_str().to_string(),
+            goal: domain.goal().as_str().to_string(),
             allowed_tools: domain
                 .allowed_tools()
                 .as_slice()

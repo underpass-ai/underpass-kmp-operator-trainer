@@ -16,6 +16,10 @@ depends on `serde` and `serde_json` only.
 | `VisibleStateDto` | `visible_state_dto.rs` | structured snapshot, no `serde_json::Value` field |
 | `TrainingTrajectoryDto` | `training_trajectory_dto.rs` | full row shape for JSONL trajectories |
 
+`TrainingTrajectoryDto.goal` is required. Old JSONL rows without `goal` are
+invalid by design: the operator objective must be auditable after the corpus is
+generated, not inferred later from `task_family`.
+
 ## Stability
 
 Field names and tag strings here are part of Operator's public API. A

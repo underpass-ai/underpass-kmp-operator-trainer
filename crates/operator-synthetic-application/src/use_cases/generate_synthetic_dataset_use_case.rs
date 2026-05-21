@@ -104,6 +104,10 @@ mod tests {
                         AboutId::parse(format!("a:{index}")).expect("static"),
                         OperatorMode::Read,
                         TaskFamily::parse("test.case").expect("static"),
+                        operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal::parse(
+                            "Execute the synthetic test case.",
+                        )
+                        .expect("static"),
                         AllowedTools::for_mode(OperatorMode::Read),
                         visible.clone(),
                         action.clone(),
