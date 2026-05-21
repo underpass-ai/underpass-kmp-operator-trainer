@@ -34,7 +34,9 @@ impl Specification<CorpusSnapshot> for SchemaParseSpec {
 mod tests {
     use super::*;
     use crate::quality::corpus_audit_snapshot::CorpusAuditSnapshot;
-    use crate::quality::test_support::snapshot_with_audit;
+    use crate::quality::test_support::{
+        clean_corpus_snapshot, corpus_with_unparseable_row, snapshot_with_audit,
+    };
     use operator_shared_domain::value_objects::example_count::ExampleCount;
 
     #[test]
@@ -52,5 +54,21 @@ mod tests {
             ))
             .unwrap_err();
         assert_eq!(err.code(), ContractViolationCode::SchemaParse);
+    }
+
+    #[test]
+    fn schema_parse_spec_accepts_clean_corpus() {
+        SchemaParseSpec::new()
+            .evaluate(&clean_corpus_snapshot())
+            .unwrap();
+    }
+
+    #[test]
+    fn schema_parse_spec_rejects_unparseable_row() {
+        let err = SchemaParseSpec::new()
+            .evaluate(&corpus_with_unparseable_row())
+            .unwrap_err();
+        assert_eq!(err.code(), ContractViolationCode::SchemaParse);
+        assert!(err.field().contains("schema_parse"));
     }
 }

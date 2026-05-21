@@ -12,6 +12,7 @@ pub struct CorpusAuditSnapshot {
     pagination_safety_failures: ExampleCount,
     write_proof_failures: ExampleCount,
     gold_leak_findings: ExampleCount,
+    episode_split_failures: ExampleCount,
     replay_failures: ExampleCount,
     replay_smoke_recorded: bool,
     frontier_ceiling_recorded: bool,
@@ -75,6 +76,12 @@ impl CorpusAuditSnapshot {
     }
 
     #[must_use]
+    pub fn with_episode_split_failures(mut self, count: ExampleCount) -> Self {
+        self.episode_split_failures = count;
+        self
+    }
+
+    #[must_use]
     pub fn with_replay_failures(mut self, count: ExampleCount) -> Self {
         self.replay_failures = count;
         self
@@ -124,6 +131,10 @@ impl CorpusAuditSnapshot {
         self.gold_leak_findings
     }
 
+    pub fn episode_split_failures(&self) -> ExampleCount {
+        self.episode_split_failures
+    }
+
     pub fn replay_failures(&self) -> ExampleCount {
         self.replay_failures
     }
@@ -153,8 +164,10 @@ mod tests {
     fn builder_methods_set_failure_counts() {
         let audit = CorpusAuditSnapshot::clean()
             .with_schema_parse_failures(ExampleCount::new(1))
+            .with_episode_split_failures(ExampleCount::new(2))
             .without_frontier_ceiling();
         assert_eq!(audit.schema_parse_failures().as_usize(), 1);
+        assert_eq!(audit.episode_split_failures().as_usize(), 2);
         assert!(!audit.frontier_ceiling_recorded());
         assert_eq!(audit.clone(), audit);
     }

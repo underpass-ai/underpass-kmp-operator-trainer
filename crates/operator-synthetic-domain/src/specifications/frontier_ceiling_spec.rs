@@ -33,7 +33,9 @@ impl Specification<CorpusSnapshot> for FrontierCeilingSpec {
 mod tests {
     use super::*;
     use crate::quality::corpus_audit_snapshot::CorpusAuditSnapshot;
-    use crate::quality::test_support::snapshot_with_audit;
+    use crate::quality::test_support::{
+        clean_corpus_snapshot, corpus_without_frontier_baseline_recorded, snapshot_with_audit,
+    };
 
     #[test]
     fn accepts_recorded_frontier_ceiling() {
@@ -50,5 +52,21 @@ mod tests {
             ))
             .unwrap_err();
         assert_eq!(err.code(), ContractViolationCode::FrontierCeiling);
+    }
+
+    #[test]
+    fn frontier_ceiling_spec_accepts_clean_corpus() {
+        FrontierCeilingSpec::new()
+            .evaluate(&clean_corpus_snapshot())
+            .unwrap();
+    }
+
+    #[test]
+    fn frontier_ceiling_spec_rejects_without_frontier_baseline_recorded() {
+        let err = FrontierCeilingSpec::new()
+            .evaluate(&corpus_without_frontier_baseline_recorded())
+            .unwrap_err();
+        assert_eq!(err.code(), ContractViolationCode::FrontierCeiling);
+        assert!(err.field().contains("frontier_ceiling"));
     }
 }

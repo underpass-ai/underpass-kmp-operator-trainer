@@ -34,7 +34,9 @@ impl Specification<CorpusSnapshot> for ActionParseSpec {
 mod tests {
     use super::*;
     use crate::quality::corpus_audit_snapshot::CorpusAuditSnapshot;
-    use crate::quality::test_support::snapshot_with_audit;
+    use crate::quality::test_support::{
+        clean_corpus_snapshot, corpus_with_invalid_action_target, snapshot_with_audit,
+    };
     use operator_shared_domain::value_objects::example_count::ExampleCount;
 
     #[test]
@@ -52,5 +54,21 @@ mod tests {
             ))
             .unwrap_err();
         assert_eq!(err.code(), ContractViolationCode::ActionParse);
+    }
+
+    #[test]
+    fn action_parse_spec_accepts_clean_corpus() {
+        ActionParseSpec::new()
+            .evaluate(&clean_corpus_snapshot())
+            .unwrap();
+    }
+
+    #[test]
+    fn action_parse_spec_rejects_invalid_action_target() {
+        let err = ActionParseSpec::new()
+            .evaluate(&corpus_with_invalid_action_target())
+            .unwrap_err();
+        assert_eq!(err.code(), ContractViolationCode::ActionParse);
+        assert!(err.field().contains("action_parse"));
     }
 }

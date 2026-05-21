@@ -104,11 +104,40 @@ The strict corpus validator registers 13 specs:
 `quality/corpus_audit_snapshot.rs` carries external audit signals that are
 produced by adapters or scripts outside the domain.
 
+### Test support fixtures
+
+`quality/test_support/` contains the v7.2 handcrafted seed corpus used by the
+corpus-quality specs. It is intentionally Rust-only and builds every row
+through domain constructors; there is no JSON, TOML or deserialization path in
+these fixtures.
+
+The five seed episodes are:
+
+- `episode_incident_payments_timeout`
+- `episode_software_migration`
+- `episode_bug_investigation`
+- `episode_product_planning`
+- `episode_smart_writing`
+
+`clean_corpus_snapshot()` composes those episodes into a typed
+`CorpusSnapshot`. Each corpus-quality spec also has one focused failing
+fixture in the same module, for example `corpus_missing_kernel_forward()` or
+`corpus_with_write_lacking_read_before_write()`.
+
+When adding a new corpus-quality spec:
+
+1. Add a focused failing fixture to `quality/test_support/snapshots.rs`.
+2. Add a clean-corpus test and a failing-fixture test in the spec file.
+3. Verify the failing test asserts the specific `ContractViolationCode` and
+   a useful `field`.
+4. Extend `CompositeCorpusQualityValidator::default_strict()` only after the
+   fixture exists.
+
 ### Errors
 
 - `error/synthetic_domain_error.rs` — `SyntheticDomainError` with
-  `EmptyBlueprint`, `DuplicateCase`, plus a transparent `Shared` variant
-  for `operator-shared-domain::DomainError`.
+  `EmptyBlueprint`, `DuplicateCase`, episode/split validation errors, plus a
+  transparent `Shared` variant for `operator-shared-domain::DomainError`.
 
 ## Application map
 

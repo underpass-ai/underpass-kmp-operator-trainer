@@ -57,7 +57,10 @@ impl Specification<CorpusSnapshot> for ModeSafetySpec {
 mod tests {
     use super::*;
     use crate::quality::corpus_audit_snapshot::CorpusAuditSnapshot;
-    use crate::quality::test_support::{full_quality_snapshot, snapshot_with_audit};
+    use crate::quality::test_support::{
+        clean_corpus_snapshot, corpus_with_ingest_in_read_mode, full_quality_snapshot,
+        snapshot_with_audit,
+    };
     use operator_shared_domain::value_objects::example_count::ExampleCount;
 
     #[test]
@@ -80,5 +83,21 @@ mod tests {
             ))
             .unwrap_err();
         assert_eq!(err.code(), ContractViolationCode::ModeSafety);
+    }
+
+    #[test]
+    fn mode_safety_spec_accepts_clean_corpus() {
+        ModeSafetySpec::new()
+            .evaluate(&clean_corpus_snapshot())
+            .unwrap();
+    }
+
+    #[test]
+    fn mode_safety_spec_rejects_ingest_in_read_mode() {
+        let err = ModeSafetySpec::new()
+            .evaluate(&corpus_with_ingest_in_read_mode())
+            .unwrap_err();
+        assert_eq!(err.code(), ContractViolationCode::ModeSafety);
+        assert!(err.field().contains("mode_safety"));
     }
 }
