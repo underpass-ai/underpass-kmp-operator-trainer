@@ -654,3 +654,56 @@ v7.2.5 still holds: chasing each calibration miss with a prompt patch creates
 Goodhart-style overfitting to the calibration suite at the cost of general
 policy quality. The structured-output guarantee plus a green calibration rerun
 is the required signal for v7.3 corpus generation.
+
+---
+
+# Updates 2026-05-22-T3 — prepared-action EOF root cause closed
+
+The prepared-ingest EOF was not fixed by larger token ceilings alone. The debug
+run showed:
+
+- `finish_reason=length`
+- `content_len=33682`
+- `content_tail` contained only whitespace
+- serde failed with `EOF while parsing an object at line 1 column 1036`
+
+That means the model started an `OperatorActionDto`, failed to complete it, and
+then exhausted the completion budget with whitespace. The root cause is
+architectural: for subjects with a typed `prepared_action`, the correct output
+is already present in the subject and has already passed domain invariants
+(`PreparedOperatorAction` must be a tool call, and `CalibrationSubject` rejects
+prepared actions outside the current mode). Asking the LLM to copy a large
+typed ingest payload reintroduced an unnecessary generation step.
+
+PR #37 now makes `OpenAiCompatibleTeacherPolicy` return
+`subject.prepared_action` directly when present. This matches the existing stub
+teacher behavior and preserves the policy contract: prepared actions are
+executed verbatim, not reconstructed.
+
+Verification:
+
+- Single prepared-ingest case:
+  `../rehydration-kernel-artifacts/operator/calibration-runs/structured-output-pr38-ingest-single-prepared-fast-path/report.json`
+  - `match_count`: 1/1
+  - `contract_valid_count`: 1/1
+  - `shape_failed_count`: 0
+- Full v5 calibration:
+  `../rehydration-kernel-artifacts/operator/calibration-runs/structured-output-pr38-full-prepared-fast-path/report.json`
+  - `total_cases`: 36
+  - `match_count`: 34
+  - `tool_match_count`: 35
+  - `contract_valid_count`: 36
+  - `shape_failed_count`: 0
+  - `overall_accuracy`: 94.44%
+  - `gate_passed`: true
+  - `kernel_ingest`: 100%
+
+The two remaining misses are the previously accepted limitations:
+
+- `calib:bug_investigation:goto-trace-cursor`: tool correct, cursor variant
+  mismatch (`ref` vs `trace`).
+- `calib:software_migration:stop-no-candidate`: contract-valid adversarial
+  policy preference for `kernel_ask` over `stop(no_candidate)`.
+
+No prompt v6 is introduced. The prepared-ingest blocker is closed without
+softening gates, widening accepted actions, or hiding drops.

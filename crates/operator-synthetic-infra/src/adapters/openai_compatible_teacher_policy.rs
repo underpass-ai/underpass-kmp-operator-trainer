@@ -129,6 +129,10 @@ impl OpenAiCompatibleTeacherPolicy {
 
 impl TeacherPolicy for OpenAiCompatibleTeacherPolicy {
     fn decide(&self, subject: &CalibrationSubject) -> Result<OperatorAction, TeacherPolicyError> {
+        if let Some(prepared) = subject.prepared_action() {
+            return Ok(prepared.action().clone());
+        }
+
         let body = self.build_body(subject)?;
         let mut request = self.client.post(self.endpoint()).json(&body);
         if let Some(key) = self.api_key.as_deref() {
@@ -225,15 +229,20 @@ mod tests {
     use std::time::Duration;
 
     use operator_shared_domain::action::operator_action::OperatorAction;
+    use operator_shared_domain::action::tool_call_action::ToolCallAction;
     use operator_shared_domain::ids::about_id::AboutId;
     use operator_shared_domain::mode::allowed_tools::AllowedTools;
     use operator_shared_domain::mode::operator_mode::OperatorMode;
     use operator_shared_domain::tool::kernel_tool::KernelTool;
+    use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
+    use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
+    use operator_shared_domain::value_objects::memory_ref::MemoryRef;
     use operator_shared_domain::value_objects::task_family::TaskFamily;
     use operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal;
     use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
     use operator_shared_domain::visible_state::visible_state::VisibleState;
     use operator_synthetic_application::ports::teacher_policy::TeacherPolicy;
+    use operator_synthetic_domain::calibration::prepared_operator_action::PreparedOperatorAction;
     use serde_json::Value;
 
     use super::*;
@@ -295,6 +304,24 @@ mod tests {
         .expect("subject builds")
     }
 
+    fn prepared_subject(action: OperatorAction) -> CalibrationSubject {
+        CalibrationSubject::new(
+            AboutId::parse("about:test").expect("about parses"),
+            OperatorMode::Read,
+            TaskFamily::parse("read.inspect").expect("task family parses"),
+            TrajectoryGoal::parse("Execute the prepared inspect action.").expect("goal parses"),
+            AllowedTools::for_mode(OperatorMode::Read),
+            VisibleState::assemble(
+                [MemoryRef::parse("about:test:node:x").expect("ref parses")],
+                [],
+                None,
+                BudgetSnapshot::unbounded(),
+            ),
+            Some(PreparedOperatorAction::new(action).expect("prepared action builds")),
+        )
+        .expect("subject builds")
+    }
+
     #[test]
     fn request_body_includes_structured_response_format() {
         let action = serde_json::json!({
@@ -352,6 +379,29 @@ mod tests {
         );
         assert_eq!(request["max_completion_tokens"], serde_json::json!(4096));
         assert!(request.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn prepared_action_returns_without_http_call() {
+        let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
+            InspectArguments::new(MemoryRef::parse("about:test:node:x").expect("ref parses")),
+        )));
+        let policy = OpenAiCompatibleTeacherPolicy::with_client(
+            "http://127.0.0.1:9",
+            None,
+            "gpt-4o-mini",
+            "Return one operator action.",
+            Client::builder()
+                .timeout(Duration::from_millis(1))
+                .build()
+                .expect("client builds"),
+        );
+
+        let decision = policy
+            .decide(&prepared_subject(action.clone()))
+            .expect("prepared action returns directly");
+
+        assert_eq!(decision, action);
     }
 
     #[test]
