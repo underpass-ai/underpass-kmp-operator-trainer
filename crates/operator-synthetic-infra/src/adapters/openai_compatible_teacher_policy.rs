@@ -5,13 +5,16 @@ use std::path::Path;
 use std::time::Duration;
 
 use operator_shared_contract::operator_action_dto::OperatorActionDto;
-use operator_shared_domain::action::operator_action::OperatorAction;
+use operator_shared_domain::value_objects::finish_reason::FinishReason;
+use operator_shared_domain::value_objects::subject_hash::SubjectHash;
 use operator_shared_infra::mappers::operator_action_mapper::OperatorActionMapper;
 use operator_synthetic_application::error::teacher_policy_error::TeacherPolicyError;
 use operator_synthetic_application::ports::teacher_policy::TeacherPolicy;
 use operator_synthetic_domain::calibration::calibration_subject::CalibrationSubject;
+use operator_synthetic_domain::calibration::teacher_decision::TeacherDecision;
 use reqwest::blocking::Client;
 use reqwest::header::AUTHORIZATION;
+use sha2::{Digest, Sha256};
 
 use crate::adapters::operator_action_schema::operator_action_schema;
 use crate::dto::openai_chat_completion_error_envelope_dto::OpenAiChatCompletionErrorEnvelopeDto;
@@ -93,18 +96,8 @@ impl OpenAiCompatibleTeacherPolicy {
         format!("{trimmed}/chat/completions")
     }
 
-    fn build_body(
-        &self,
-        subject: &CalibrationSubject,
-    ) -> Result<OpenAiChatCompletionRequestDto, TeacherPolicyError> {
-        let subject_dto = CalibrationSubjectMapper::to_dto(subject);
-        let subject_json = serde_json::to_string_pretty(&subject_dto).map_err(|err| {
-            TeacherPolicyError::Protocol {
-                adapter: ADAPTER,
-                message: format!("serialize subject: {err}"),
-            }
-        })?;
-        Ok(OpenAiChatCompletionRequestDto {
+    fn build_body(&self, subject_json: String) -> OpenAiChatCompletionRequestDto {
+        OpenAiChatCompletionRequestDto {
             model: self.model.clone(),
             messages: vec![
                 OpenAiChatCompletionRequestMessageDto {
@@ -123,17 +116,42 @@ impl OpenAiCompatibleTeacherPolicy {
                 "type": "json_schema",
                 "json_schema": operator_action_schema(),
             })),
+        }
+    }
+
+    fn subject_json(subject: &CalibrationSubject) -> Result<String, TeacherPolicyError> {
+        let subject_dto = CalibrationSubjectMapper::to_dto(subject);
+        serde_json::to_string_pretty(&subject_dto).map_err(|err| TeacherPolicyError::Protocol {
+            adapter: ADAPTER,
+            message: format!("serialize subject: {err}"),
+        })
+    }
+
+    fn subject_hash(subject_json: &str) -> Result<SubjectHash, TeacherPolicyError> {
+        let mut hasher = Sha256::new();
+        hasher.update(subject_json.as_bytes());
+        SubjectHash::parse(format!("{:x}", hasher.finalize())).map_err(|err| {
+            TeacherPolicyError::Protocol {
+                adapter: ADAPTER,
+                message: format!("build subject hash: {err}"),
+            }
         })
     }
 }
 
 impl TeacherPolicy for OpenAiCompatibleTeacherPolicy {
-    fn decide(&self, subject: &CalibrationSubject) -> Result<OperatorAction, TeacherPolicyError> {
+    fn decide(&self, subject: &CalibrationSubject) -> Result<TeacherDecision, TeacherPolicyError> {
+        let subject_json = Self::subject_json(subject)?;
+        let subject_hash = Self::subject_hash(&subject_json)?;
         if let Some(prepared) = subject.prepared_action() {
-            return Ok(prepared.action().clone());
+            return Ok(TeacherDecision::new(
+                prepared.action().clone(),
+                FinishReason::Stop,
+                subject_hash,
+            ));
         }
 
-        let body = self.build_body(subject)?;
+        let body = self.build_body(subject_json);
         let mut request = self.client.post(self.endpoint()).json(&body);
         if let Some(key) = self.api_key.as_deref() {
             request = request.header(AUTHORIZATION, format!("Bearer {key}"));
@@ -190,22 +208,30 @@ impl TeacherPolicy for OpenAiCompatibleTeacherPolicy {
                 adapter: ADAPTER,
                 message: "response envelope contained no choices".to_string(),
             })?;
-        let finish_reason = choice.finish_reason;
+        let finish_reason = choice
+            .finish_reason
+            .as_deref()
+            .map_or(FinishReason::Other, FinishReason::parse);
         let content = choice.message.content;
         let action_dto: OperatorActionDto =
             serde_json::from_str(content.trim()).map_err(|err| TeacherPolicyError::Shape {
                 adapter: ADAPTER,
                 message: format!(
                     "assistant content is not OperatorActionDto JSON: {err}; finish_reason={}; content_len={}; content_tail={}",
-                    finish_reason.as_deref().unwrap_or("missing"),
+                    finish_reason.as_str(),
                     content.chars().count(),
                     content_tail(&content),
                 ),
+                finish_reason: Some(finish_reason),
             })?;
-        OperatorActionMapper::to_domain(&action_dto).map_err(|err| TeacherPolicyError::Shape {
-            adapter: ADAPTER,
-            message: format!("assistant action violates DTO/domain mapping: {err}"),
-        })
+        let action = OperatorActionMapper::to_domain(&action_dto).map_err(|err| {
+            TeacherPolicyError::Shape {
+                adapter: ADAPTER,
+                message: format!("assistant action violates DTO/domain mapping: {err}"),
+                finish_reason: Some(finish_reason),
+            }
+        })?;
+        Ok(TeacherDecision::new(action, finish_reason, subject_hash))
     }
 }
 
@@ -359,12 +385,13 @@ mod tests {
             serde_json::from_str(&rx.recv().expect("request body")).expect("request body is json");
         handle.join().expect("mock server joins");
 
-        assert!(matches!(decision, OperatorAction::ToolCall(_)));
+        assert!(matches!(decision.action(), OperatorAction::ToolCall(_)));
         assert_eq!(
-            decision.tool(),
+            decision.action().tool(),
             Some(KernelTool::Inspect),
             "mock response should map through the normal DTO/domain path"
         );
+        assert_eq!(decision.finish_reason(), FinishReason::Other);
         assert_eq!(
             request["response_format"]["type"],
             Value::String("json_schema".to_string())
@@ -401,7 +428,8 @@ mod tests {
             .decide(&prepared_subject(action.clone()))
             .expect("prepared action returns directly");
 
-        assert_eq!(decision, action);
+        assert_eq!(decision.action(), &action);
+        assert_eq!(decision.finish_reason(), FinishReason::Stop);
     }
 
     #[test]

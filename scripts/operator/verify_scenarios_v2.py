@@ -50,6 +50,7 @@ def main() -> int:
     verify_adversarial_goal_target_consistency(cases)
     verify_happy_goals_are_situational(cases)
     verify_near_goals_expose_anchor_and_dimension(cases)
+    verify_semantic_acceptance_criteria(cases)
     verify_theme_balance(cases)
     print_summary(cases)
     return 0
@@ -294,6 +295,42 @@ def verify_near_goals_expose_anchor_and_dimension(cases: list[dict[str, Any]]) -
     assert not violations, (
         "kernel_near goals must expose a visible anchor and dimension; "
         f"first 5 violations: {violations[:5]}"
+    )
+
+
+def verify_semantic_acceptance_criteria(cases: list[dict[str, Any]]) -> None:
+    violations = []
+    for case in cases:
+        criteria = case.get("acceptance_criteria") or {}
+        stop_reason = criteria.get("expected_stop_reason")
+        cursor_kind = criteria.get("expected_cursor_kind")
+        if case["target"] == "stop" and stop_reason not in {
+            "answer_ready",
+            "no_candidate",
+            "budget_exhausted",
+        }:
+            violations.append(
+                f"{case['scenario_id']}: stop target missing expected_stop_reason"
+            )
+        if case["target"] == "kernel_goto" and cursor_kind not in {
+            "ref",
+            "temporal",
+            "trace",
+        }:
+            violations.append(
+                f"{case['scenario_id']}: kernel_goto target missing expected_cursor_kind"
+            )
+        if case["target"] != "stop" and stop_reason is not None:
+            violations.append(
+                f"{case['scenario_id']}: non-stop target sets expected_stop_reason"
+            )
+        if case["target"] != "kernel_goto" and cursor_kind is not None:
+            violations.append(
+                f"{case['scenario_id']}: non-goto target sets expected_cursor_kind"
+            )
+    assert not violations, (
+        "semantic acceptance criteria violations; "
+        f"first 10 violations: {violations[:10]}"
     )
 
 

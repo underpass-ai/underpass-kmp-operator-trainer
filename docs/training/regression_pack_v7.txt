@@ -1,0 +1,8 @@
+# v7.3 calibration and smoke misses carried forward to corpus production.
+#
+# This pack is intentionally deterministic: same scenarios JSONL + same prompt
+# + same adapter must execute these exact scenario_id values.
+
+scenario:kernel_inspect:after-near:0007
+scenario:stop:no-candidate:0028
+scenario:kernel_goto:temporal-cursor:0021

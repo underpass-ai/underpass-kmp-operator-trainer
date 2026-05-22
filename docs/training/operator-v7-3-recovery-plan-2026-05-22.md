@@ -807,3 +807,44 @@ PR #37 is ready for review after user approval of these diagnostics.
   case that expects `cursor.kind=trace`.
 - Decide whether no-candidate terminal policy needs additional visible state and
   a dedicated Specification beyond the current generic budget rule.
+
+---
+
+# Updates 2026-05-23-T5 — semantic acceptance and deterministic regression pack
+
+The smoke investigation showed that coarse target matching was insufficient for
+corpus production: `SyntheticGenerationTarget::matches_action` intentionally
+matches only tool/action kind, so it can accept `stop(answer_ready)` for a
+`stop(no_candidate)` template or a `kernel_goto` cursor with the wrong variant.
+
+PR #38 adds a separate production-only semantic acceptance gate:
+
+- `SyntheticAcceptanceCriteria` lives in `operator-synthetic-domain` and checks
+  only the two diagnosed invariants: `stop.reason` and `goto.cursor.kind`.
+- `BuildRealisticCorpusUseCase` evaluates the semantic criteria after coarse
+  target match and before strict contract validation. Failures drop the row as
+  `semantic_mismatch`; the shared action contract is unchanged.
+- Realistic scenario generation now emits non-permissive criteria for all
+  `stop` and `kernel_goto` templates, and `verify_scenarios_v2.py` fails if
+  those criteria are missing.
+
+Drop observability is now self-contained. Each dropped JSONL row includes:
+
+- `predicted_action` when the teacher produced a parseable action;
+- `subject_hash`, computed from the canonical subject sent to the teacher;
+- `teacher_finish_reason`, when the adapter reported one.
+
+This closes the previous paid-debug gap where a drop only recorded
+`scenario_id`, `target`, `reason`, and `message`.
+
+PR #38 also adds `operator-regression-pack-v7`, driven by
+`docs/training/regression_pack_v7.txt`. The initial pack contains the three
+diagnosed scenario ids:
+
+- `scenario:kernel_inspect:after-near:0007`
+- `scenario:stop:no-candidate:0028`
+- `scenario:kernel_goto:temporal-cursor:0021`
+
+The pack is deterministic and not a first-30 truncation. It must run before any
+new paid full corpus run. Local no-cost validation uses `--mock-teacher`; the
+real adapter run remains manual because it spends API calls.

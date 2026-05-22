@@ -16,9 +16,11 @@ use operator_shared_domain::action::tool_call_action::ToolCallAction;
 use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
 use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
 use operator_shared_domain::tool_arguments::wake_arguments::WakeArguments;
+use operator_shared_domain::value_objects::finish_reason::FinishReason;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
 use operator_shared_domain::value_objects::model_id::ModelId;
 use operator_shared_domain::value_objects::positive_count::PositiveCount;
+use operator_shared_domain::value_objects::subject_hash::SubjectHash;
 use operator_synthetic_application::error::teacher_policy_error::TeacherPolicyError;
 use operator_synthetic_application::ports::scenario_source::ScenarioSource;
 use operator_synthetic_application::ports::teacher_policy::TeacherPolicy;
@@ -26,6 +28,7 @@ use operator_synthetic_application::use_cases::build_realistic_corpus_use_case::
 use operator_synthetic_application::use_cases::max_drop_rate::MaxDropRate;
 use operator_synthetic_application::use_cases::realistic_corpus_report::RealisticCorpusReport;
 use operator_synthetic_domain::calibration::calibration_subject::CalibrationSubject;
+use operator_synthetic_domain::calibration::teacher_decision::TeacherDecision;
 use operator_synthetic_infra::adapters::composite_corpus_event_sink::CompositeCorpusEventSink;
 use operator_synthetic_infra::adapters::jsonl_scenario_source::JsonlScenarioSource;
 use operator_synthetic_infra::adapters::jsonl_streaming_sink::{
@@ -294,18 +297,30 @@ enum StubTeacherPolicy {
 }
 
 impl TeacherPolicy for StubTeacherPolicy {
-    fn decide(&self, subject: &CalibrationSubject) -> Result<OperatorAction, TeacherPolicyError> {
+    fn decide(&self, subject: &CalibrationSubject) -> Result<TeacherDecision, TeacherPolicyError> {
         match self {
-            Self::Accepted => Ok(stub_action_for_subject(subject)),
-            Self::Wrong => Ok(OperatorAction::ToolCall(ToolCallAction::new(
-                ToolArguments::Wake(WakeArguments::new(subject.about().clone())),
+            Self::Accepted => Ok(stub_decision(stub_action_for_subject(subject))),
+            Self::Wrong => Ok(stub_decision(OperatorAction::ToolCall(
+                ToolCallAction::new(ToolArguments::Wake(WakeArguments::new(
+                    subject.about().clone(),
+                ))),
             ))),
             Self::Shape => Err(TeacherPolicyError::Shape {
                 adapter: "realistic_corpus_stub_teacher",
                 message: "stubbed shape failure".to_string(),
+                finish_reason: Some(FinishReason::Stop),
             }),
         }
     }
+}
+
+fn stub_decision(action: OperatorAction) -> TeacherDecision {
+    TeacherDecision::new(action, FinishReason::Stop, stub_subject_hash())
+}
+
+fn stub_subject_hash() -> SubjectHash {
+    SubjectHash::parse("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+        .expect("stub subject hash is valid")
 }
 
 fn stub_action_for_subject(subject: &CalibrationSubject) -> OperatorAction {

@@ -1,9 +1,11 @@
 pub mod dimension_ref;
 pub mod example_count;
+pub mod finish_reason;
 pub mod memory_ref;
 pub mod model_id;
 pub mod non_empty_string;
 pub mod positive_count;
 pub mod string_map;
+pub mod subject_hash;
 pub mod task_family;
 pub mod trajectory_goal;

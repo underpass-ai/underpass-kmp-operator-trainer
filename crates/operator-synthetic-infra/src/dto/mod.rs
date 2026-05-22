@@ -11,6 +11,7 @@ pub mod openai_chat_completion_response_message_dto;
 pub mod realistic_corpus_report_dto;
 pub mod realistic_corpus_run_metadata_dto;
 pub mod scenario_dto;
+pub mod synthetic_acceptance_criteria_dto;
 pub mod teacher_calibration_capability_metric_dto;
 pub mod teacher_calibration_case_result_dto;
 pub mod teacher_calibration_category_metric_dto;

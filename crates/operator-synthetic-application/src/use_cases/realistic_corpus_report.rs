@@ -106,6 +106,7 @@ impl RealisticCorpusReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use operator_shared_domain::value_objects::subject_hash::SubjectHash;
     use operator_synthetic_domain::capability::kmp_mcp_capability::KmpMcpCapability;
 
     use crate::ports::scenario_id::ScenarioId;
@@ -129,6 +130,9 @@ mod tests {
                 DropReason::TeacherError {
                     message: "timeout".to_string(),
                 },
+                None,
+                subject_hash(),
+                None,
             )],
             MaxDropRate::parse(1.0).unwrap(),
         );
@@ -139,5 +143,10 @@ mod tests {
                 .get(&DropReasonKind::TeacherError),
             Some(&1)
         );
+    }
+
+    fn subject_hash() -> SubjectHash {
+        SubjectHash::parse("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+            .unwrap()
     }
 }

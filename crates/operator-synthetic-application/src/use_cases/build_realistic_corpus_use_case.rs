@@ -6,9 +6,11 @@ use operator_shared_domain::contract::action_contract_validator::ActionContractV
 use operator_shared_domain::ids::step_id::StepId;
 use operator_shared_domain::ids::training_trajectory_id::TrainingTrajectoryId;
 use operator_shared_domain::trajectory::training_trajectory::TrainingTrajectory;
+use operator_shared_domain::value_objects::finish_reason::FinishReason;
 use operator_shared_domain::value_objects::positive_count::PositiveCount;
 
 use crate::error::build_realistic_corpus_error::BuildRealisticCorpusError;
+use crate::error::teacher_policy_error::TeacherPolicyError;
 use crate::ports::corpus_event_sink::CorpusEventSink;
 use crate::ports::scenario::Scenario;
 use crate::ports::scenario_source::ScenarioSource;
@@ -17,6 +19,37 @@ use crate::use_cases::drop_entry::DropEntry;
 use crate::use_cases::drop_reason::DropReason;
 use crate::use_cases::max_drop_rate::MaxDropRate;
 use crate::use_cases::realistic_corpus_report::RealisticCorpusReport;
+
+#[derive(Debug)]
+struct DropCandidate {
+    reason: DropReason,
+    predicted_action: Option<OperatorAction>,
+    teacher_finish_reason: Option<FinishReason>,
+}
+
+impl DropCandidate {
+    fn with_decision(
+        reason: DropReason,
+        decision: &operator_synthetic_domain::calibration::teacher_decision::TeacherDecision,
+    ) -> Box<Self> {
+        Box::new(Self {
+            reason,
+            predicted_action: Some(decision.action().clone()),
+            teacher_finish_reason: Some(decision.finish_reason()),
+        })
+    }
+
+    fn without_action(
+        reason: DropReason,
+        teacher_finish_reason: Option<FinishReason>,
+    ) -> Box<Self> {
+        Box::new(Self {
+            reason,
+            predicted_action: None,
+            teacher_finish_reason,
+        })
+    }
+}
 
 #[derive(Debug)]
 pub struct BuildRealisticCorpusUseCase<S, T, V, E> {
@@ -61,8 +94,16 @@ where
                         .on_row_accepted(index, scenario, &trajectory)?;
                     accepted.push(trajectory);
                 }
-                Err(reason) => {
-                    let drop = DropEntry::new(scenario.id().clone(), scenario.target(), reason);
+                Err(candidate) => {
+                    let candidate = *candidate;
+                    let drop = DropEntry::new(
+                        scenario.id().clone(),
+                        scenario.target(),
+                        candidate.reason,
+                        candidate.predicted_action,
+                        scenario.subject_hash().clone(),
+                        candidate.teacher_finish_reason,
+                    );
                     self.event_sink.on_row_dropped(index, scenario, &drop)?;
                     dropped.push(drop);
                 }
@@ -77,23 +118,35 @@ where
         &self,
         scenario: &Scenario,
         index: usize,
-    ) -> Result<TrainingTrajectory, DropReason> {
-        let action =
-            self.teacher
-                .decide(scenario.subject())
-                .map_err(|err| DropReason::TeacherError {
-                    message: err.to_string(),
-                })?;
-        Self::validate_target(scenario, &action)?;
+    ) -> Result<TrainingTrajectory, Box<DropCandidate>> {
+        let decision = self
+            .teacher
+            .decide(scenario.subject())
+            .map_err(drop_from_teacher_error)?;
+        let action = decision.action().clone();
+        Self::validate_target(scenario, &action)
+            .map_err(|reason| DropCandidate::with_decision(reason, &decision))?;
+        scenario
+            .acceptance_criteria()
+            .matches(&action)
+            .map_err(|violation| {
+                DropCandidate::with_decision(DropReason::SemanticMismatch { violation }, &decision)
+            })?;
         self.validator
             .validate(
-                &action,
+                decision.action(),
                 scenario.subject().about(),
                 scenario.subject().mode(),
                 scenario.subject().visible_state(),
             )
-            .map_err(|violations| DropReason::ContractViolation { violations })?;
+            .map_err(|violations| {
+                DropCandidate::with_decision(
+                    DropReason::ContractViolation { violations },
+                    &decision,
+                )
+            })?;
         Self::build_trajectory(scenario, index, action)
+            .map_err(|reason| DropCandidate::with_decision(reason, &decision))
     }
 
     fn validate_target(scenario: &Scenario, action: &OperatorAction) -> Result<(), DropReason> {
@@ -138,6 +191,22 @@ where
     }
 }
 
+fn drop_from_teacher_error(err: TeacherPolicyError) -> Box<DropCandidate> {
+    match err {
+        TeacherPolicyError::Shape {
+            message,
+            finish_reason,
+            ..
+        } => DropCandidate::without_action(DropReason::ParseFailure { message }, finish_reason),
+        other => DropCandidate::without_action(
+            DropReason::TeacherError {
+                message: other.to_string(),
+            },
+            None,
+        ),
+    }
+}
+
 fn action_label(action: &OperatorAction) -> String {
     action.tool().map_or_else(
         || action.kind().as_str().to_string(),
@@ -158,12 +227,15 @@ mod tests {
     use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
     use operator_shared_domain::tool_arguments::wake_arguments::WakeArguments;
     use operator_shared_domain::value_objects::memory_ref::MemoryRef;
+    use operator_shared_domain::value_objects::subject_hash::SubjectHash;
     use operator_shared_domain::value_objects::task_family::TaskFamily;
     use operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal;
     use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
     use operator_shared_domain::visible_state::visible_state::VisibleState;
     use operator_synthetic_domain::calibration::calibration_subject::CalibrationSubject;
+    use operator_synthetic_domain::calibration::teacher_decision::TeacherDecision;
     use operator_synthetic_domain::capability::kmp_mcp_capability::KmpMcpCapability;
+    use operator_synthetic_domain::case::synthetic_acceptance_criteria::SyntheticAcceptanceCriteria;
     use operator_synthetic_domain::case::synthetic_generation_target::SyntheticGenerationTarget;
 
     use crate::error::corpus_event_sink_error::CorpusEventSinkError;
@@ -192,8 +264,10 @@ mod tests {
         fn decide(
             &self,
             _subject: &CalibrationSubject,
-        ) -> Result<OperatorAction, TeacherPolicyError> {
-            self.action.clone()
+        ) -> Result<TeacherDecision, TeacherPolicyError> {
+            self.action
+                .clone()
+                .map(|action| TeacherDecision::new(action, FinishReason::Stop, subject_hash()))
         }
     }
 
@@ -293,6 +367,7 @@ mod tests {
             report.dropped()[0].reason(),
             DropReason::TeacherError { .. }
         ));
+        assert!(report.dropped()[0].predicted_action().is_none());
     }
 
     #[test]
@@ -304,6 +379,42 @@ mod tests {
             report.dropped()[0].reason(),
             DropReason::TargetMismatch { .. }
         ));
+        assert!(report.dropped()[0].predicted_action().is_some());
+        assert_eq!(report.dropped()[0].subject_hash(), &subject_hash());
+        assert_eq!(
+            report.dropped()[0].teacher_finish_reason(),
+            Some(FinishReason::Stop)
+        );
+    }
+
+    #[test]
+    fn semantic_mismatch_propagated_as_drop_entry() {
+        let scenario = stop_scenario(SyntheticAcceptanceCriteria::new(
+            Some(operator_shared_domain::action::stop_reason::StopReason::NoCandidate),
+            None,
+        ));
+        let report = use_case(vec![scenario], stop_answer_ready())
+            .execute(MaxDropRate::parse(1.0).unwrap(), None)
+            .unwrap();
+
+        assert!(matches!(
+            report.dropped()[0].reason(),
+            DropReason::SemanticMismatch { .. }
+        ));
+        assert!(report.dropped()[0].predicted_action().is_some());
+    }
+
+    #[test]
+    fn permissive_criteria_allows_any_stop_reason() {
+        let report = use_case(
+            vec![stop_scenario(SyntheticAcceptanceCriteria::permissive())],
+            stop_answer_ready(),
+        )
+        .execute(MaxDropRate::parse(0.0).unwrap(), None)
+        .unwrap();
+
+        assert!(report.gate_passed());
+        assert_eq!(report.accepted_count(), 1);
     }
 
     #[test]
@@ -366,6 +477,27 @@ mod tests {
                 None,
             )
             .unwrap(),
+            SyntheticAcceptanceCriteria::permissive(),
+            subject_hash(),
+        )
+    }
+
+    fn stop_scenario(criteria: SyntheticAcceptanceCriteria) -> Scenario {
+        Scenario::new(
+            ScenarioId::parse("scenario:stop").unwrap(),
+            SyntheticGenerationTarget::Stop,
+            CalibrationSubject::new(
+                AboutId::parse("about:incident").unwrap(),
+                OperatorMode::Read,
+                TaskFamily::parse("read.stop").unwrap(),
+                TrajectoryGoal::parse("No candidate remains.").unwrap(),
+                AllowedTools::for_mode(OperatorMode::Read),
+                VisibleState::assemble([], [], None, BudgetSnapshot::bounded(1, 1024)),
+                None,
+            )
+            .unwrap(),
+            criteria,
+            subject_hash(),
         )
     }
 
@@ -379,5 +511,21 @@ mod tests {
         OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Wake(
             WakeArguments::new(AboutId::parse("about:incident").unwrap()),
         )))
+    }
+
+    fn stop_answer_ready() -> OperatorAction {
+        OperatorAction::Stop(
+            operator_shared_domain::action::stop_action::StopAction::new(
+                operator_shared_domain::action::stop_reason::StopReason::AnswerReady,
+                None,
+                vec![],
+            )
+            .unwrap(),
+        )
+    }
+
+    fn subject_hash() -> SubjectHash {
+        SubjectHash::parse("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+            .unwrap()
     }
 }

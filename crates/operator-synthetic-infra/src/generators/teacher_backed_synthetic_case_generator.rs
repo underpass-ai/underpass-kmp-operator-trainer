@@ -141,8 +141,13 @@ impl<T: TeacherPolicy> SyntheticCaseGenerator for TeacherBackedSyntheticCaseGene
             let action = self.teacher.decide(&subject).map_err(|err| {
                 generator_error(spec, format!("teacher policy failed at row {index}: {err}"))
             })?;
-            Self::validate_teacher_action(spec, &subject, &action)?;
-            out.push(Self::build_trajectory(spec, index, &subject, action)?);
+            Self::validate_teacher_action(spec, &subject, action.action())?;
+            out.push(Self::build_trajectory(
+                spec,
+                index,
+                &subject,
+                action.into_action(),
+            )?);
         }
         Ok(out)
     }
@@ -495,8 +500,11 @@ mod tests {
     use operator_shared_domain::tool_arguments::rewind_arguments::RewindArguments;
     use operator_shared_domain::tool_arguments::trace_arguments::TraceArguments;
     use operator_shared_domain::tool_arguments::wake_arguments::WakeArguments;
+    use operator_shared_domain::value_objects::finish_reason::FinishReason;
     use operator_shared_domain::value_objects::model_id::ModelId;
+    use operator_shared_domain::value_objects::subject_hash::SubjectHash;
     use operator_synthetic_application::error::teacher_policy_error::TeacherPolicyError;
+    use operator_synthetic_domain::calibration::teacher_decision::TeacherDecision;
     use operator_synthetic_domain::capability::kmp_mcp_capability::KmpMcpCapability;
     use operator_synthetic_domain::case::synthetic_case_spec::SyntheticCaseSpec;
     use operator_synthetic_domain::error::synthetic_domain_error::SyntheticDomainError;
@@ -508,73 +516,76 @@ mod tests {
         fn decide(
             &self,
             subject: &CalibrationSubject,
-        ) -> Result<OperatorAction, TeacherPolicyError> {
+        ) -> Result<TeacherDecision, TeacherPolicyError> {
             if let Some(prepared) = subject.prepared_action() {
-                return Ok(prepared.action().clone());
+                return Ok(decision(prepared.action().clone()));
             }
             let family = subject.task_family().as_str();
             let capability = family.rsplit('.').next().unwrap_or("");
             match capability {
-                "wake" => Ok(tool(ToolArguments::Wake(WakeArguments::new(
+                "wake" => Ok(decision(tool(ToolArguments::Wake(WakeArguments::new(
                     subject.about().clone(),
-                )))),
-                "ask" => Ok(tool(ToolArguments::Ask(
+                ))))),
+                "ask" => Ok(decision(tool(ToolArguments::Ask(
                     AskArguments::new("What evidence is visible for this objective?").unwrap(),
-                ))),
-                "near" => Ok(tool(ToolArguments::Near(
+                )))),
+                "near" => Ok(decision(tool(ToolArguments::Near(
                     NearArguments::new(
                         first_ref(subject),
                         vec![first_dimension(subject)],
                         Some(PositiveCount::parse(4, "limit").unwrap()),
                     )
                     .unwrap(),
-                ))),
-                "goto" => Ok(tool(ToolArguments::Goto(GotoArguments::new(Cursor::Ref(
-                    RefCursor::new(first_ref(subject)),
+                )))),
+                "goto" => Ok(decision(tool(ToolArguments::Goto(GotoArguments::new(
+                    Cursor::Ref(RefCursor::new(first_ref(subject))),
                 ))))),
                 "rewind" => {
                     let Cursor::Temporal(cursor) = subject.visible_state().active_cursor().unwrap()
                     else {
                         panic!("expected temporal cursor")
                     };
-                    Ok(tool(ToolArguments::Rewind(RewindArguments::new(
+                    Ok(decision(tool(ToolArguments::Rewind(RewindArguments::new(
                         cursor.clone(),
                         PositiveCount::parse(2, "window").unwrap(),
-                    ))))
+                    )))))
                 }
                 "forward" => {
                     let Cursor::Temporal(cursor) = subject.visible_state().active_cursor().unwrap()
                     else {
                         panic!("expected temporal cursor")
                     };
-                    Ok(tool(ToolArguments::Forward(ForwardArguments::new(
-                        cursor.clone(),
-                        PositiveCount::parse(2, "window").unwrap(),
+                    Ok(decision(tool(ToolArguments::Forward(
+                        ForwardArguments::new(
+                            cursor.clone(),
+                            PositiveCount::parse(2, "window").unwrap(),
+                        ),
                     ))))
                 }
-                "trace" => Ok(tool(ToolArguments::Trace(TraceArguments::new(
+                "trace" => Ok(decision(tool(ToolArguments::Trace(TraceArguments::new(
                     first_ref(subject),
                     Some(second_ref(subject)),
                     PositiveCount::parse(8, "page").unwrap(),
+                ))))),
+                "inspect" => Ok(decision(tool(ToolArguments::Inspect(
+                    InspectArguments::new(first_ref(subject)),
                 )))),
-                "inspect" => Ok(tool(ToolArguments::Inspect(InspectArguments::new(
-                    first_ref(subject),
-                )))),
-                "stop" => Ok(OperatorAction::Stop(
+                "stop" => Ok(decision(OperatorAction::Stop(
                     StopAction::new(
                         StopReason::AnswerReady,
                         Some("The visible evidence is sufficient.".to_string()),
                         vec![first_ref(subject)],
                     )
                     .unwrap(),
-                )),
-                "escalate" => Ok(OperatorAction::Escalate(EscalateAction::new(
+                ))),
+                "escalate" => Ok(decision(OperatorAction::Escalate(EscalateAction::new(
                     EscalateReason::BeyondCapability,
                     ModelId::parse("frontier-reasoner").unwrap(),
-                ))),
+                )))),
                 _ => Err(TeacherPolicyError::Shape {
                     adapter: "valid_teacher",
                     message: "unsupported task family".to_string(),
+                    finish_reason: Some(FinishReason::Stop),
                 }),
             }
         }
@@ -587,11 +598,11 @@ mod tests {
         fn decide(
             &self,
             _subject: &CalibrationSubject,
-        ) -> Result<OperatorAction, TeacherPolicyError> {
-            Ok(OperatorAction::Escalate(EscalateAction::new(
+        ) -> Result<TeacherDecision, TeacherPolicyError> {
+            Ok(decision(OperatorAction::Escalate(EscalateAction::new(
                 EscalateReason::BeyondCapability,
                 ModelId::parse("frontier-reasoner").unwrap(),
-            )))
+            ))))
         }
     }
 
@@ -602,9 +613,9 @@ mod tests {
         fn decide(
             &self,
             _subject: &CalibrationSubject,
-        ) -> Result<OperatorAction, TeacherPolicyError> {
-            Ok(tool(ToolArguments::Inspect(InspectArguments::new(
-                MemoryRef::parse("unknown:node").unwrap(),
+        ) -> Result<TeacherDecision, TeacherPolicyError> {
+            Ok(decision(tool(ToolArguments::Inspect(
+                InspectArguments::new(MemoryRef::parse("unknown:node").unwrap()),
             ))))
         }
     }
@@ -616,12 +627,22 @@ mod tests {
         fn decide(
             &self,
             _subject: &CalibrationSubject,
-        ) -> Result<OperatorAction, TeacherPolicyError> {
+        ) -> Result<TeacherDecision, TeacherPolicyError> {
             Err(TeacherPolicyError::Shape {
                 adapter: "failing_teacher",
                 message: "bad shape".to_string(),
+                finish_reason: Some(FinishReason::Stop),
             })
         }
+    }
+
+    fn decision(action: OperatorAction) -> TeacherDecision {
+        TeacherDecision::new(action, FinishReason::Stop, subject_hash())
+    }
+
+    fn subject_hash() -> SubjectHash {
+        SubjectHash::parse("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+            .unwrap()
     }
 
     #[test]

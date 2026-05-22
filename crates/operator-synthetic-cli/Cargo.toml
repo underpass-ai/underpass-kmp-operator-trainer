@@ -22,6 +22,10 @@ path = "src/bin/operator_teacher_calibration.rs"
 name = "operator-realistic-corpus"
 path = "src/bin/operator_realistic_corpus.rs"
 
+[[bin]]
+name = "operator-regression-pack-v7"
+path = "src/bin/operator_regression_pack_v7.rs"
+
 [dependencies]
 operator-shared-contract.workspace = true
 operator-shared-domain.workspace = true

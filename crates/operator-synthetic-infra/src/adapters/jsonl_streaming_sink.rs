@@ -64,7 +64,12 @@ impl CorpusEventSink for JsonlStreamingSink {
         _scenario: &Scenario,
         drop: &DropEntry,
     ) -> Result<(), CorpusEventSinkError> {
-        let dto = RealisticCorpusReportMapper::drop_to_dto(drop);
+        let dto = RealisticCorpusReportMapper::drop_to_dto(drop).map_err(|err| {
+            CorpusEventSinkError::Sink {
+                adapter: ADAPTER,
+                message: format!("map drop: {err}"),
+            }
+        })?;
         write_jsonl(&self.dropped, &dto)
     }
 
@@ -129,6 +134,7 @@ mod tests {
     use operator_shared_domain::ids::about_id::AboutId;
     use operator_shared_domain::mode::allowed_tools::AllowedTools;
     use operator_shared_domain::mode::operator_mode::OperatorMode;
+    use operator_shared_domain::value_objects::subject_hash::SubjectHash;
     use operator_shared_domain::value_objects::task_family::TaskFamily;
     use operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal;
     use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
@@ -137,6 +143,7 @@ mod tests {
     use operator_synthetic_application::use_cases::drop_reason::DropReason;
     use operator_synthetic_domain::calibration::calibration_subject::CalibrationSubject;
     use operator_synthetic_domain::capability::kmp_mcp_capability::KmpMcpCapability;
+    use operator_synthetic_domain::case::synthetic_acceptance_criteria::SyntheticAcceptanceCriteria;
     use operator_synthetic_domain::case::synthetic_generation_target::SyntheticGenerationTarget;
 
     #[test]
@@ -169,6 +176,9 @@ mod tests {
             DropReason::TeacherError {
                 message: "shape failed".to_string(),
             },
+            None,
+            subject_hash(),
+            None,
         );
 
         sink.on_row_dropped(0, &scenario, &drop).unwrap();
@@ -176,6 +186,9 @@ mod tests {
         let contents = fs::read_to_string(root.join(DROPPED_PARTIAL_FILE)).unwrap();
         assert!(contents.contains("\"teacher_error\""));
         assert!(contents.contains("\"scenario:inspect\""));
+        assert!(contents.contains("\"predicted_action\":null"));
+        assert!(contents.contains("\"subject_hash\""));
+        assert!(contents.contains("\"teacher_finish_reason\":null"));
         let _ = fs::remove_dir_all(root);
     }
 
@@ -193,6 +206,13 @@ mod tests {
                 None,
             )
             .unwrap(),
+            SyntheticAcceptanceCriteria::permissive(),
+            subject_hash(),
         )
+    }
+
+    fn subject_hash() -> SubjectHash {
+        SubjectHash::parse("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+            .unwrap()
     }
 }

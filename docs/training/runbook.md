@@ -203,7 +203,30 @@ python3 scripts/operator/verify_scenarios_v2.py \
 
 The verifier checks unique about ids, at least 100 `writer_pre_read` scenarios,
 at least 50 `full` scenarios, full target coverage, five themes and
-non-instructional happy goals for non-write targets.
+non-instructional happy goals for non-write targets. It also verifies that
+`stop` and `kernel_goto` templates carry strict semantic acceptance criteria
+for `stop.reason` and `goto.cursor.kind`.
+
+Before a paid smoke, run the deterministic regression pack. This is not a
+random first-30 sample; it replays diagnosed scenarios by id and uses the same
+realistic corpus use case, semantic acceptance gate and drop sink as production:
+
+```bash
+cargo run --release -p operator-synthetic-cli --bin operator-regression-pack-v7 -- \
+    --scenarios ../rehydration-kernel-artifacts/operator/scenarios-v2/scenarios.jsonl \
+    --pack docs/training/regression_pack_v7.txt \
+    --output ../rehydration-kernel-artifacts/operator/regression-pack-v7-smoke \
+    --api-base https://api.openai.com/v1 \
+    --api-key-file /tmp/openai.txt \
+    --prompt crates/operator-synthetic-infra/prompts/teacher_calibration_v5.md \
+    --model gpt-4o-mini \
+    --temperature 0.0
+```
+
+For local no-cost wiring checks, add `--mock-teacher`. If the real run drops a
+row, `dropped.jsonl` includes the parsed `predicted_action`, `subject_hash` and
+`teacher_finish_reason`, so the failure can be diagnosed without another paid
+call.
 
 Then run a paid 30-row smoke:
 
