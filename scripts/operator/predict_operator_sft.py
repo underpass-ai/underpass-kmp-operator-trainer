@@ -90,9 +90,30 @@ MODE_ALLOWED_TOOLS = {
         "kernel_trace",
         "kernel_inspect",
     },
-    "write_context_read": {
+    "full": {
+        "kernel_wake",
+        "kernel_ask",
         "kernel_near",
+        "kernel_goto",
+        "kernel_rewind",
+        "kernel_forward",
         "kernel_trace",
+        "kernel_inspect",
+        "kernel_write_memory",
+        "kernel_ingest",
+    },
+    "writer_pre_read": {
+        "kernel_wake",
+        "kernel_ask",
+        "kernel_near",
+        "kernel_inspect",
+    },
+    # Historical alias kept for older exported datasets. New v7 rows use
+    # `writer_pre_read`, matching OperatorMode::WriterPreRead.
+    "write_context_read": {
+        "kernel_wake",
+        "kernel_ask",
+        "kernel_near",
         "kernel_inspect",
     },
     "write": {

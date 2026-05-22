@@ -47,6 +47,7 @@ def main() -> int:
     verify_modes(cases)
     verify_target_coverage(cases)
     verify_happy_goals_are_situational(cases)
+    verify_near_goals_expose_anchor_and_dimension(cases)
     verify_theme_balance(cases)
     print_summary(cases)
     return 0
@@ -110,6 +111,31 @@ def verify_happy_goals_are_situational(cases: list[dict[str, Any]]) -> None:
                 break
     assert not violations, (
         "happy goals contain instruction patterns; "
+        f"first 5 violations: {violations[:5]}"
+    )
+
+
+def verify_near_goals_expose_anchor_and_dimension(cases: list[dict[str, Any]]) -> None:
+    violations = []
+    for case in cases:
+        if case["target"] != "kernel_near":
+            continue
+        goal = case["subject"]["goal"]
+        refs = case["subject"]["visible_state"]["known_refs"]
+        dimensions = case["subject"]["visible_state"]["known_dimensions"]
+        has_ref = any(ref in goal for ref in refs)
+        has_dimension = any(dimension in goal for dimension in dimensions)
+        if not has_ref or not has_dimension:
+            violations.append(
+                {
+                    "scenario_id": case["scenario_id"],
+                    "has_ref": has_ref,
+                    "has_dimension": has_dimension,
+                    "goal": goal,
+                }
+            )
+    assert not violations, (
+        "kernel_near goals must expose a visible anchor and dimension; "
         f"first 5 violations: {violations[:5]}"
     )
 

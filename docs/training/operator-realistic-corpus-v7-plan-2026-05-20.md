@@ -819,6 +819,48 @@ baseline number. If the full-run frontier ceiling is `95%+`, do not close v7.3:
 that indicates the goals are still too tool-leading. A useful range for this
 corpus is `75%..92%` overall accuracy.
 
+## Updates 2026-05-22-T17
+
+The first paid v7.3 smoke has been run and documented.
+
+Detailed gap analysis:
+
+```text
+docs/training/operator-v7-3-smoke-gap-analysis-2026-05-22.md
+```
+
+Smoke attempts:
+
+| Run id | Result | Summary |
+| --- | --- | --- |
+| `realistic-v7-smoke-20260522T163535Z` | failed | 25/30 accepted, drop-rate 16.67%; ask and near templates were under-specified. |
+| `realistic-v7-smoke-fix1-20260522T163917Z` | passed corpus gate | 29/30 accepted, drop-rate 3.33%; one strict near-anchor contract drop remains as full-run watch item. |
+
+Downstream findings fixed during the smoke:
+
+- SFT prep now accepts `escalate` as a first-class model-facing action.
+- OpenAI SFT JSONL keeps `step_id` so frontier predictions can be scored.
+- Predictor validation now accepts current `full` and `writer_pre_read` modes.
+- Writer-pre-read prompt/profile now matches the Rust domain contract:
+  `kernel_wake`, `kernel_ask`, `kernel_near`, `kernel_inspect`.
+
+Smoke gate evidence after fixes:
+
+| Gate | Result |
+| --- | --- |
+| corpus generation gate | pass: 29/30 accepted, drop-rate 3.33% |
+| contract coverage | pass: 10/10 tools, 0 invalid |
+| no-gold audit | pass: 0 findings over 29 rows |
+| SFT prep | pass: train=25, eval=4 |
+| train validate-only | pass |
+| predict validate-only | pass |
+| oracle round-trip smoke | pass: 4/4 exact-match |
+
+Frontier ceiling on the 4-row smoke eval split produced `4/4` tool-match and
+`4/4` contract-valid actions, but `0/4` exact-match. This is not treated as a
+semantic conclusion because the smoke eval split is too small. The `75%..92%`
+ceiling sanity range remains a full-run criterion.
+
 ## Non-goals
 
 This corpus is not:
