@@ -119,6 +119,7 @@ fn run(cli: &Cli) -> Result<bool, CliError> {
     };
     let dto = TeacherCalibrationReportMapper::to_dto(&report, metadata);
     write_report(&cli.output, &dto)?;
+    emit_case_events(&dto)?;
     print_summary(&dto, &cli.output);
     Ok(dto.gate_passed)
 }
@@ -210,6 +211,36 @@ fn print_summary(
         "report:               {}",
         output.join("report.json").display()
     );
+}
+
+fn emit_case_events(
+    dto: &operator_synthetic_infra::dto::teacher_calibration_report_dto::TeacherCalibrationReportDto,
+) -> Result<(), CliError> {
+    for case in &dto.case_results {
+        let include_details = case.shape_failed || !case.outcome.matched;
+        let mut event = serde_json::json!({
+            "event": "teacher_calibration.case_result",
+            "case_id": case.case_id,
+            "capability": case.capability,
+            "category": case.category,
+            "matched": case.outcome.matched,
+            "tool_matched": case.outcome.tool_matched,
+            "contract_valid": case.outcome.contract_valid,
+            "contract_validator": "CompositeActionContractValidator::default_strict",
+            "contract_scope": "rust_action_contract_shape_mode_refs_budget",
+            "shape_failed": case.shape_failed,
+        });
+        if include_details {
+            event["failure_message"] = serde_json::json!(case.failure_message);
+            event["predicted_action"] = serde_json::json!(case.predicted_action);
+            event["accepted_actions"] = serde_json::json!(case.accepted_actions);
+            event["expected_action_rationale"] = serde_json::json!(case.expected_action_rationale);
+        }
+        let line = serde_json::to_string(&event)
+            .map_err(|err| CliError::Generic(format!("serialize calibration event: {err}")))?;
+        eprintln!("{line}");
+    }
+    Ok(())
 }
 
 fn require_readable_non_empty(path: &Path, flag: &str) -> Result<(), CliError> {

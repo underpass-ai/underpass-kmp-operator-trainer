@@ -13,6 +13,7 @@ use operator_synthetic_domain::calibration::calibration_subject::CalibrationSubj
 use reqwest::blocking::Client;
 use reqwest::header::AUTHORIZATION;
 
+use crate::adapters::operator_action_schema::operator_action_schema;
 use crate::dto::openai_chat_completion_error_envelope_dto::OpenAiChatCompletionErrorEnvelopeDto;
 use crate::dto::openai_chat_completion_request_dto::OpenAiChatCompletionRequestDto;
 use crate::dto::openai_chat_completion_request_message_dto::OpenAiChatCompletionRequestMessageDto;
@@ -20,9 +21,9 @@ use crate::dto::openai_chat_completion_response_dto::OpenAiChatCompletionRespons
 use crate::mappers::calibration_subject_mapper::CalibrationSubjectMapper;
 
 const ADAPTER: &str = "openai_compatible_teacher_policy";
-const DEFAULT_TIMEOUT_SECS: u64 = 60;
+const DEFAULT_TIMEOUT_SECS: u64 = 180;
 const DEFAULT_TEMPERATURE: f32 = 0.0;
-const DEFAULT_MAX_TOKENS: u32 = 700;
+const DEFAULT_MAX_TOKENS: u32 = 4096;
 
 #[derive(Debug)]
 pub struct OpenAiCompatibleTeacherPolicy {
@@ -116,13 +117,22 @@ impl OpenAiCompatibleTeacherPolicy {
                 },
             ],
             temperature: self.temperature,
-            max_tokens: Some(self.max_tokens),
+            max_tokens: None,
+            max_completion_tokens: Some(self.max_tokens),
+            response_format: Some(serde_json::json!({
+                "type": "json_schema",
+                "json_schema": operator_action_schema(),
+            })),
         })
     }
 }
 
 impl TeacherPolicy for OpenAiCompatibleTeacherPolicy {
     fn decide(&self, subject: &CalibrationSubject) -> Result<OperatorAction, TeacherPolicyError> {
+        if let Some(prepared) = subject.prepared_action() {
+            return Ok(prepared.action().clone());
+        }
+
         let body = self.build_body(subject)?;
         let mut request = self.client.post(self.endpoint()).json(&body);
         if let Some(key) = self.api_key.as_deref() {
@@ -145,10 +155,20 @@ impl TeacherPolicy for OpenAiCompatibleTeacherPolicy {
             if let Ok(parsed) =
                 serde_json::from_str::<OpenAiChatCompletionErrorEnvelopeDto>(&body_text)
             {
+                let message = parsed.error.message;
+                if is_structured_output_error(&message) {
+                    return Err(TeacherPolicyError::ApiError {
+                        adapter: ADAPTER,
+                        code: Some("structured_output_not_supported".to_string()),
+                        message: format!(
+                            "OpenAI rejected json_schema response_format; check model + API version: {message}"
+                        ),
+                    });
+                }
                 return Err(TeacherPolicyError::ApiError {
                     adapter: ADAPTER,
                     code: parsed.error.code.or(parsed.error.kind),
-                    message: parsed.error.message,
+                    message,
                 });
             }
             return Err(TeacherPolicyError::ApiError {
@@ -162,24 +182,259 @@ impl TeacherPolicy for OpenAiCompatibleTeacherPolicy {
                 adapter: ADAPTER,
                 message: format!("response is not a chat-completions envelope: {err}"),
             })?;
-        let content = parsed
+        let choice = parsed
             .choices
             .into_iter()
             .next()
             .ok_or(TeacherPolicyError::Protocol {
                 adapter: ADAPTER,
                 message: "response envelope contained no choices".to_string(),
-            })?
-            .message
-            .content;
+            })?;
+        let finish_reason = choice.finish_reason;
+        let content = choice.message.content;
         let action_dto: OperatorActionDto =
             serde_json::from_str(content.trim()).map_err(|err| TeacherPolicyError::Shape {
                 adapter: ADAPTER,
-                message: format!("assistant content is not OperatorActionDto JSON: {err}"),
+                message: format!(
+                    "assistant content is not OperatorActionDto JSON: {err}; finish_reason={}; content_len={}; content_tail={}",
+                    finish_reason.as_deref().unwrap_or("missing"),
+                    content.chars().count(),
+                    content_tail(&content),
+                ),
             })?;
         OperatorActionMapper::to_domain(&action_dto).map_err(|err| TeacherPolicyError::Shape {
             adapter: ADAPTER,
             message: format!("assistant action violates DTO/domain mapping: {err}"),
         })
+    }
+}
+
+fn is_structured_output_error(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("response_format") || lower.contains("json_schema")
+}
+
+fn content_tail(content: &str) -> String {
+    let mut chars: Vec<char> = content.chars().rev().take(256).collect();
+    chars.reverse();
+    chars.into_iter().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::thread::{self, JoinHandle};
+    use std::time::Duration;
+
+    use operator_shared_domain::action::operator_action::OperatorAction;
+    use operator_shared_domain::action::tool_call_action::ToolCallAction;
+    use operator_shared_domain::ids::about_id::AboutId;
+    use operator_shared_domain::mode::allowed_tools::AllowedTools;
+    use operator_shared_domain::mode::operator_mode::OperatorMode;
+    use operator_shared_domain::tool::kernel_tool::KernelTool;
+    use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
+    use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
+    use operator_shared_domain::value_objects::memory_ref::MemoryRef;
+    use operator_shared_domain::value_objects::task_family::TaskFamily;
+    use operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal;
+    use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
+    use operator_shared_domain::visible_state::visible_state::VisibleState;
+    use operator_synthetic_application::ports::teacher_policy::TeacherPolicy;
+    use operator_synthetic_domain::calibration::prepared_operator_action::PreparedOperatorAction;
+    use serde_json::Value;
+
+    use super::*;
+
+    fn spawn_mock_server_with_status(
+        status_line: &'static str,
+        response_body: String,
+    ) -> (String, JoinHandle<()>, mpsc::Receiver<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let port = listener.local_addr().expect("local addr").port();
+        let url = format!("http://127.0.0.1:{port}");
+        let (tx, rx) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept connection");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .expect("set read timeout");
+            let mut reader = BufReader::new(&mut stream);
+            let mut content_length: usize = 0;
+            loop {
+                let mut line = String::new();
+                let bytes = reader.read_line(&mut line).expect("read header");
+                if bytes == 0 || line == "\r\n" || line == "\n" {
+                    break;
+                }
+                let lower = line.to_ascii_lowercase();
+                if let Some(rest) = lower.strip_prefix("content-length:") {
+                    content_length = rest.trim().parse().unwrap_or(0);
+                }
+            }
+            let mut body_bytes = vec![0u8; content_length];
+            reader.read_exact(&mut body_bytes).expect("read body");
+            let request_body = String::from_utf8(body_bytes).unwrap_or_default();
+            let _ = tx.send(request_body);
+            drop(reader);
+            let response = format!(
+                "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                response_body.len(),
+                response_body,
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write response");
+            stream.flush().expect("flush response");
+        });
+        (url, handle, rx)
+    }
+
+    fn subject() -> CalibrationSubject {
+        CalibrationSubject::new(
+            AboutId::parse("about:test").expect("about parses"),
+            OperatorMode::Read,
+            TaskFamily::parse("read.inspect").expect("task family parses"),
+            TrajectoryGoal::parse("Inspect the visible node.").expect("goal parses"),
+            AllowedTools::for_mode(OperatorMode::Read),
+            VisibleState::assemble([], [], None, BudgetSnapshot::unbounded()),
+            None,
+        )
+        .expect("subject builds")
+    }
+
+    fn prepared_subject(action: OperatorAction) -> CalibrationSubject {
+        CalibrationSubject::new(
+            AboutId::parse("about:test").expect("about parses"),
+            OperatorMode::Read,
+            TaskFamily::parse("read.inspect").expect("task family parses"),
+            TrajectoryGoal::parse("Execute the prepared inspect action.").expect("goal parses"),
+            AllowedTools::for_mode(OperatorMode::Read),
+            VisibleState::assemble(
+                [MemoryRef::parse("about:test:node:x").expect("ref parses")],
+                [],
+                None,
+                BudgetSnapshot::unbounded(),
+            ),
+            Some(PreparedOperatorAction::new(action).expect("prepared action builds")),
+        )
+        .expect("subject builds")
+    }
+
+    #[test]
+    fn request_body_includes_structured_response_format() {
+        let action = serde_json::json!({
+            "kind": "tool_call",
+            "tool": "kernel_inspect",
+            "arguments": {
+                "target": "about:test:node:x"
+            },
+            "reason": "none",
+            "answer": null,
+            "evidence": [],
+            "target_model": "none"
+        });
+        let response = serde_json::json!({
+            "choices": [
+                {
+                    "message": {
+                        "content": action.to_string()
+                    }
+                }
+            ]
+        })
+        .to_string();
+        let (url, handle, rx) = spawn_mock_server_with_status("200 OK", response);
+        let policy = OpenAiCompatibleTeacherPolicy::with_client(
+            url,
+            None,
+            "gpt-4o-mini",
+            "Return one operator action.",
+            Client::new(),
+        );
+
+        let decision = policy.decide(&subject()).expect("teacher decision maps");
+        let request: Value =
+            serde_json::from_str(&rx.recv().expect("request body")).expect("request body is json");
+        handle.join().expect("mock server joins");
+
+        assert!(matches!(decision, OperatorAction::ToolCall(_)));
+        assert_eq!(
+            decision.tool(),
+            Some(KernelTool::Inspect),
+            "mock response should map through the normal DTO/domain path"
+        );
+        assert_eq!(
+            request["response_format"]["type"],
+            Value::String("json_schema".to_string())
+        );
+        assert_eq!(
+            request["response_format"]["json_schema"]["name"],
+            Value::String("OperatorAction".to_string())
+        );
+        assert_eq!(
+            request["response_format"]["json_schema"]["strict"],
+            Value::Bool(true)
+        );
+        assert_eq!(request["max_completion_tokens"], serde_json::json!(4096));
+        assert!(request.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn prepared_action_returns_without_http_call() {
+        let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
+            InspectArguments::new(MemoryRef::parse("about:test:node:x").expect("ref parses")),
+        )));
+        let policy = OpenAiCompatibleTeacherPolicy::with_client(
+            "http://127.0.0.1:9",
+            None,
+            "gpt-4o-mini",
+            "Return one operator action.",
+            Client::builder()
+                .timeout(Duration::from_millis(1))
+                .build()
+                .expect("client builds"),
+        );
+
+        let decision = policy
+            .decide(&prepared_subject(action.clone()))
+            .expect("prepared action returns directly");
+
+        assert_eq!(decision, action);
+    }
+
+    #[test]
+    fn response_format_rejection_maps_to_structured_output_not_supported() {
+        let response = serde_json::json!({
+            "error": {
+                "message": "Invalid schema for response_format 'OperatorAction': json_schema is unsupported",
+                "type": "invalid_request_error",
+                "code": null
+            }
+        })
+        .to_string();
+        let (url, handle, _rx) = spawn_mock_server_with_status("400 Bad Request", response);
+        let policy = OpenAiCompatibleTeacherPolicy::with_client(
+            url,
+            None,
+            "legacy-model",
+            "Return one operator action.",
+            Client::new(),
+        );
+
+        let error = policy
+            .decide(&subject())
+            .expect_err("response_format rejection should be explicit");
+        handle.join().expect("mock server joins");
+
+        assert_eq!(
+            error,
+            TeacherPolicyError::ApiError {
+                adapter: ADAPTER,
+                code: Some("structured_output_not_supported".to_string()),
+                message: "OpenAI rejected json_schema response_format; check model + API version: Invalid schema for response_format 'OperatorAction': json_schema is unsupported".to_string(),
+            }
+        );
     }
 }

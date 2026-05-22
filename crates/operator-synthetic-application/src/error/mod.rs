@@ -1,5 +1,6 @@
 pub mod build_realistic_corpus_error;
 pub mod calibration_episode_source_error;
+pub mod corpus_event_sink_error;
 pub mod corpus_source_error;
 pub mod episode_split_error;
 pub mod evaluate_corpus_quality_error;
