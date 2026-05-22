@@ -243,13 +243,6 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
             "happy",
             "Migration plan is visible, but the active constraint is not on any visible node. A bounded query would resolve the decision.",
         ),
-        t(
-            "kernel_ask",
-            "smart_writing_session",
-            "no-relevant-memory",
-            "adversarial",
-            "Tempting to ask about {ref_0}, but visible memory suggests no relevant answer and honesty may require stopping.",
-        ),
     ],
     "kernel_near": [
         t(
@@ -271,7 +264,7 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
             "product_planning",
             "ambiguous-anchor",
             "adversarial",
-            "Tempting to expand around a missing planning anchor, but only {ref_0} in dimension {dim_0} is visible and safe.",
+            "Anchor {ref_0} is visible in dimension {dim_0}; tempting to use a different anchor, but local expansion must use the visible one.",
         ),
         t(
             "kernel_near",
@@ -315,7 +308,7 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
             "product_planning",
             "invented-ref-temptation",
             "adversarial",
-            "Tempting to navigate to an invented planning ref, but only {ref_0} appears in known_refs.",
+            "Visible refs include only {ref_0}; tempting to navigate elsewhere, but that ref is the only safe destination.",
         ),
         t(
             "kernel_goto",
@@ -345,7 +338,7 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
             "software_migration",
             "missing-anchor",
             "adversarial",
-            "Tempting to rewind from a new anchor, but only the active temporal cursor is defined.",
+            "Tempting to use a fresh anchor, but only the active temporal cursor is the safe pivot for the rewind.",
         ),
         t(
             "kernel_rewind",
@@ -420,13 +413,6 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
             "supersession",
             "happy",
             "Stale plan {ref_0} and final plan {ref_1} are visible; the supersession relation needs reconstruction.",
-        ),
-        t(
-            "kernel_trace",
-            "product_planning",
-            "no-path",
-            "adversarial",
-            "Tempting to force a path between {ref_0} and {ref_1}, but visible refs do not prove one exists.",
         ),
         t(
             "kernel_trace",
@@ -517,6 +503,13 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
             "adversarial",
             "Writer state has no executable candidate; a previous escalation attempt was rejected, leaving a bounded terminal answer.",
         ),
+        t(
+            "stop",
+            "smart_writing_session",
+            "premature-ask-temptation",
+            "adversarial",
+            "Tempting to ask about {ref_0}, but visible memory suggests no relevant answer and stopping is the honest bounded result.",
+        ),
     ],
     "escalate": [
         t(
@@ -553,6 +546,13 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
             "budget-alternative",
             "adversarial",
             "Write relation cannot be justified by current visible context, but write must occur eventually; escalation is bounded.",
+        ),
+        t(
+            "escalate",
+            "product_planning",
+            "no-traceable-path",
+            "adversarial",
+            "Tempting to force a path between {ref_0} and {ref_1}, but visible refs do not prove one exists and escalation is the bounded path.",
         ),
     ],
 }
@@ -647,13 +647,16 @@ def build_scenarios(count: int, seed: int) -> list[dict[str, Any]]:
 
 def interleaved_templates() -> list[Template]:
     templates: list[Template] = []
-    templates.extend(TEMPLATES_BY_TARGET[target][0] for target in TARGETS)
+    templates.extend(
+        TEMPLATES_BY_TARGET[target][0] for target in TARGETS if TEMPLATES_BY_TARGET[target]
+    )
     templates.extend(EXTRA_TEMPLATES)
-    for variant_index in range(5):
-        if variant_index == 0:
-            continue
+    max_variants = max(len(target_templates) for target_templates in TEMPLATES_BY_TARGET.values())
+    for variant_index in range(1, max_variants):
         for target in TARGETS:
-            templates.append(TEMPLATES_BY_TARGET[target][variant_index])
+            target_templates = TEMPLATES_BY_TARGET[target]
+            if variant_index < len(target_templates):
+                templates.append(target_templates[variant_index])
     if len(templates) != 66:
         raise RuntimeError(f"expected 66 templates, got {len(templates)}")
     return templates
@@ -662,10 +665,10 @@ def interleaved_templates() -> list[Template]:
 def render_scenario(
     template: Template, index: int, variation: int, rng: random.Random
 ) -> dict[str, Any]:
-    refs = refs_for(template, variation, rng)
+    about = about_for(template, variation, rng)
+    refs = refs_for(about, rng)
     dims = dims_for(rng)
     budget = budget_for(template, rng)
-    about = about_for(template, variation, rng)
     cursor_anchor = f"seq:{variation + 1}"
     context = {
         "about": about,
@@ -717,12 +720,9 @@ def allowed_tools_for_mode(mode: str) -> list[str]:
     return READ_TOOLS
 
 
-def refs_for(template: Template, variation: int, rng: random.Random) -> list[str]:
+def refs_for(about: str, rng: random.Random) -> list[str]:
     tokens = rng.sample(REF_VOCAB, 4)
-    return [
-        f"node:{template.theme}:{template.slug}:{token}:{variation:03}"
-        for token in tokens
-    ]
+    return [f"{about}:node:{token}:{index:03}" for index, token in enumerate(tokens)]
 
 
 def dims_for(rng: random.Random) -> list[str]:
@@ -740,7 +740,7 @@ def budget_for(template: Template, rng: random.Random) -> tuple[int, int]:
 def about_for(template: Template, variation: int, rng: random.Random) -> str:
     prefix = rng.choice(ABOUT_PREFIXES_BY_THEME[template.theme])
     case_number = f"case-{variation:03}"
-    return f"{prefix}:{template.target}:{template.slug}:{case_number}"
+    return f"about:{prefix}:{template.target}:{template.slug}:{case_number}"
 
 
 def visible_state(
