@@ -591,3 +591,66 @@ Revised execution order:
 | 6 | Full 1650 paid run | Only if smoke is green. |
 
 The plan as amended is ready to execute without softening gates, without prompt iteration past v5, and without another opaque full run.
+
+---
+
+# Updates 2026-05-22-T2 — calibration and observability adjustment
+
+The first PR #38 verification showed that `max_tokens=4096` alone did not remove
+the prepared-ingest EOF failure. The adapter now uses the current Chat
+Completions field `max_completion_tokens=4096`, extends the teacher HTTP timeout
+to 180s, and records `finish_reason`, response length and content tail in shape
+failure messages. That keeps the next calibration failure auditable instead of
+only reporting `EOF while parsing`.
+
+The same PR also folds in the `CorpusEventSink` observability slice before any
+new paid smoke/full run:
+
+- `BuildRealisticCorpusUseCase` receives a fallible event sink by constructor.
+- `JsonlStreamingSink` writes `trajectories.partial.jsonl` and
+  `dropped.partial.jsonl` during the loop, flushes per row and syncs on finish.
+- `operator-realistic-corpus` promotes partial files to `trajectories.jsonl` and
+  `dropped.jsonl` after a completed run, even when `gate_passed=false`.
+- `StderrProgressSink` emits JSON progress/drop lifecycle lines to stderr.
+
+No further paid full run should start without this observability path in place.
+The prepared-ingest calibration must be rerun after this PR before declaring the
+structured-output adapter production-ready.
+
+## Known limitation 1: `kernel_goto` trace cursor variant
+
+The v5 prompt's canonical action shapes section shows `kernel_goto` only with
+`cursor.kind=ref`. When both endpoints are visible and the goal is
+path-oriented, the teacher can pick `kind=ref` over `kind=trace`. This is the
+same failure pattern documented during PR #32 calibration.
+
+Fixing this would require prompt v6 with an additional canonical example. That
+violates the v7.2.5 discipline of locking the prompt after structured
+calibration passes. Cost-benefit: one extra prompt iteration versus roughly 25
+scenarios out of 1650 dropping in the full run, about 1.5% and under the 5%
+gate budget.
+
+**Decision:** accept. The `kernel_goto:trace-cursor` scenarios that drop in
+v7.3 corpus will appear in `dropped.jsonl` with `target_mismatch`; downstream
+analysis surfaces the pattern if it becomes load-bearing.
+
+## Known limitation 2: `stop:no_candidate` adversarial trap
+
+In the adversarial calibration case where memory has no relevant evidence for
+the question, the teacher prefers `kernel_ask` ("confirm absence") over
+`stop(no_candidate)`. This is a semantic policy preference, not a wire-format
+or schema issue. Adversarials intentionally test edge behavior, and some noise
+is expected.
+
+**Decision:** accept if it persists after the post-observability calibration
+rerun. The v7.3 corpus adversarial stop scenarios may have a small drop rate
+from this pattern. It remains within the 5% gate budget and is auditable through
+`dropped.jsonl`.
+
+## Hard rule
+
+Do not add prompt v6 to fix either limitation. The discipline rationale from
+v7.2.5 still holds: chasing each calibration miss with a prompt patch creates
+Goodhart-style overfitting to the calibration suite at the cost of general
+policy quality. The structured-output guarantee plus a green calibration rerun
+is the required signal for v7.3 corpus generation.

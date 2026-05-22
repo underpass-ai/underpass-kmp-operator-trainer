@@ -9,6 +9,7 @@ use operator_shared_domain::trajectory::training_trajectory::TrainingTrajectory;
 use operator_shared_domain::value_objects::positive_count::PositiveCount;
 
 use crate::error::build_realistic_corpus_error::BuildRealisticCorpusError;
+use crate::ports::corpus_event_sink::CorpusEventSink;
 use crate::ports::scenario::Scenario;
 use crate::ports::scenario_source::ScenarioSource;
 use crate::ports::teacher_policy::TeacherPolicy;
@@ -18,23 +19,26 @@ use crate::use_cases::max_drop_rate::MaxDropRate;
 use crate::use_cases::realistic_corpus_report::RealisticCorpusReport;
 
 #[derive(Debug)]
-pub struct BuildRealisticCorpusUseCase<S, T, V> {
+pub struct BuildRealisticCorpusUseCase<S, T, V, E> {
     scenarios: S,
     teacher: T,
     validator: V,
+    event_sink: E,
 }
 
-impl<S, T, V> BuildRealisticCorpusUseCase<S, T, V>
+impl<S, T, V, E> BuildRealisticCorpusUseCase<S, T, V, E>
 where
     S: ScenarioSource,
     T: TeacherPolicy,
     V: ActionContractValidator,
+    E: CorpusEventSink,
 {
-    pub fn new(scenarios: S, teacher: T, validator: V) -> Self {
+    pub fn new(scenarios: S, teacher: T, validator: V, event_sink: E) -> Self {
         Self {
             scenarios,
             teacher,
             validator,
+            event_sink,
         }
     }
 
@@ -47,23 +51,26 @@ where
         if let Some(limit) = limit {
             scenarios.truncate(limit.as_usize());
         }
+        self.event_sink.on_run_started(scenarios.len())?;
         let mut accepted = Vec::new();
         let mut dropped = Vec::new();
         for (index, scenario) in scenarios.iter().enumerate() {
             match self.process_one(scenario, index) {
-                Ok(trajectory) => accepted.push(trajectory),
-                Err(reason) => dropped.push(DropEntry::new(
-                    scenario.id().clone(),
-                    scenario.target(),
-                    reason,
-                )),
+                Ok(trajectory) => {
+                    self.event_sink
+                        .on_row_accepted(index, scenario, &trajectory)?;
+                    accepted.push(trajectory);
+                }
+                Err(reason) => {
+                    let drop = DropEntry::new(scenario.id().clone(), scenario.target(), reason);
+                    self.event_sink.on_row_dropped(index, scenario, &drop)?;
+                    dropped.push(drop);
+                }
             }
         }
-        Ok(RealisticCorpusReport::from_outcome(
-            accepted,
-            dropped,
-            max_drop_rate,
-        ))
+        let report = RealisticCorpusReport::from_outcome(accepted, dropped, max_drop_rate);
+        self.event_sink.on_run_finished(&report)?;
+        Ok(report)
     }
 
     fn process_one(
@@ -159,8 +166,10 @@ mod tests {
     use operator_synthetic_domain::capability::kmp_mcp_capability::KmpMcpCapability;
     use operator_synthetic_domain::case::synthetic_generation_target::SyntheticGenerationTarget;
 
+    use crate::error::corpus_event_sink_error::CorpusEventSinkError;
     use crate::error::scenario_source_error::ScenarioSourceError;
     use crate::error::teacher_policy_error::TeacherPolicyError;
+    use crate::ports::corpus_event_sink::CorpusEventSink;
     use crate::ports::scenario_id::ScenarioId;
 
     #[derive(Debug)]
@@ -185,6 +194,52 @@ mod tests {
             _subject: &CalibrationSubject,
         ) -> Result<OperatorAction, TeacherPolicyError> {
             self.action.clone()
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct RecordingSink {
+        events: std::sync::Mutex<Vec<&'static str>>,
+    }
+
+    impl RecordingSink {
+        fn events(&self) -> Vec<&'static str> {
+            self.events.lock().unwrap().clone()
+        }
+    }
+
+    impl CorpusEventSink for std::sync::Arc<RecordingSink> {
+        fn on_run_started(&self, _total_scenarios: usize) -> Result<(), CorpusEventSinkError> {
+            self.events.lock().unwrap().push("started");
+            Ok(())
+        }
+
+        fn on_row_accepted(
+            &self,
+            _index: usize,
+            _scenario: &Scenario,
+            _trajectory: &TrainingTrajectory,
+        ) -> Result<(), CorpusEventSinkError> {
+            self.events.lock().unwrap().push("accepted");
+            Ok(())
+        }
+
+        fn on_row_dropped(
+            &self,
+            _index: usize,
+            _scenario: &Scenario,
+            _drop: &DropEntry,
+        ) -> Result<(), CorpusEventSinkError> {
+            self.events.lock().unwrap().push("dropped");
+            Ok(())
+        }
+
+        fn on_run_finished(
+            &self,
+            _report: &RealisticCorpusReport,
+        ) -> Result<(), CorpusEventSinkError> {
+            self.events.lock().unwrap().push("finished");
+            Ok(())
         }
     }
 
@@ -229,6 +284,7 @@ mod tests {
                 }),
             },
             CompositeActionContractValidator::default_strict(),
+            std::sync::Arc::new(RecordingSink::default()),
         );
         let report = use_case
             .execute(MaxDropRate::parse(1.0).unwrap(), None)
@@ -250,15 +306,48 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn event_sink_receives_started_row_and_finished_events() {
+        let sink = std::sync::Arc::new(RecordingSink::default());
+        let report = use_case_with_sink(vec![inspect_scenario()], inspect_action(), sink.clone())
+            .execute(MaxDropRate::parse(0.0).unwrap(), None)
+            .unwrap();
+
+        assert!(report.gate_passed());
+        assert_eq!(sink.events(), vec!["started", "accepted", "finished"]);
+    }
+
     fn use_case(
         scenarios: Vec<Scenario>,
         action: OperatorAction,
-    ) -> BuildRealisticCorpusUseCase<StubSource, StubTeacher, CompositeActionContractValidator>
-    {
+    ) -> BuildRealisticCorpusUseCase<
+        StubSource,
+        StubTeacher,
+        CompositeActionContractValidator,
+        std::sync::Arc<RecordingSink>,
+    > {
+        use_case_with_sink(
+            scenarios,
+            action,
+            std::sync::Arc::new(RecordingSink::default()),
+        )
+    }
+
+    fn use_case_with_sink(
+        scenarios: Vec<Scenario>,
+        action: OperatorAction,
+        sink: std::sync::Arc<RecordingSink>,
+    ) -> BuildRealisticCorpusUseCase<
+        StubSource,
+        StubTeacher,
+        CompositeActionContractValidator,
+        std::sync::Arc<RecordingSink>,
+    > {
         BuildRealisticCorpusUseCase::new(
             StubSource { scenarios },
             StubTeacher { action: Ok(action) },
             CompositeActionContractValidator::default_strict(),
+            sink,
         )
     }
 

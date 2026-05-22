@@ -21,9 +21,9 @@ use crate::dto::openai_chat_completion_response_dto::OpenAiChatCompletionRespons
 use crate::mappers::calibration_subject_mapper::CalibrationSubjectMapper;
 
 const ADAPTER: &str = "openai_compatible_teacher_policy";
-const DEFAULT_TIMEOUT_SECS: u64 = 60;
+const DEFAULT_TIMEOUT_SECS: u64 = 180;
 const DEFAULT_TEMPERATURE: f32 = 0.0;
-const DEFAULT_MAX_TOKENS: u32 = 1600;
+const DEFAULT_MAX_TOKENS: u32 = 4096;
 
 #[derive(Debug)]
 pub struct OpenAiCompatibleTeacherPolicy {
@@ -117,7 +117,8 @@ impl OpenAiCompatibleTeacherPolicy {
                 },
             ],
             temperature: self.temperature,
-            max_tokens: Some(self.max_tokens),
+            max_tokens: None,
+            max_completion_tokens: Some(self.max_tokens),
             response_format: Some(serde_json::json!({
                 "type": "json_schema",
                 "json_schema": operator_action_schema(),
@@ -177,20 +178,25 @@ impl TeacherPolicy for OpenAiCompatibleTeacherPolicy {
                 adapter: ADAPTER,
                 message: format!("response is not a chat-completions envelope: {err}"),
             })?;
-        let content = parsed
+        let choice = parsed
             .choices
             .into_iter()
             .next()
             .ok_or(TeacherPolicyError::Protocol {
                 adapter: ADAPTER,
                 message: "response envelope contained no choices".to_string(),
-            })?
-            .message
-            .content;
+            })?;
+        let finish_reason = choice.finish_reason;
+        let content = choice.message.content;
         let action_dto: OperatorActionDto =
             serde_json::from_str(content.trim()).map_err(|err| TeacherPolicyError::Shape {
                 adapter: ADAPTER,
-                message: format!("assistant content is not OperatorActionDto JSON: {err}"),
+                message: format!(
+                    "assistant content is not OperatorActionDto JSON: {err}; finish_reason={}; content_len={}; content_tail={}",
+                    finish_reason.as_deref().unwrap_or("missing"),
+                    content.chars().count(),
+                    content_tail(&content),
+                ),
             })?;
         OperatorActionMapper::to_domain(&action_dto).map_err(|err| TeacherPolicyError::Shape {
             adapter: ADAPTER,
@@ -202,6 +208,12 @@ impl TeacherPolicy for OpenAiCompatibleTeacherPolicy {
 fn is_structured_output_error(message: &str) -> bool {
     let lower = message.to_lowercase();
     lower.contains("response_format") || lower.contains("json_schema")
+}
+
+fn content_tail(content: &str) -> String {
+    let mut chars: Vec<char> = content.chars().rev().take(256).collect();
+    chars.reverse();
+    chars.into_iter().collect()
 }
 
 #[cfg(test)]
@@ -338,6 +350,8 @@ mod tests {
             request["response_format"]["json_schema"]["strict"],
             Value::Bool(true)
         );
+        assert_eq!(request["max_completion_tokens"], serde_json::json!(4096));
+        assert!(request.get("max_tokens").is_none());
     }
 
     #[test]

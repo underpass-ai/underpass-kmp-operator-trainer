@@ -27,6 +27,10 @@ fn happy_path_with_stub_teacher_exits_zero() {
             .unwrap()
             .contains("\"target_action\"")
     );
+    assert!(fixture.output.join("dropped.jsonl").is_file());
+    assert!(!fixture.output.join("trajectories.partial.jsonl").exists());
+    assert!(!fixture.output.join("dropped.partial.jsonl").exists());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("realistic_corpus.accepted"));
 }
 
 #[test]
@@ -46,6 +50,10 @@ fn gate_failed_with_stub_teacher_exits_non_zero() {
     let report = fs::read_to_string(fixture.output.join("report.json")).unwrap();
     assert!(report.contains("\"gate_passed\": false"));
     assert!(report.contains("\"target_mismatch\""));
+    assert!(fixture.output.join("trajectories.jsonl").is_file());
+    assert!(fixture.output.join("dropped.jsonl").is_file());
+    assert!(!fixture.output.join("trajectories.partial.jsonl").exists());
+    assert!(!fixture.output.join("dropped.partial.jsonl").exists());
 }
 
 #[test]
