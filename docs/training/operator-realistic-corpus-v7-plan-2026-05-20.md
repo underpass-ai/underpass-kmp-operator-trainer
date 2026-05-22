@@ -728,6 +728,139 @@ v7.3 is not closed yet. The remaining work is outside this PR:
    frontier ceiling and oracle round-trip smoke;
 5. document the passing run id, drop rate and downstream gate results here.
 
+## Updates 2026-05-22-T15
+
+v7.3 closure now has the content/orchestration slice specified in code.
+
+Implemented for this slice:
+
+- `operator-realistic-corpus --validate-only`, which parses scenario JSONL and
+  exits before constructing a teacher or making any LLM call;
+- `scripts/operator/build_realistic_scenarios.py`, a deterministic scenario
+  builder with 60 inline handcrafted templates: five templates per generation
+  target;
+- structural variation knobs for about ids, refs, dimensions, budgets and
+  temporal anchors;
+- seeded reproducibility through `--seed`;
+- `scripts/operator/build_realistic_v7_corpus.sh`, the end-to-end shell
+  orchestrator for corpus generation and downstream gates, with
+  `OPERATOR_PROMPT` required explicitly so prompt selection stays auditable;
+- runbook documentation for the v7 path.
+
+The scenario builder does not call an LLM. Scenarios are input to the teacher,
+not output from the teacher. The script writes external artifacts only and
+validates the generated JSONL through the Rust `JsonlScenarioSource` path.
+
+Expected production artifact:
+
+```text
+../rehydration-kernel-artifacts/operator/scenarios-v2/scenarios.jsonl
+```
+
+Manual closure checklist still pending after this PR:
+
+| Gate | Evidence path | Status |
+| --- | --- | --- |
+| scenarios-v2 generated with >=1500 rows | `../rehydration-kernel-artifacts/operator/scenarios-v2/scenarios.jsonl` | pending |
+| scenario JSONL validates | `operator-realistic-corpus --validate-only` | pending |
+| 30-row smoke | `<run-id>/report.json` | pending |
+| 1500-row full run | `<run-id>/report.json` | pending |
+| drop rate <= 5% and accepted >= 1425 | `<run-id>/report.json` | pending |
+| contract coverage 10/10 + 0 invalid | `<run-id>/contract-coverage.txt` | pending |
+| no-gold audit 0 findings | `<run-id>/no_gold_audit.json` | pending |
+| frontier ceiling recorded | `<run-id>/frontier-ceiling/summary.json` | pending |
+| oracle round-trip smoke pass | shell output / run log | pending |
+
+When the full run passes, replace the pending status with the concrete run id,
+drop rate, accepted/dropped per target and frontier ceiling number. That is the
+point where v7.3 is closed and v8.0 SFT training can start.
+
+## Updates 2026-05-22-T16
+
+The v7.3 corpus closure now includes the semantic correction pass for option C.
+
+Changes in this pass:
+
+- scenario default count is `1650`, not `1500`;
+- each generated scenario gets a unique `subject.about`;
+- the generator now includes `100` `writer_pre_read` scenarios and `50` `full`
+  scenarios in the default corpus;
+- non-write happy goals have been rewritten as situational goals rather than
+  tool instructions;
+- `scripts/operator/verify_scenarios_v2.py` is the objective acceptance gate for
+  the scenario artifact;
+- `scripts/operator/build_realistic_v7_corpus.sh` runs the verifier before any
+  paid teacher call.
+
+Generated v2 artifact shape verified locally:
+
+```text
+total: 1650
+by_mode: read=1250, write=250, writer_pre_read=100, full=50
+by_category: happy=1200, adversarial=450
+```
+
+Semantic acceptance checks:
+
+| Check | Rule |
+| --- | --- |
+| total count | `len(cases) >= 1500` |
+| about uniqueness | every `subject.about` must be unique |
+| writer-pre-read coverage | at least `100` rows |
+| full-mode coverage | at least `50` rows |
+| target coverage | all 12 generation targets present |
+| happy goal form | no `call kernel_*`, `use kernel_*`, `with page N`, `with limit N` or `with window N` outside write targets |
+| theme balance | all 5 scenario themes present |
+
+Post-run semantic sanity:
+
+The frontier ceiling is now part of the corpus quality signal, not just a
+baseline number. If the full-run frontier ceiling is `95%+`, do not close v7.3:
+that indicates the goals are still too tool-leading. A useful range for this
+corpus is `75%..92%` overall accuracy.
+
+## Updates 2026-05-22-T17
+
+The first paid v7.3 smoke has been run and documented.
+
+Detailed gap analysis:
+
+```text
+docs/training/operator-v7-3-smoke-gap-analysis-2026-05-22.md
+```
+
+Smoke attempts:
+
+| Run id | Result | Summary |
+| --- | --- | --- |
+| `realistic-v7-smoke-20260522T163535Z` | failed | 25/30 accepted, drop-rate 16.67%; ask and near templates were under-specified. |
+| `realistic-v7-smoke-fix1-20260522T163917Z` | passed corpus gate | 29/30 accepted, drop-rate 3.33%; one strict near-anchor contract drop remains as full-run watch item. |
+
+Downstream findings fixed during the smoke:
+
+- SFT prep now accepts `escalate` as a first-class model-facing action.
+- OpenAI SFT JSONL keeps `step_id` so frontier predictions can be scored.
+- Predictor validation now accepts current `full` and `writer_pre_read` modes.
+- Writer-pre-read prompt/profile now matches the Rust domain contract:
+  `kernel_wake`, `kernel_ask`, `kernel_near`, `kernel_inspect`.
+
+Smoke gate evidence after fixes:
+
+| Gate | Result |
+| --- | --- |
+| corpus generation gate | pass: 29/30 accepted, drop-rate 3.33% |
+| contract coverage | pass: 10/10 tools, 0 invalid |
+| no-gold audit | pass: 0 findings over 29 rows |
+| SFT prep | pass: train=25, eval=4 |
+| train validate-only | pass |
+| predict validate-only | pass |
+| oracle round-trip smoke | pass: 4/4 exact-match |
+
+Frontier ceiling on the 4-row smoke eval split produced `4/4` tool-match and
+`4/4` contract-valid actions, but `0/4` exact-match. This is not treated as a
+semantic conclusion because the smoke eval split is too small. The `75%..92%`
+ceiling sanity range remains a full-run criterion.
+
 ## Non-goals
 
 This corpus is not:

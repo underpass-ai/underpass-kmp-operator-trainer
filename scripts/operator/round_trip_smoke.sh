@@ -62,6 +62,10 @@ do
   fi
 done
 
+python3 "${ROOT}/scripts/operator/validate_openai_sft_schema.py" \
+  "${SFT_DIR}/openai_train.jsonl" \
+  "${SFT_DIR}/openai_eval.jsonl"
+
 python3 "${ROOT}/scripts/operator/audit_operator_sft_no_gold.py" \
   "${SFT_DIR}/openai_train.jsonl" \
   "${SFT_DIR}/openai_eval.jsonl" \

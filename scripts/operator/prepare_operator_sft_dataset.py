@@ -57,6 +57,8 @@ Allowed action shapes:
 
 {"action":{"kind":"stop","reason":"answer_ready","evidence":["..."]}}
 
+{"action":{"kind":"escalate","reason":"beyond_capability","target_model":"frontier-reasoner"}}
+
 Rules:
 - Use only tools present in `allowed_tools`.
 - Use only refs visible in `current_ref`, `trace_target_ref`, `candidate_refs`, `candidate_ref_details`, `known_refs`, `last_observed_refs`, or `read_context`.
@@ -104,6 +106,8 @@ Allowed action shapes:
 
 {"action":{"kind":"stop","reason":"answer_ready","evidence":["..."]}}
 
+{"action":{"kind":"escalate","reason":"beyond_capability","target_model":"frontier-reasoner"}}
+
 Rules:
 - Use only tools present in `allowed_tools`.
 - Use only refs visible in `current_ref`, `trace_target_ref`, `candidate_refs`, `candidate_ref_details`, `known_refs`, `last_observed_refs`, or `read_context`.
@@ -127,9 +131,11 @@ This profile only decides the next bounded read step or stop; it does not write 
 
 Allowed action shapes:
 
-{"action":{"kind":"tool_call","tool":"kernel_near","arguments":{"anchor":"...","dimensions":["..."],"limit":12}}}
+{"action":{"kind":"tool_call","tool":"kernel_wake","arguments":{"about":"..."}}}
 
-{"action":{"kind":"tool_call","tool":"kernel_trace","arguments":{"from":"...","to":"...","page":16}}}
+{"action":{"kind":"tool_call","tool":"kernel_ask","arguments":{"query":"..."}}}
+
+{"action":{"kind":"tool_call","tool":"kernel_near","arguments":{"anchor":"...","dimensions":["..."],"limit":12}}}
 
 {"action":{"kind":"tool_call","tool":"kernel_inspect","arguments":{"target":"..."}}}
 
@@ -138,11 +144,17 @@ Allowed action shapes:
 Rules:
 - Use only tools present in `allowed_tools`.
 - Use only refs visible in `current_ref`, `trace_target_ref`, `candidate_refs`, `candidate_ref_details`, `known_refs`, `last_observed_refs`, or `read_context`.
-- If `visible_state` contains `requested_move`, `requested_bounds`, `requested_trace`, `inspection_request`, or `requested_stop`, copy those requested fields exactly into the matching action.
+- If `visible_state` contains `requested_wake`, `requested_ask`, `requested_move`, `inspection_request`, or `requested_stop`, copy those requested fields exactly into the matching action.
+- If `requested_wake` is present, call `kernel_wake`; do not convert it into a local expansion.
+- If `requested_ask` is present, call `kernel_ask`; do not convert it into an inspection.
 - If `requested_move` is present, its `kind` is the tool to call and its payload must match the compact DTO for that tool.
-- If `requested_trace`, `inspection_request`, or `requested_stop` is present, choose `kernel_trace`, `kernel_inspect`, or `stop` respectively.
+- If `inspection_request` or `requested_stop` is present, choose `kernel_inspect` or `stop` respectively.
 - Prefer `candidate_ref_details` when choosing between writer candidates.
 - Every tool call must be bounded.
+- For tools with `arguments.about`, that value must equal the top-level `about` value exactly.
+- Do not use `current_ref` as `arguments.about`.
+- `kernel_ask` uses `arguments.query`; do not emit legacy `question`, `answer_policy`, or `dimensions` fields.
+- `kernel_near` uses `arguments.anchor`, optional `dimensions`, and optional `limit`.
 - `kernel_inspect` arguments must use the key `target`, never `ref`, `an`, or `id`.
 - Stop only when the visible read context is sufficient for a writer to justify the next memory relation.
 """
@@ -251,8 +263,9 @@ PROFILE_ALLOWED_TOOLS = {
         "kernel_ingest",
     ),
     "writer-pre-read": (
+        "kernel_wake",
+        "kernel_ask",
         "kernel_near",
-        "kernel_trace",
         "kernel_inspect",
     ),
     "writer-exec": (
@@ -284,6 +297,7 @@ FORBIDDEN_MODEL_VISIBLE_STRING_PREFIXES = (
 )
 
 CAP_TOOL_STOP = "tool:stop"
+CAP_TOOL_ESCALATE = "tool:escalate"
 CAP_TRACE_PAGE_CONTINUE = "trace.page:continue"
 CAP_WINDOW_STOP_SUFFICIENT = "window:stop_sufficient"
 
@@ -297,6 +311,7 @@ READ_REQUIRED_CAPABILITIES = (
     "tool:kernel_trace",
     "tool:kernel_inspect",
     CAP_TOOL_STOP,
+    CAP_TOOL_ESCALATE,
     "cursor:ref",
     "cursor:time",
     "cursor:sequence",
@@ -322,10 +337,11 @@ FULL_REQUIRED_CAPABILITIES = READ_REQUIRED_CAPABILITIES + (
 )
 
 WRITER_PRE_READ_REQUIRED_CAPABILITIES = (
-    "mode:write_context_read",
+    "mode:writer_pre_read",
+    "tool:kernel_wake",
+    "tool:kernel_ask",
     "tool:kernel_near",
     "tool:kernel_inspect",
-    "tool:kernel_trace",
     CAP_TOOL_STOP,
     "cursor:ref",
     "dimensions.mode:all",
@@ -334,12 +350,9 @@ WRITER_PRE_READ_REQUIRED_CAPABILITIES = (
     "window:shrink",
     CAP_WINDOW_STOP_SUFFICIENT,
     "inspect.raw:false",
-    "trace.page:first",
-    CAP_TRACE_PAGE_CONTINUE,
     "writer.last_tool:none",
     "writer.last_tool:kernel_near",
     "writer.last_tool:kernel_inspect",
-    "writer.last_tool:kernel_trace",
     "writer.candidate_role:previous_subtask_answer",
     "writer.candidate_role:same_subtask_question",
     "writer.candidate_pool:ambiguous",
@@ -1065,11 +1078,10 @@ def prompt_tool_parity_summary(profile: str, system_prompt: str) -> dict[str, An
     forbidden_by_profile = {
         "read": ("kernel_write_memory", "kernel_ingest"),
         "writer-pre-read": (
-            "kernel_wake",
-            "kernel_ask",
             "kernel_goto",
             "kernel_rewind",
             "kernel_forward",
+            "kernel_trace",
             "kernel_write_memory",
             "kernel_ingest",
         ),
@@ -1768,7 +1780,7 @@ def trajectory_capabilities(trajectory: dict[str, Any]) -> set[str]:
     mode = trajectory.get("mode")
     if isinstance(mode, str):
         capabilities.add(f"mode:{mode}")
-    if mode == "write_context_read":
+    if mode in {"writer_pre_read", "write_context_read"}:
         capabilities.update(writer_pre_read_capabilities(trajectory))
     if mode == "write":
         capabilities.update(writer_exec_capabilities(trajectory))
@@ -1855,6 +1867,9 @@ def action_capabilities(action: dict[str, Any]) -> set[str]:
     if action_kind == "stop":
         capabilities.add(CAP_TOOL_STOP)
         capabilities.add(CAP_WINDOW_STOP_SUFFICIENT)
+        return capabilities
+    if action_kind == "escalate":
+        capabilities.add(CAP_TOOL_ESCALATE)
         return capabilities
     if action_kind != "tool_call":
         return capabilities
@@ -2204,6 +2219,15 @@ def assert_model_facing_action_allowed(
                 f"{item.get('step_id')} stop action must have required keys "
                 f"{sorted(expected_keys)} and optional keys {sorted(optional_keys)}; "
                 f"got {sorted(actual_keys)}"
+            )
+        return
+    if action_kind == "escalate":
+        expected_keys = {"kind", "reason", "target_model"}
+        actual_keys = set(action.keys())
+        if actual_keys != expected_keys:
+            raise ValueError(
+                f"{item.get('step_id')} escalate action must have exactly "
+                f"{sorted(expected_keys)}; got {sorted(actual_keys)}"
             )
         return
     if action_kind not in {"tool_call", "prepared_tool_call"}:
@@ -2912,7 +2936,7 @@ def write_openai_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
         for row in rows:
             handle.write(
                 json.dumps(
-                    {"messages": row["messages"]},
+                    {"step_id": row["step_id"], "messages": row["messages"]},
                     separators=(",", ":"),
                     sort_keys=True,
                 )

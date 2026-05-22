@@ -175,6 +175,91 @@ teacher-generated dataset. Its purpose is to close P0.4/P0.5 and prevent GPU
 training from starting until the complete KMP/MCP action surface round-trips.
 It must not be used as the release-candidate corpus.
 
+## 0d. Build the realistic-v7 corpus
+
+Use the realistic-v7 path when the goal is to create the first
+teacher-backed corpus that is eligible for an interpretable SFT baseline.
+
+First generate deterministic scenarios outside the repo:
+
+```bash
+python3 scripts/operator/build_realistic_scenarios.py \
+    --output ../rehydration-kernel-artifacts/operator/scenarios-v2/scenarios.jsonl \
+    --count 1650 \
+    --seed 42
+```
+
+The scenario builder is deterministic and does not call an LLM. It uses
+handcrafted templates plus structural variation knobs. At the end it calls
+`operator-realistic-corpus --validate-only` so malformed scenarios fail before
+any paid teacher call is possible.
+
+Then verify the semantic acceptance rules before spending money:
+
+```bash
+python3 scripts/operator/verify_scenarios_v2.py \
+    ../rehydration-kernel-artifacts/operator/scenarios-v2/scenarios.jsonl
+```
+
+The verifier checks unique about ids, at least 100 `writer_pre_read` scenarios,
+at least 50 `full` scenarios, full target coverage, five themes and
+non-instructional happy goals for non-write targets.
+
+Then run a paid 30-row smoke:
+
+```bash
+OPERATOR_RUN_LIMIT=30 \
+OPERATOR_PROMPT=crates/operator-synthetic-infra/prompts/teacher_calibration_v5.md \
+  bash scripts/operator/build_realistic_v7_corpus.sh
+```
+
+Only after the smoke is green, run the full corpus:
+
+```bash
+OPERATOR_PROMPT=crates/operator-synthetic-infra/prompts/teacher_calibration_v5.md \
+bash scripts/operator/build_realistic_v7_corpus.sh
+```
+
+The v7 builder gates the run in this order:
+
+```text
+verify_scenarios_v2
+  -> operator-realistic-corpus
+  -> contract coverage on accepted trajectories
+  -> prepare SFT
+  -> no-gold audit
+  -> frontier ceiling with gpt-4o-mini
+  -> oracle round-trip smoke
+```
+
+By default the run writes to:
+
+```text
+../rehydration-kernel-artifacts/operator/<run-id>/
+```
+
+Important environment overrides:
+
+| Variable | Meaning |
+| --- | --- |
+| `OPERATOR_RUN_ID` | output directory name |
+| `OPERATOR_ARTIFACT_ROOT` | root for external artifacts |
+| `OPERATOR_SCENARIOS` | scenario JSONL path |
+| `OPERATOR_RUN_LIMIT` | `0` for full, otherwise smoke limit |
+| `OPERATOR_MODEL` | teacher/frontier model, default `gpt-4o-mini` |
+| `OPERATOR_PROMPT` | required teacher prompt path, currently calibration prompt v5 |
+| `OPERATOR_API_KEY_FILE` | token file, default `/tmp/openai.txt` |
+
+Do not raise `--max-drop-rate` to make a run pass. The production gate is 5%.
+If the smoke or full run fails, inspect `dropped.jsonl` and `report.json`, fix
+the scenario templates if they are wrong, regenerate a new scenario version and
+rerun.
+
+After the full run, inspect the frontier ceiling. A useful v7.3 corpus should
+land below near-perfect performance; `75%..92%` overall accuracy is the target
+sanity range. If the ceiling is `95%+`, treat the corpus as still too
+instructional and rework the goals before training.
+
 ## 1. Prepare the SFT dataset
 
 The Python `prepare_operator_sft_dataset.py` script turns a

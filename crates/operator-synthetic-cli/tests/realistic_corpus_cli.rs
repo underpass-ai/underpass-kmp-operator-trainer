@@ -64,6 +64,27 @@ fn nonexistent_scenarios_file_exits_with_clear_error() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("--scenarios"));
 }
 
+#[test]
+fn validate_only_parses_scenarios_without_teacher_call() {
+    let fixture = Fixture::new("validate-only");
+    fixture.write_scenarios();
+    fixture.write_prompt();
+    fixture.write_key();
+    let mut args = fixture.args();
+    args.push("--validate-only".to_string());
+
+    let output = Command::new(binary()).args(args).output().unwrap();
+
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("\"scenarios_count\":1"));
+    assert!(!fixture.output.join("report.json").exists());
+}
+
 fn binary() -> &'static str {
     env!("CARGO_BIN_EXE_operator-realistic-corpus")
 }
