@@ -9,7 +9,8 @@
 //! fixture-grade source (one canonical trajectory per
 //! `KmpMcpCapability`, cloned N times). It satisfies the strict KMP
 //! action contract but does not reflect realistic operator behaviour;
-//! a teacher-model-backed generator will land in a later pass.
+//! the teacher-backed generator lives behind the same application port
+//! and is wired by later corpus-production flows.
 //!
 //! The CLI writes the dataset as `TrainingTrajectoryDto` JSONL (one
 //! row per line) and prints a per-case coverage report. Output is

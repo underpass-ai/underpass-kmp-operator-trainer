@@ -1,7 +1,13 @@
+pub mod build_realistic_corpus_use_case;
 pub mod corpus_quality_report;
+pub mod drop_entry;
+pub mod drop_reason;
+pub mod drop_reason_kind;
 pub mod evaluate_corpus_quality_use_case;
 pub mod evaluate_teacher_calibration_use_case;
 pub mod generate_synthetic_dataset_use_case;
+pub mod max_drop_rate;
+pub mod realistic_corpus_report;
 pub mod teacher_calibration_capability_metric;
 pub mod teacher_calibration_case_result;
 pub mod teacher_calibration_category_metric;

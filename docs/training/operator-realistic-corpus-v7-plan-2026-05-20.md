@@ -648,6 +648,86 @@ A repeat run reproduced the same `kernel_ask` shape failure, so prompt v4
 remains the cleanest run-level calibration evidence while prompt v5 documents
 the reusable trace-cursor example.
 
+## Updates 2026-05-22-T13
+
+v7.3 has started with the first teacher-backed `SyntheticCaseGenerator`
+adapter.
+
+Implemented in this slice:
+
+- `SyntheticGenerationTarget`, a domain target model for 10 KMP tools plus
+  `stop` and `escalate`;
+- `SyntheticCaseSpec` now stores a generation target instead of assuming every
+  case is a KMP capability;
+- `SyntheticDatasetBlueprint::for_all_generation_targets` for 12-target corpus
+  planning;
+- `TeacherBackedSyntheticCaseGenerator<T: TeacherPolicy>` in
+  `operator-synthetic-infra`;
+- one generated `CalibrationSubject` per requested synthetic row;
+- typed prepared actions for `kernel_ingest` and `kernel_write_memory`;
+- fail-fast rejection when the teacher chooses the wrong tool;
+- fail-fast rejection when the teacher action fails the shared strict action
+  contract;
+- propagation of teacher policy failures without repair;
+- focused tests covering all `SyntheticGenerationTarget` variants.
+
+Important scope boundary:
+
+`KmpMcpCapability` remains the 10-tool KMP/MCP contract. It was not widened to
+include non-tool actions. `stop` and `escalate` live in the new synthetic
+generation target model, which keeps corpus planning separate from the KMP tool
+contract.
+
+The in-memory fixture generator still only supports KMP targets and now rejects
+`stop`/`escalate` fail-fast. The teacher-backed generator is the path that can
+produce all 12 target kinds.
+
+## Updates 2026-05-22-T14
+
+v7.3 now has the production corpus builder slice.
+
+Implemented:
+
+- `ScenarioSource`, `Scenario` and `ScenarioId` as application-layer input
+  ports/values for externally authored scenario rows;
+- `JsonlScenarioSource` plus `ScenarioDto` and `ScenarioMapper`;
+- `BuildRealisticCorpusUseCase`, which calls the calibrated `TeacherPolicy`
+  directly and does not use the strict `SyntheticCaseGenerator` path;
+- drop-and-continue row policy with explicit `DropReason`;
+- `MaxDropRate` gate, defaulted by the CLI to `0.05`;
+- `RealisticCorpusReport` with accepted/dropped counts, drop rate, per-target
+  totals and dropped-by-reason counts;
+- `operator-realistic-corpus` CLI;
+- output layout:
+
+```text
+realistic-v7-<run-id>/
+  trajectories.jsonl
+  dropped.jsonl
+  report.json
+```
+
+The CLI prechecks scenario JSONL, prompt, API key, API base and output
+directory before spending any LLM call. It writes every dropped row to
+`dropped.jsonl`; drops are not silent.
+
+The behavior is intentionally different from the teacher-backed
+`SyntheticCaseGenerator`:
+
+| Path | Failure policy | Purpose |
+| --- | --- | --- |
+| `TeacherBackedSyntheticCaseGenerator` | fail-fast | strict adapter/testing path |
+| `BuildRealisticCorpusUseCase` | drop-and-continue + max-drop-rate gate | production corpus generation |
+
+v7.3 is not closed yet. The remaining work is outside this PR:
+
+1. build `scenarios-v1/scenarios.jsonl` from handcrafted scenario templates;
+2. run a 30-row smoke with `gpt-4o-mini`;
+3. run the 1500-row production-min corpus;
+4. run downstream gates: contract coverage, no-gold audit, SFT prep,
+   frontier ceiling and oracle round-trip smoke;
+5. document the passing run id, drop rate and downstream gate results here.
+
 ## Non-goals
 
 This corpus is not:

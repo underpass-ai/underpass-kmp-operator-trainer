@@ -7,7 +7,7 @@
 //! Fixtures are deliberately minimal: they pass every shared-domain
 //! invariant and every `CompositeActionContractValidator` rule, but
 //! they do not reflect realistic operator behaviour. A production
-//! generator backed by an LLM teacher will land in a later pass.
+//! teacher-backed generation uses a separate adapter over the same port.
 
 use operator_shared_domain::action::operator_action::OperatorAction;
 use operator_shared_domain::action::tool_call_action::ToolCallAction;
@@ -62,7 +62,9 @@ impl InMemorySyntheticCaseGenerator {
         spec: &SyntheticCaseSpec,
         index: usize,
     ) -> Result<TrainingTrajectory, GenerateSyntheticCaseError> {
-        let capability = spec.capability();
+        let capability = spec
+            .kmp_capability()
+            .ok_or_else(|| unsupported_target_to_err(spec))?;
         let mode = capability.mode();
         let trajectory_id =
             TrainingTrajectoryId::parse(format!("{}:{:04}", spec.case_id().as_str(), index))
@@ -122,6 +124,17 @@ impl SyntheticCaseGenerator for InMemorySyntheticCaseGenerator {
             out.push(Self::build_trajectory(spec, index)?);
         }
         Ok(out)
+    }
+}
+
+fn unsupported_target_to_err(spec: &SyntheticCaseSpec) -> GenerateSyntheticCaseError {
+    GenerateSyntheticCaseError::Generator {
+        adapter: "in_memory_synthetic_case_generator",
+        case_id: spec.case_id().as_str().to_string(),
+        message: format!(
+            "target '{}' is not supported by the in-memory KMP fixture generator",
+            spec.target().name()
+        ),
     }
 }
 

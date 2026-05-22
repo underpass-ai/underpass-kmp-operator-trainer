@@ -18,6 +18,10 @@ path = "src/bin/operator_synthesize.rs"
 name = "operator-teacher-calibration"
 path = "src/bin/operator_teacher_calibration.rs"
 
+[[bin]]
+name = "operator-realistic-corpus"
+path = "src/bin/operator_realistic_corpus.rs"
+
 [dependencies]
 operator-shared-contract.workspace = true
 operator-shared-domain.workspace = true
