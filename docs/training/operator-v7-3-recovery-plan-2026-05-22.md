@@ -376,74 +376,21 @@ Two Python files modified (build_realistic_scenarios.py + verify_scenarios_v2.py
 
 Architectural fix: OpenAI structured output (`response_format: json_schema` with `strict: true`). API rejects shape-invalid output server-side. Wire format errors become impossible by construction.
 
-This PR starts with an API schema spike before broad Rust integration. The proposed schema below is the target shape, not assumed-valid API input. OpenAI strict mode supports only a JSON Schema subset; the spike must prove the schema is accepted by `gpt-4o-mini`.
+This PR starts with an API schema spike before broad Rust integration. OpenAI strict mode supports only a JSON Schema subset; the spike must prove the schema is accepted by `gpt-4o-mini`.
 
 ## Decision 1 — JSON Schema for `OperatorActionDto`
 
-New file `crates/operator-synthetic-infra/src/adapters/operator_action_schema.rs`:
+New file `crates/operator-synthetic-infra/src/adapters/operator_action_schema.rs`.
 
-```rust
-use serde_json::{Value, json};
+Implementation result after API spike:
 
-pub fn operator_action_schema() -> Value {
-    json!({
-        "name": "OperatorAction",
-        "strict": true,
-        "schema": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "kind": {
-                    "type": "string",
-                    "enum": ["tool_call", "stop", "escalate"]
-                }
-            },
-            "required": ["kind"],
-            "oneOf": [
-                {
-                    "properties": {
-                        "kind": {"const": "tool_call"},
-                        "tool": {
-                            "type": "string",
-                            "enum": [
-                                "kernel_wake", "kernel_ask", "kernel_near", "kernel_goto",
-                                "kernel_rewind", "kernel_forward", "kernel_trace",
-                                "kernel_inspect", "kernel_ingest", "kernel_write_memory"
-                            ]
-                        },
-                        "arguments": {"type": "object"}
-                    },
-                    "required": ["kind", "tool", "arguments"]
-                },
-                {
-                    "properties": {
-                        "kind": {"const": "stop"},
-                        "reason": {
-                            "type": "string",
-                            "enum": ["answer_ready", "no_candidate", "budget_exhausted"]
-                        },
-                        "answer": {"type": ["string", "null"]},
-                        "evidence": {"type": "array", "items": {"type": "string"}}
-                    },
-                    "required": ["kind", "reason"]
-                },
-                {
-                    "properties": {
-                        "kind": {"const": "escalate"},
-                        "reason": {"type": "string"},
-                        "target_model": {"type": "string"}
-                    },
-                    "required": ["kind", "reason", "target_model"]
-                }
-            ]
-        }
-    })
-}
-```
+- Root remains the direct `OperatorActionDto` shape (`kind`, `tool`, `arguments`, `reason`, `answer`, `evidence`, `target_model`). Do **not** wrap in `{ "action": ... }`; that schema was accepted by OpenAI but degraded calibration to 0/6 by biasing toward `escalate`.
+- OpenAI rejects `anyOf`/`oneOf` at the schema root. Therefore `kind` is a top-level enum and `arguments` is a nested `anyOf` with one concrete branch per KMP tool.
+- `tool`, `reason`, and `target_model` are non-null enums with `"none"` sentinel values for non-applicable variants. Serde ignores those fields for stop/escalate/tool-call as appropriate, while strict mode avoids nulls in fields Rust expects as strings.
+- `arguments` is never an open `{ "type": "object" }`; every tool has a concrete object shape. This is what prevents raw `{"kind":"kernel_*"}` output while keeping the calibrated prompt's direct DTO contract.
+- Ingest metadata allows only the observed string-key maps (`{}`, `kind`, `phase`, `role`, `source`, `template`) to satisfy strict-mode `additionalProperties:false`.
 
-Hand-written for MVP. Future refactor: derive from Rust DTO via `schemars` crate or similar.
-
-**Important:** OpenAI strict mode has constraints on JSON Schema features. Test that this schema is accepted. If it rejects `oneOf` with overlapping properties or open-ended `arguments`, switch to an `anyOf` schema with one branch per action/tool and concrete argument object shapes. Do not use `{"type":"object"}` for `arguments` unless the API spike proves it is accepted under `strict:true`.
+Hand-written for MVP. Future refactor: derive from Rust DTO via `schemars` or an operator-owned schema emitter once the shape stabilizes.
 
 ## Decision 2 — adapter sends `response_format`
 
@@ -511,6 +458,12 @@ cargo run --release -p operator-synthetic-cli --bin operator-teacher-calibration
 Expected: gate passes (overall ≥ 80%, per-capability ≥ 60%). v5 calibration baseline was 97.22% overall — significant drop (e.g., < 90%) would indicate strict mode over-constrains. If degraded, iterate the schema (relax `additionalProperties` on `arguments`, allow nested object freedom).
 
 Cost: ~$1-2 (36 calibration cases at ~$0.03 each).
+
+Implementation verification:
+
+- Minimal API spike: accepted by `gpt-4o-mini`.
+- Wrapper schema spike: accepted by API, rejected for production because it degraded the first 6 calibration cases to 0/6 and always selected `escalate`.
+- Direct DTO schema final run: `structured-output-verify-20260522T-pr37-v3`, 36 cases, 33 matches, 34 tool matches, 35 contract-valid, 1 shape failure, overall `0.9167`, gate passed.
 
 ## Acceptance criteria
 
