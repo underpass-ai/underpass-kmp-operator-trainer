@@ -31,6 +31,26 @@ READ_TOOLS = [
 ]
 
 WRITE_TOOLS = ["kernel_ingest", "kernel_write_memory"]
+WRITER_PRE_READ_TOOLS = [
+    "kernel_wake",
+    "kernel_ask",
+    "kernel_near",
+    "kernel_inspect",
+]
+FULL_TOOLS = [
+    "kernel_ingest",
+    "kernel_wake",
+    "kernel_ask",
+    "kernel_near",
+    "kernel_goto",
+    "kernel_rewind",
+    "kernel_forward",
+    "kernel_trace",
+    "kernel_inspect",
+    "kernel_write_memory",
+]
+
+DEFAULT_SCENARIO_COUNT = 1650
 
 TARGETS = [
     "kernel_wake",
@@ -135,68 +155,323 @@ class Template:
     slug: str
     category: str
     goal: str
+    mode: str | None = None
 
 
-def t(target: str, theme: str, slug: str, category: str, goal: str) -> Template:
-    return Template(target=target, theme=theme, slug=slug, category=category, goal=goal)
+def t(
+    target: str,
+    theme: str,
+    slug: str,
+    category: str,
+    goal: str,
+    mode: str | None = None,
+) -> Template:
+    return Template(
+        target=target,
+        theme=theme,
+        slug=slug,
+        category=category,
+        goal=goal,
+        mode=mode,
+    )
 
 
 TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
     "kernel_wake": [
-        t("kernel_wake", "technical_incident", "current-about", "happy", "Call kernel_wake for {about} before deeper navigation."),
-        t("kernel_wake", "software_migration", "prior-context", "happy", "Open {about} with kernel_wake to recover prior migration context."),
-        t("kernel_wake", "smart_writing_session", "before-write", "happy", "Use kernel_wake on {about} before any write decision."),
-        t("kernel_wake", "product_planning", "after-stop-review", "adversarial", "Despite the low budget, call kernel_wake for {about}; no refs are visible yet."),
-        t("kernel_wake", "bug_investigation", "already-loaded-check", "adversarial", "Call kernel_wake for {about} to establish the bounded investigation scope."),
+        t(
+            "kernel_wake",
+            "technical_incident",
+            "current-about",
+            "happy",
+            "Incident {about} has no current_ref or evidence visible; bounded investigation cannot start until memory is bootstrapped.",
+        ),
+        t(
+            "kernel_wake",
+            "software_migration",
+            "prior-context",
+            "happy",
+            "Migration {about} is referenced, but no prior planning state is in current memory. Recovering that context is prerequisite.",
+        ),
+        t(
+            "kernel_wake",
+            "smart_writing_session",
+            "before-write",
+            "happy",
+            "A write to {about} is contemplated, but existing memory for that about is not visible yet. Context must load first.",
+        ),
+        t(
+            "kernel_wake",
+            "product_planning",
+            "after-stop-review",
+            "adversarial",
+            "Earlier stop left ambiguity; the about needs reloading to verify whether the conclusion still holds. Budget allows one retry.",
+        ),
+        t(
+            "kernel_wake",
+            "bug_investigation",
+            "already-loaded-check",
+            "adversarial",
+            "Bug {about} is the target, but no current_ref proves memory was bootstrapped. Loading the about is the safe start.",
+        ),
     ],
     "kernel_ask": [
-        t("kernel_ask", "technical_incident", "evidence-query", "happy", "Call kernel_ask with a narrow query for evidence about {ref_0}."),
-        t("kernel_ask", "product_planning", "clarify-choice", "happy", "Use kernel_ask to retrieve the deterministic planning fact for {about}."),
-        t("kernel_ask", "bug_investigation", "narrow-fact", "happy", "Call kernel_ask for the exact fact that links {ref_0} to {ref_1}."),
-        t("kernel_ask", "software_migration", "missing-constraint", "happy", "Use kernel_ask to find the migration constraint before moving in the graph."),
-        t("kernel_ask", "smart_writing_session", "no-relevant-memory", "adversarial", "Call kernel_ask with a bounded query because visible refs do not answer the write question."),
+        t(
+            "kernel_ask",
+            "technical_incident",
+            "evidence-query",
+            "happy",
+            "Symptoms point to a deterministic fact about {ref_0}; that fact belongs in memory, not generative reasoning.",
+        ),
+        t(
+            "kernel_ask",
+            "product_planning",
+            "clarify-choice",
+            "happy",
+            "Two candidate decisions are visible; a bounded planning constraint is needed to disambiguate them.",
+        ),
+        t(
+            "kernel_ask",
+            "bug_investigation",
+            "narrow-fact",
+            "happy",
+            "{ref_0} and {ref_1} appear unrelated in the summary; the missing link is a deterministic memory fact.",
+        ),
+        t(
+            "kernel_ask",
+            "software_migration",
+            "missing-constraint",
+            "happy",
+            "Migration plan is visible, but the active constraint is not. That constraint would resolve the next decision.",
+        ),
+        t(
+            "kernel_ask",
+            "smart_writing_session",
+            "no-relevant-memory",
+            "adversarial",
+            "Tempting to ask about {ref_0}, but visible memory suggests no relevant answer and honesty may require stopping.",
+        ),
     ],
     "kernel_near": [
-        t("kernel_near", "technical_incident", "relations", "happy", "Call kernel_near around {ref_0} in dimension {dim_0} with limit 4."),
-        t("kernel_near", "bug_investigation", "candidate-refs", "happy", "Use kernel_near to expand around candidate {ref_0} before selecting evidence."),
-        t("kernel_near", "product_planning", "ambiguous-anchor", "adversarial", "Call kernel_near around the visible anchor {ref_0}; do not invent another anchor."),
-        t("kernel_near", "software_migration", "limit-pressure", "happy", "Call kernel_near around {ref_0} with a small limit because budget is bounded."),
-        t("kernel_near", "smart_writing_session", "dimension-filter", "happy", "Use kernel_near around {ref_0} filtered to dimension {dim_0}."),
+        t(
+            "kernel_near",
+            "technical_incident",
+            "relations",
+            "happy",
+            "Anchor {ref_0} is visible, but its local neighborhood of relations and adjacent nodes is not expanded.",
+        ),
+        t(
+            "kernel_near",
+            "bug_investigation",
+            "candidate-refs",
+            "happy",
+            "Writer needs candidate evidence; the likely targets live in the neighborhood of visible anchor {ref_0}.",
+        ),
+        t(
+            "kernel_near",
+            "product_planning",
+            "ambiguous-anchor",
+            "adversarial",
+            "Tempting to expand around a missing planning anchor, but only {ref_0} is visible and safe.",
+        ),
+        t(
+            "kernel_near",
+            "software_migration",
+            "limit-pressure",
+            "happy",
+            "Budget is bounded; local expansion around {ref_0} is cheaper than broad retrieval and should stay narrow.",
+        ),
+        t(
+            "kernel_near",
+            "smart_writing_session",
+            "dimension-filter",
+            "happy",
+            "Visible anchor {ref_0} has relevant neighbors in dimension {dim_0}; unrelated dimensions would add noise.",
+        ),
     ],
     "kernel_goto": [
-        t("kernel_goto", "technical_incident", "ref", "happy", "Call kernel_goto to jump to visible ref {ref_0}."),
-        t("kernel_goto", "software_migration", "temporal-cursor", "happy", "Call kernel_goto with a ref cursor targeting {ref_0} before moving in time."),
-        t("kernel_goto", "bug_investigation", "trace-cursor", "happy", "Call kernel_goto to jump to the trace endpoint {ref_1}."),
-        t("kernel_goto", "product_planning", "invented-ref-temptation", "adversarial", "Call kernel_goto only to the visible ref {ref_0}; do not invent a planning ref."),
-        t("kernel_goto", "smart_writing_session", "cross-about", "adversarial", "Call kernel_goto to the visible same-about ref {ref_0}; avoid cross-about movement."),
+        t(
+            "kernel_goto",
+            "technical_incident",
+            "ref",
+            "happy",
+            "Visible refs include {ref_0}; navigating to that ref's full view is the next bounded step.",
+        ),
+        t(
+            "kernel_goto",
+            "software_migration",
+            "temporal-cursor",
+            "happy",
+            "Earlier migration event {ref_0} is referenced by the current summary; the process needs that anchor's full view.",
+        ),
+        t(
+            "kernel_goto",
+            "bug_investigation",
+            "trace-cursor",
+            "happy",
+            "Previous trace context points to endpoint {ref_1}; resuming at that endpoint preserves the chain.",
+        ),
+        t(
+            "kernel_goto",
+            "product_planning",
+            "invented-ref-temptation",
+            "adversarial",
+            "Tempting to navigate to an invented planning ref, but only {ref_0} appears in known_refs.",
+        ),
+        t(
+            "kernel_goto",
+            "smart_writing_session",
+            "cross-about",
+            "adversarial",
+            "Tempting to jump across abouts, but the same-about visible ref {ref_0} is the only valid target.",
+        ),
     ],
     "kernel_rewind": [
-        t("kernel_rewind", "technical_incident", "prior-state", "happy", "Call kernel_rewind on the active created cursor with window 2."),
-        t("kernel_rewind", "bug_investigation", "verification", "happy", "Use kernel_rewind to inspect the prior state before {ref_0}."),
-        t("kernel_rewind", "software_migration", "missing-anchor", "adversarial", "Call kernel_rewind using the active temporal cursor; do not create a new anchor."),
-        t("kernel_rewind", "product_planning", "refute", "happy", "Use kernel_rewind to check what was known before {ref_1}."),
-        t("kernel_rewind", "smart_writing_session", "multi-step", "happy", "Call kernel_rewind with window 2 to recover read-before-write context."),
+        t(
+            "kernel_rewind",
+            "technical_incident",
+            "prior-state",
+            "happy",
+            "Current state is visible, but its assumptions depend on a prior temporal slice not in current view.",
+        ),
+        t(
+            "kernel_rewind",
+            "bug_investigation",
+            "verification",
+            "happy",
+            "Recent decision {ref_0} is visible; the evidence that motivated it lived earlier in the timeline.",
+        ),
+        t(
+            "kernel_rewind",
+            "software_migration",
+            "missing-anchor",
+            "adversarial",
+            "Tempting to rewind from a new anchor, but only the active temporal cursor is defined.",
+        ),
+        t(
+            "kernel_rewind",
+            "product_planning",
+            "refute",
+            "happy",
+            "Visible plan {ref_1} may be wrong; checking what was known before it would verify the assumption.",
+        ),
+        t(
+            "kernel_rewind",
+            "smart_writing_session",
+            "multi-step",
+            "happy",
+            "Prepared write needs earlier read context; the active temporal cursor points to the relevant prior slice.",
+        ),
     ],
     "kernel_forward": [
-        t("kernel_forward", "technical_incident", "current-state", "happy", "Call kernel_forward on the active created cursor with window 2."),
-        t("kernel_forward", "software_migration", "after-rewind", "happy", "Use kernel_forward after rewind to see what changed after {ref_0}."),
-        t("kernel_forward", "bug_investigation", "adversarial-anchor", "adversarial", "Call kernel_forward using the visible active cursor; do not alter the anchor."),
-        t("kernel_forward", "product_planning", "next-event", "happy", "Use kernel_forward to move to the next planning event."),
-        t("kernel_forward", "smart_writing_session", "across-sessions", "happy", "Call kernel_forward to continue the current session timeline."),
+        t(
+            "kernel_forward",
+            "technical_incident",
+            "current-state",
+            "happy",
+            "Earlier state was inspected; the current state after that point is needed to classify the incident outcome.",
+        ),
+        t(
+            "kernel_forward",
+            "software_migration",
+            "after-rewind",
+            "happy",
+            "The process rewound to {ref_0}; the next state after that point explains what changed.",
+        ),
+        t(
+            "kernel_forward",
+            "bug_investigation",
+            "adversarial-anchor",
+            "adversarial",
+            "Tempting to alter the anchor, but the visible active cursor already defines the forward path.",
+        ),
+        t(
+            "kernel_forward",
+            "product_planning",
+            "next-event",
+            "happy",
+            "A planning checkpoint is visible; the following event determines whether the decision still holds.",
+        ),
+        t(
+            "kernel_forward",
+            "smart_writing_session",
+            "across-sessions",
+            "happy",
+            "Current session context is incomplete; the next temporal slice carries the handoff continuation.",
+        ),
     ],
     "kernel_trace": [
-        t("kernel_trace", "technical_incident", "causal", "happy", "Call kernel_trace from {ref_0} to {ref_1} with page 8."),
-        t("kernel_trace", "bug_investigation", "contradiction", "happy", "Use kernel_trace to explain how {ref_1} contradicted {ref_0}."),
-        t("kernel_trace", "software_migration", "supersession", "happy", "Call kernel_trace from stale plan {ref_0} to final plan {ref_1}."),
-        t("kernel_trace", "product_planning", "no-path", "adversarial", "Call kernel_trace only between the visible refs {ref_0} and {ref_1}."),
-        t("kernel_trace", "smart_writing_session", "continued-page", "happy", "Use kernel_trace from {ref_0} to {ref_1} with an explicit first page."),
+        t(
+            "kernel_trace",
+            "technical_incident",
+            "causal",
+            "happy",
+            "Decision {ref_0} and final state {ref_1} are visible; the causal chain between them is not.",
+        ),
+        t(
+            "kernel_trace",
+            "bug_investigation",
+            "contradiction",
+            "happy",
+            "Visible nodes {ref_0} and {ref_1} contradict each other; the path that produced the contradiction is hidden.",
+        ),
+        t(
+            "kernel_trace",
+            "software_migration",
+            "supersession",
+            "happy",
+            "Stale plan {ref_0} and final plan {ref_1} are visible; the supersession relation needs reconstruction.",
+        ),
+        t(
+            "kernel_trace",
+            "product_planning",
+            "no-path",
+            "adversarial",
+            "Tempting to force a path between {ref_0} and {ref_1}, but visible refs do not prove one exists.",
+        ),
+        t(
+            "kernel_trace",
+            "smart_writing_session",
+            "continued-page",
+            "happy",
+            "A previous trace between {ref_0} and {ref_1} returned more hops; the remaining chain is needed.",
+        ),
     ],
     "kernel_inspect": [
-        t("kernel_inspect", "technical_incident", "after-near", "happy", "Call kernel_inspect on visible ref {ref_0}."),
-        t("kernel_inspect", "bug_investigation", "after-trace", "happy", "Inspect {ref_1} because the trace summary is not enough."),
-        t("kernel_inspect", "smart_writing_session", "read-before-write", "happy", "Use kernel_inspect on {ref_0} to prove read-before-write context."),
-        t("kernel_inspect", "product_planning", "ambiguous-ref", "adversarial", "Inspect the visible ref {ref_0}; do not choose the ambiguous missing ref."),
-        t("kernel_inspect", "software_migration", "metadata", "happy", "Call kernel_inspect on {ref_1} to read rich metadata."),
+        t(
+            "kernel_inspect",
+            "technical_incident",
+            "after-near",
+            "happy",
+            "Near expansion returned candidate refs; the metadata needed to choose lives on visible node {ref_0}.",
+        ),
+        t(
+            "kernel_inspect",
+            "bug_investigation",
+            "after-trace",
+            "happy",
+            "Trace summarized the path, but the supersession metadata is only available on visible node {ref_1}.",
+        ),
+        t(
+            "kernel_inspect",
+            "smart_writing_session",
+            "read-before-write",
+            "happy",
+            "A write between refs is prepared, but visible target {ref_0} must be verified before commit.",
+        ),
+        t(
+            "kernel_inspect",
+            "product_planning",
+            "ambiguous-ref",
+            "adversarial",
+            "Tempting to inspect an ambiguous missing ref, but {ref_0} is the only visible candidate.",
+        ),
+        t(
+            "kernel_inspect",
+            "software_migration",
+            "metadata",
+            "happy",
+            "Node {ref_1} is visible, but timestamps, source and agent metadata are not present in the summary.",
+        ),
     ],
     "kernel_ingest": [
         t("kernel_ingest", "smart_writing_session", "rich-relation", "happy", "Execute the prepared kernel_ingest action exactly."),
@@ -213,20 +488,125 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
         t("kernel_write_memory", "software_migration", "minimal", "happy", "Execute the minimal prepared kernel_write_memory action exactly."),
     ],
     "stop": [
-        t("stop", "technical_incident", "answer-ready", "happy", "Stop with answer_ready because {ref_0} already proves the answer."),
-        t("stop", "bug_investigation", "no-candidate", "happy", "Stop because there is no visible candidate worth another tool call."),
-        t("stop", "software_migration", "budget-exhausted", "happy", "Stop because the remaining budget is exhausted."),
+        t(
+            "stop",
+            "technical_incident",
+            "answer-ready",
+            "happy",
+            "Visible refs include symptom, cause and resolution; another read would not reduce uncertainty about the answer.",
+        ),
+        t(
+            "stop",
+            "bug_investigation",
+            "no-candidate",
+            "happy",
+            "Tools have been exhausted on this about; remaining budget would not produce a ref that changes the answer.",
+        ),
+        t(
+            "stop",
+            "software_migration",
+            "budget-exhausted",
+            "happy",
+            "Budget has dropped too low for another bounded call; the question cannot be resolved within limits.",
+        ),
         t("stop", "product_planning", "premature-temptation", "adversarial", "Stop with answer_ready using only visible evidence {ref_0}; do not call another tool."),
-        t("stop", "smart_writing_session", "after-escalate-attempt", "adversarial", "Stop because the prepared writer state has no executable candidate."),
+        t(
+            "stop",
+            "smart_writing_session",
+            "after-escalate-attempt",
+            "adversarial",
+            "Writer state has no executable candidate; a previous escalation attempt was rejected, leaving a bounded terminal answer.",
+        ),
     ],
     "escalate": [
-        t("escalate", "technical_incident", "beyond-capability", "happy", "Escalate with beyond_capability because causal interpretation is outside Operator."),
-        t("escalate", "bug_investigation", "after-reads", "happy", "Escalate after multiple reads because the next decision needs a larger reasoner."),
-        t("escalate", "product_planning", "ambiguous-scope", "adversarial", "Escalate because the about scope is ambiguous and no safe tool call resolves it."),
-        t("escalate", "software_migration", "do-not-speculate", "adversarial", "Escalate rather than speculating about an invisible migration constraint."),
-        t("escalate", "smart_writing_session", "budget-alternative", "adversarial", "Escalate because the write relation cannot be justified by visible context."),
+        t(
+            "escalate",
+            "technical_incident",
+            "beyond-capability",
+            "happy",
+            "The next decision requires causal interpretation across contradictory evidence; bounded retrieval cannot resolve it.",
+        ),
+        t(
+            "escalate",
+            "bug_investigation",
+            "after-reads",
+            "happy",
+            "Multiple reads completed; remaining ambiguity needs reasoning outside Operator's bounded tool surface.",
+        ),
+        t(
+            "escalate",
+            "product_planning",
+            "ambiguous-scope",
+            "adversarial",
+            "About scope cannot be disambiguated from visible refs; safe bounded tools would not resolve the ambiguity.",
+        ),
+        t(
+            "escalate",
+            "software_migration",
+            "do-not-speculate",
+            "adversarial",
+            "An invisible migration constraint is implied but cannot be retrieved from visible memory; speculating would invent fact.",
+        ),
+        t(
+            "escalate",
+            "smart_writing_session",
+            "budget-alternative",
+            "adversarial",
+            "Write relation cannot be justified by current visible context, but write must occur eventually; escalation is bounded.",
+        ),
     ],
 }
+
+EXTRA_TEMPLATES: list[Template] = [
+    t(
+        "kernel_wake",
+        "smart_writing_session",
+        "writer-pre-read-bootstrap",
+        "happy",
+        "A later write is planned for {about}, but target memory is not loaded. Refs cannot be validated until context exists.",
+        mode="writer_pre_read",
+    ),
+    t(
+        "kernel_ask",
+        "smart_writing_session",
+        "writer-pre-read-relation-class",
+        "happy",
+        "Prepared write carries a relation class hint; canonical memory context is needed before committing that relation.",
+        mode="writer_pre_read",
+    ),
+    t(
+        "kernel_near",
+        "smart_writing_session",
+        "writer-pre-read-target-candidates",
+        "happy",
+        "Prepared relation has multiple visible target candidates; the correct anchor depends on their local neighborhoods.",
+        mode="writer_pre_read",
+    ),
+    t(
+        "kernel_inspect",
+        "smart_writing_session",
+        "writer-pre-read-proof",
+        "happy",
+        "Prepared write declares evidence ref {ref_0}; its metadata must be verified before any write is safe.",
+        mode="writer_pre_read",
+    ),
+    t(
+        "kernel_trace",
+        "bug_investigation",
+        "full-mode-causal-chain",
+        "happy",
+        "Read and write are both available, but causation between {ref_0} and {ref_1} must be reconstructed first.",
+        mode="full",
+    ),
+    t(
+        "stop",
+        "product_planning",
+        "full-mode-sufficient",
+        "happy",
+        "Write is available, but visible evidence already proves the answer; no further tool call would improve it.",
+        mode="full",
+    ),
+]
 
 
 def main() -> int:
@@ -242,7 +622,7 @@ def main() -> int:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--count", default=1500, type=positive_int)
+    parser.add_argument("--count", default=DEFAULT_SCENARIO_COUNT, type=positive_int)
     parser.add_argument("--seed", default=42, type=int)
     return parser.parse_args()
 
@@ -267,11 +647,15 @@ def build_scenarios(count: int, seed: int) -> list[dict[str, Any]]:
 
 def interleaved_templates() -> list[Template]:
     templates: list[Template] = []
+    templates.extend(TEMPLATES_BY_TARGET[target][0] for target in TARGETS)
+    templates.extend(EXTRA_TEMPLATES)
     for variant_index in range(5):
+        if variant_index == 0:
+            continue
         for target in TARGETS:
             templates.append(TEMPLATES_BY_TARGET[target][variant_index])
-    if len(templates) != 60:
-        raise RuntimeError(f"expected 60 templates, got {len(templates)}")
+    if len(templates) != 66:
+        raise RuntimeError(f"expected 66 templates, got {len(templates)}")
     return templates
 
 
@@ -292,13 +676,13 @@ def render_scenario(
         "dim_1": dims[1],
         "cursor_anchor": cursor_anchor,
     }
-    mode = mode_for(template.target)
+    mode = mode_for(template)
     subject: dict[str, Any] = {
         "about": about,
         "mode": mode,
         "task_family": f"realistic.{template.target}.{template.slug}",
         "goal": template.goal.format(**context),
-        "allowed_tools": WRITE_TOOLS if mode == "write" else READ_TOOLS,
+        "allowed_tools": allowed_tools_for_mode(mode),
         "visible_state": visible_state(template.target, refs, dims, budget, cursor_anchor),
     }
     prepared = prepared_action_for(template, about, refs, dims, variation)
@@ -317,8 +701,20 @@ def render_scenario(
     }
 
 
-def mode_for(target: str) -> str:
-    return "write" if target in {"kernel_ingest", "kernel_write_memory"} else "read"
+def mode_for(template: Template) -> str:
+    if template.mode is not None:
+        return template.mode
+    return "write" if template.target in {"kernel_ingest", "kernel_write_memory"} else "read"
+
+
+def allowed_tools_for_mode(mode: str) -> list[str]:
+    if mode == "write":
+        return WRITE_TOOLS
+    if mode == "writer_pre_read":
+        return WRITER_PRE_READ_TOOLS
+    if mode == "full":
+        return FULL_TOOLS
+    return READ_TOOLS
 
 
 def refs_for(template: Template, variation: int, rng: random.Random) -> list[str]:
@@ -343,9 +739,8 @@ def budget_for(template: Template, rng: random.Random) -> tuple[int, int]:
 
 def about_for(template: Template, variation: int, rng: random.Random) -> str:
     prefix = rng.choice(ABOUT_PREFIXES_BY_THEME[template.theme])
-    # Reuse about ids across nearby variations so the final corpus contains
-    # multi-step/multi-scenario processes instead of isolated rows only.
-    return f"{prefix}:case-{variation // 4:03}"
+    case_number = f"case-{variation:03}"
+    return f"{prefix}:{template.target}:{template.slug}:{case_number}"
 
 
 def visible_state(

@@ -184,8 +184,8 @@ First generate deterministic scenarios outside the repo:
 
 ```bash
 python3 scripts/operator/build_realistic_scenarios.py \
-    --output ../rehydration-kernel-artifacts/operator/scenarios-v1/scenarios.jsonl \
-    --count 1500 \
+    --output ../rehydration-kernel-artifacts/operator/scenarios-v2/scenarios.jsonl \
+    --count 1650 \
     --seed 42
 ```
 
@@ -193,6 +193,17 @@ The scenario builder is deterministic and does not call an LLM. It uses
 handcrafted templates plus structural variation knobs. At the end it calls
 `operator-realistic-corpus --validate-only` so malformed scenarios fail before
 any paid teacher call is possible.
+
+Then verify the semantic acceptance rules before spending money:
+
+```bash
+python3 scripts/operator/verify_scenarios_v2.py \
+    ../rehydration-kernel-artifacts/operator/scenarios-v2/scenarios.jsonl
+```
+
+The verifier checks unique about ids, at least 100 `writer_pre_read` scenarios,
+at least 50 `full` scenarios, full target coverage, five themes and
+non-instructional happy goals for non-write targets.
 
 Then run a paid 30-row smoke:
 
@@ -212,7 +223,8 @@ bash scripts/operator/build_realistic_v7_corpus.sh
 The v7 builder gates the run in this order:
 
 ```text
-operator-realistic-corpus
+verify_scenarios_v2
+  -> operator-realistic-corpus
   -> contract coverage on accepted trajectories
   -> prepare SFT
   -> no-gold audit
@@ -242,6 +254,11 @@ Do not raise `--max-drop-rate` to make a run pass. The production gate is 5%.
 If the smoke or full run fails, inspect `dropped.jsonl` and `report.json`, fix
 the scenario templates if they are wrong, regenerate a new scenario version and
 rerun.
+
+After the full run, inspect the frontier ceiling. A useful v7.3 corpus should
+land below near-perfect performance; `75%..92%` overall accuracy is the target
+sanity range. If the ceiling is `95%+`, treat the corpus as still too
+instructional and rework the goals before training.
 
 ## 1. Prepare the SFT dataset
 

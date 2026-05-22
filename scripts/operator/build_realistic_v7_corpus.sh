@@ -5,7 +5,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 RUN_ID="${OPERATOR_RUN_ID:-realistic-v7-$(date -u +%Y%m%dT%H%M%SZ)}"
 ART="${OPERATOR_ARTIFACT_ROOT:-${ROOT}/../rehydration-kernel-artifacts/operator}"
 OUT="${ART}/${RUN_ID}"
-SCENARIOS="${OPERATOR_SCENARIOS:-${ART}/scenarios-v1/scenarios.jsonl}"
+SCENARIOS="${OPERATOR_SCENARIOS:-${ART}/scenarios-v2/scenarios.jsonl}"
 LIMIT="${OPERATOR_RUN_LIMIT:-0}"
 MODEL="${OPERATOR_MODEL:-gpt-4o-mini}"
 API_BASE="${OPERATOR_API_BASE:-https://api.openai.com/v1}"
@@ -18,6 +18,9 @@ PROMPT="${OPERATOR_PROMPT}"
 
 mkdir -p "${OUT}"
 cd "${ROOT}"
+
+echo "[0/5] Verifying scenario semantics..."
+python3 "${ROOT}/scripts/operator/verify_scenarios_v2.py" "${SCENARIOS}"
 
 LIMIT_ARGS=()
 if [[ "${LIMIT}" != "0" ]]; then
