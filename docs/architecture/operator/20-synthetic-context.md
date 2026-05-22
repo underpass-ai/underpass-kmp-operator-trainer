@@ -206,6 +206,10 @@ no synthetic <-> evaluation dependency
   policy evaluation.
 - `ports/teacher_policy.rs` — asks a teacher model to choose one operator
   action from a model-facing `CalibrationSubject`.
+- `ports/scenario_source.rs` — reads externally authored realistic corpus
+  scenarios. The port returns typed `Scenario` values, not raw JSON.
+- `ports/scenario.rs` and `ports/scenario_id.rs` — scenario input for
+  production corpus generation: id, generation target and model-facing subject.
 
 ### Services
 
@@ -234,6 +238,12 @@ no synthetic <-> evaluation dependency
   `TeacherCalibrationReport`.
 - `use_cases/teacher_calibration_report.rs` — calibration metrics and gate
   result for v7.2.5.
+- `use_cases/build_realistic_corpus_use_case.rs` — v7.3 production corpus
+  builder. It reads scenarios, calls the calibrated teacher, validates target
+  selection and strict action contract, drops bad rows with explicit
+  `DropReason`, and gates the run with `MaxDropRate`.
+- `use_cases/realistic_corpus_report.rs` — accepted trajectories, dropped rows,
+  drop-rate gate, per-target counts and dropped-by-reason counts.
 
 Teacher calibration subjects may include an optional typed `prepared_action`.
 This is the boundary used for prepared write/ingest calibration: the teacher can
@@ -271,9 +281,16 @@ see the candidate KMP/MCP action it is being asked to execute, while gold
   `SyntheticGenerationTarget` variants: KMP tool calls, `stop` and `escalate`.
 - `adapters/jsonl_calibration_episode_source.rs` —
   runtime JSONL adapter for `CalibrationCaseDto`.
+- `adapters/jsonl_scenario_source.rs` —
+  runtime JSONL adapter for externally authored `ScenarioDto` rows used by
+  `operator-realistic-corpus`.
 - `adapters/openai_compatible_teacher_policy.rs` —
   OpenAI-compatible teacher adapter for calibration. It performs no JSON
   repair; invalid assistant content is a shape failure.
+- `mappers/scenario_mapper.rs` — maps scenario DTOs to typed application
+  `Scenario` values.
+- `mappers/realistic_corpus_report_mapper.rs` — maps corpus reports and drop
+  entries to JSON DTOs for audit artifacts.
 - `prompts/teacher_calibration_vN.md` — versioned teacher prompts used by the
   calibration CLI. New prompt versions are evidence artifacts, not automatic
   approval to generate training corpus.
@@ -300,6 +317,8 @@ asserts:
 
 - Scenario libraries for incidents, bug investigations, migrations, product
   decisions, benchmark-like memory tasks and smart writing sessions.
+- `scenarios-v1/scenarios.jsonl` production artifact and the script that builds
+  it from handcrafted scenario templates.
 - Synthetic-context contract DTOs for persisting a
   `SyntheticDatasetGenerationReport` to disk (when a real consumer needs
   it).

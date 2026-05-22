@@ -682,6 +682,52 @@ The in-memory fixture generator still only supports KMP targets and now rejects
 `stop`/`escalate` fail-fast. The teacher-backed generator is the path that can
 produce all 12 target kinds.
 
+## Updates 2026-05-22-T14
+
+v7.3 now has the production corpus builder slice.
+
+Implemented:
+
+- `ScenarioSource`, `Scenario` and `ScenarioId` as application-layer input
+  ports/values for externally authored scenario rows;
+- `JsonlScenarioSource` plus `ScenarioDto` and `ScenarioMapper`;
+- `BuildRealisticCorpusUseCase`, which calls the calibrated `TeacherPolicy`
+  directly and does not use the strict `SyntheticCaseGenerator` path;
+- drop-and-continue row policy with explicit `DropReason`;
+- `MaxDropRate` gate, defaulted by the CLI to `0.05`;
+- `RealisticCorpusReport` with accepted/dropped counts, drop rate, per-target
+  totals and dropped-by-reason counts;
+- `operator-realistic-corpus` CLI;
+- output layout:
+
+```text
+realistic-v7-<run-id>/
+  trajectories.jsonl
+  dropped.jsonl
+  report.json
+```
+
+The CLI prechecks scenario JSONL, prompt, API key, API base and output
+directory before spending any LLM call. It writes every dropped row to
+`dropped.jsonl`; drops are not silent.
+
+The behavior is intentionally different from the teacher-backed
+`SyntheticCaseGenerator`:
+
+| Path | Failure policy | Purpose |
+| --- | --- | --- |
+| `TeacherBackedSyntheticCaseGenerator` | fail-fast | strict adapter/testing path |
+| `BuildRealisticCorpusUseCase` | drop-and-continue + max-drop-rate gate | production corpus generation |
+
+v7.3 is not closed yet. The remaining work is outside this PR:
+
+1. build `scenarios-v1/scenarios.jsonl` from handcrafted scenario templates;
+2. run a 30-row smoke with `gpt-4o-mini`;
+3. run the 1500-row production-min corpus;
+4. run downstream gates: contract coverage, no-gold audit, SFT prep,
+   frontier ceiling and oracle round-trip smoke;
+5. document the passing run id, drop rate and downstream gate results here.
+
 ## Non-goals
 
 This corpus is not:

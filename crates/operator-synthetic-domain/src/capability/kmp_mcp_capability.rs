@@ -51,6 +51,21 @@ impl KmpMcpCapability {
         }
     }
 
+    pub fn from_tool(tool: KernelTool) -> Self {
+        match tool {
+            KernelTool::Ingest => Self::Ingest,
+            KernelTool::Wake => Self::Wake,
+            KernelTool::Ask => Self::Ask,
+            KernelTool::Near => Self::Near,
+            KernelTool::Goto => Self::Goto,
+            KernelTool::Rewind => Self::Rewind,
+            KernelTool::Forward => Self::Forward,
+            KernelTool::Trace => Self::Trace,
+            KernelTool::Inspect => Self::Inspect,
+            KernelTool::WriteMemory => Self::WriteMemory,
+        }
+    }
+
     pub fn mode(self) -> OperatorMode {
         match self {
             Self::Ingest | Self::WriteMemory => OperatorMode::Write,
@@ -116,5 +131,12 @@ mod tests {
         let mut expected: Vec<KernelTool> = KernelTool::ALL.to_vec();
         expected.sort();
         assert_eq!(tools, expected);
+    }
+
+    #[test]
+    fn from_tool_round_trips_every_capability() {
+        for capability in KmpMcpCapability::ALL {
+            assert_eq!(KmpMcpCapability::from_tool(capability.tool()), capability);
+        }
     }
 }

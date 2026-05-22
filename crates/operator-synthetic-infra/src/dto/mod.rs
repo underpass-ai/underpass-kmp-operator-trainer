@@ -1,5 +1,6 @@
 pub mod calibration_case_dto;
 pub mod calibration_subject_dto;
+pub mod drop_entry_dto;
 pub mod openai_chat_completion_error_dto;
 pub mod openai_chat_completion_error_envelope_dto;
 pub mod openai_chat_completion_request_dto;
@@ -7,6 +8,9 @@ pub mod openai_chat_completion_request_message_dto;
 pub mod openai_chat_completion_response_choice_dto;
 pub mod openai_chat_completion_response_dto;
 pub mod openai_chat_completion_response_message_dto;
+pub mod realistic_corpus_report_dto;
+pub mod realistic_corpus_run_metadata_dto;
+pub mod scenario_dto;
 pub mod teacher_calibration_capability_metric_dto;
 pub mod teacher_calibration_case_result_dto;
 pub mod teacher_calibration_category_metric_dto;

@@ -1,6 +1,8 @@
 //! Closed generation target vocabulary for synthetic trajectory cases.
 
 use operator_shared_domain::action::operator_action::OperatorAction;
+use operator_shared_domain::error::domain_error::DomainError;
+use operator_shared_domain::error::domain_result::DomainResult;
 use operator_shared_domain::mode::operator_mode::OperatorMode;
 use operator_shared_domain::tool::kernel_tool::KernelTool;
 
@@ -53,6 +55,31 @@ impl SyntheticGenerationTarget {
 
     pub fn kernel_tool(self) -> Option<KernelTool> {
         self.kmp_capability().map(KmpMcpCapability::tool)
+    }
+
+    pub fn parse(value: &str) -> DomainResult<Self> {
+        match value {
+            "stop" => Ok(Self::Stop),
+            "escalate" => Ok(Self::Escalate),
+            other => match KernelTool::parse(other) {
+                Ok(tool) => Ok(Self::Kmp(KmpMcpCapability::from_tool(tool))),
+                Err(DomainError::UnsupportedValue { .. }) => Err(DomainError::UnsupportedValue {
+                    context: "synthetic_generation_target",
+                    value: value.to_string(),
+                }),
+                Err(err) => Err(err),
+            },
+        }
+    }
+
+    pub fn from_action(action: &OperatorAction) -> Self {
+        match action {
+            OperatorAction::ToolCall(_) => Self::Kmp(KmpMcpCapability::from_tool(
+                action.tool().expect("tool call has tool"),
+            )),
+            OperatorAction::Stop(_) => Self::Stop,
+            OperatorAction::Escalate(_) => Self::Escalate,
+        }
     }
 
     pub fn matches_action(self, action: &OperatorAction) -> bool {
@@ -114,6 +141,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_accepts_kmp_tool_names_and_non_tool_targets() {
+        assert_eq!(
+            SyntheticGenerationTarget::parse("kernel_inspect").unwrap(),
+            SyntheticGenerationTarget::from(KmpMcpCapability::Inspect)
+        );
+        assert_eq!(
+            SyntheticGenerationTarget::parse("stop").unwrap(),
+            SyntheticGenerationTarget::Stop
+        );
+        assert!(SyntheticGenerationTarget::parse("kernel_unknown").is_err());
+    }
+
+    #[test]
     fn matches_target_action_kind() {
         let inspect = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
             InspectArguments::new(MemoryRef::parse("node:1").unwrap()),
@@ -128,6 +168,10 @@ mod tests {
 
         assert!(
             SyntheticGenerationTarget::from(KmpMcpCapability::Inspect).matches_action(&inspect)
+        );
+        assert_eq!(
+            SyntheticGenerationTarget::from_action(&inspect),
+            SyntheticGenerationTarget::from(KmpMcpCapability::Inspect)
         );
         assert!(SyntheticGenerationTarget::Stop.matches_action(&stop));
         assert!(SyntheticGenerationTarget::Escalate.matches_action(&escalate));
