@@ -728,6 +728,53 @@ v7.3 is not closed yet. The remaining work is outside this PR:
    frontier ceiling and oracle round-trip smoke;
 5. document the passing run id, drop rate and downstream gate results here.
 
+## Updates 2026-05-22-T15
+
+v7.3 closure now has the content/orchestration slice specified in code.
+
+Implemented for this slice:
+
+- `operator-realistic-corpus --validate-only`, which parses scenario JSONL and
+  exits before constructing a teacher or making any LLM call;
+- `scripts/operator/build_realistic_scenarios.py`, a deterministic scenario
+  builder with 60 inline handcrafted templates: five templates per generation
+  target;
+- structural variation knobs for about ids, refs, dimensions, budgets and
+  temporal anchors;
+- seeded reproducibility through `--seed`;
+- `scripts/operator/build_realistic_v7_corpus.sh`, the end-to-end shell
+  orchestrator for corpus generation and downstream gates, with
+  `OPERATOR_PROMPT` required explicitly so prompt selection stays auditable;
+- runbook documentation for the v7 path.
+
+The scenario builder does not call an LLM. Scenarios are input to the teacher,
+not output from the teacher. The script writes external artifacts only and
+validates the generated JSONL through the Rust `JsonlScenarioSource` path.
+
+Expected production artifact:
+
+```text
+../rehydration-kernel-artifacts/operator/scenarios-v1/scenarios.jsonl
+```
+
+Manual closure checklist still pending after this PR:
+
+| Gate | Evidence path | Status |
+| --- | --- | --- |
+| scenarios-v1 generated with >=1500 rows | `../rehydration-kernel-artifacts/operator/scenarios-v1/scenarios.jsonl` | pending |
+| scenario JSONL validates | `operator-realistic-corpus --validate-only` | pending |
+| 30-row smoke | `<run-id>/report.json` | pending |
+| 1500-row full run | `<run-id>/report.json` | pending |
+| drop rate <= 5% and accepted >= 1425 | `<run-id>/report.json` | pending |
+| contract coverage 10/10 + 0 invalid | `<run-id>/contract-coverage.txt` | pending |
+| no-gold audit 0 findings | `<run-id>/no_gold_audit.json` | pending |
+| frontier ceiling recorded | `<run-id>/frontier-ceiling/summary.json` | pending |
+| oracle round-trip smoke pass | shell output / run log | pending |
+
+When the full run passes, replace the pending status with the concrete run id,
+drop rate, accepted/dropped per target and frontier ceiling number. That is the
+point where v7.3 is closed and v8.0 SFT training can start.
+
 ## Non-goals
 
 This corpus is not:

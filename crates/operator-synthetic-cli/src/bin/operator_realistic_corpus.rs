@@ -63,6 +63,8 @@ struct Cli {
     max_drop_rate: f64,
     #[arg(long, default_value_t = 0)]
     limit: usize,
+    #[arg(long)]
+    validate_only: bool,
 }
 
 fn main() -> ExitCode {
@@ -83,7 +85,13 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: &Cli) -> Result<bool, CliError> {
-    precheck(cli)?;
+    let scenarios_count = precheck(cli)?;
+    if cli.validate_only {
+        eprintln!(
+            "{{\"event\":\"validate_only\",\"scenarios_count\":{scenarios_count},\"status\":\"ok\"}}"
+        );
+        return Ok(true);
+    }
     let started_at_unix = unix_now()?;
     let source: Box<dyn ScenarioSource> = Box::new(JsonlScenarioSource::new(&cli.scenarios));
     let teacher = teacher_policy(cli)?;
@@ -114,7 +122,7 @@ fn run(cli: &Cli) -> Result<bool, CliError> {
     Ok(report.gate_passed())
 }
 
-fn precheck(cli: &Cli) -> Result<(), CliError> {
+fn precheck(cli: &Cli) -> Result<usize, CliError> {
     require_readable_non_empty(&cli.scenarios, "--scenarios")?;
     require_readable_non_empty(&cli.prompt, "--prompt")?;
     require_readable_non_empty(&cli.api_key_file, "--api-key-file")?;
@@ -129,10 +137,10 @@ fn precheck(cli: &Cli) -> Result<(), CliError> {
     fs::create_dir_all(&cli.output).map_err(|err| {
         CliError::Generic(format!("create --output {}: {err}", cli.output.display()))
     })?;
-    JsonlScenarioSource::new(&cli.scenarios)
+    let scenarios = JsonlScenarioSource::new(&cli.scenarios)
         .read()
         .map_err(|err| CliError::Generic(format!("parse --scenarios: {err}")))?;
-    Ok(())
+    Ok(scenarios.len())
 }
 
 fn teacher_policy(cli: &Cli) -> Result<Box<dyn TeacherPolicy>, CliError> {
