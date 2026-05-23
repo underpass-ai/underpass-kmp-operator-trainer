@@ -31,7 +31,9 @@ impl DropEntry {
             predicted_action.is_some()
                 || matches!(
                     reason,
-                    DropReason::TeacherError { .. } | DropReason::ParseFailure { .. }
+                    DropReason::TeacherError { .. }
+                        | DropReason::TeacherTruncation { .. }
+                        | DropReason::ParseFailure { .. }
                 ),
             "drops with parsed teacher actions must persist predicted_action"
         );

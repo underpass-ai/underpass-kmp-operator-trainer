@@ -3,6 +3,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DropReasonKind {
     TeacherError,
+    TeacherTruncation,
     ParseFailure,
     TargetMismatch,
     SemanticMismatch,
@@ -14,6 +15,7 @@ impl DropReasonKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::TeacherError => "teacher_error",
+            Self::TeacherTruncation => "teacher_truncation",
             Self::ParseFailure => "parse_failure",
             Self::TargetMismatch => "target_mismatch",
             Self::SemanticMismatch => "semantic_mismatch",
