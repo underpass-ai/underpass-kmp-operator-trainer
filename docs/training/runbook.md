@@ -343,18 +343,23 @@ Workstation alternative:
 
 ```bash
 python scripts/operator/predict_operator_sft.py \
-    --dataset-jsonl /tmp/operator-sft/eval.jsonl \
+    --dataset-jsonl /tmp/operator-sft/openai_eval.jsonl \
     --model-id Qwen/Qwen2.5-0.5B-Instruct \
     --adapter /tmp/operator-qwen05-lora \
     --output  /tmp/operator-qwen05-predictions \
-    --batch-size 8 --force
+    --batch-size 8 \
+    --max-new-tokens 2048 \
+    --temperature 0.0 \
+    --stop-after-json \
+    --force
 ```
 
 ## 4. Score and gate (Rust validation loop)
 
-Today there is **no `operator-evaluation-cli` binary yet** (tracked
-in the post-disaster gap analysis). The Rust library has the full
-flow — wire it via a small adapter binary or call it from a test:
+Use `operator-policy-eval` (§4b) for offline scoring. The Rust
+training application also exposes the full validate-trained-run use
+case for callers that want to invoke the predictor and scorer behind
+one application boundary:
 
 ```rust
 use operator_evaluation_infra::adapters::jsonl_predictions_reader::JsonlPredictionsReader;
@@ -403,9 +408,7 @@ println!("exact_match_rate: {:.4}",
 println!("verdict: {}", if passed { "PASS" } else { "FAIL" });
 ```
 
-Until the CLI lands, integrate this snippet into a small custom
-binary or a `#[test]` for ad-hoc runs. Both the
-`is_passing(...)` projection and the underlying counts live on
+Both the `is_passing(...)` projection and the underlying counts live on
 `ValidateTrainedRunOutcome` so callers can log + gate from a single
 return value.
 
@@ -434,7 +437,7 @@ against any ground-truth JSONL without re-running the predictor:
 ```bash
 cargo run --release -p operator-evaluation-cli --bin operator-policy-eval -- \
     --predictions  /tmp/operator-qwen05-predictions/predictions.jsonl \
-    --ground-truth /tmp/operator-sft/eval_trajectories.jsonl \
+    --ground-truth /tmp/trajectories.jsonl \
     --min-pass-rate 0.9
 ```
 
@@ -454,7 +457,7 @@ success rate / failure modes:
 ```bash
 cargo run --release -p operator-replay-cli --bin operator-replay -- \
     --predictions  /tmp/operator-qwen05-predictions/predictions.jsonl \
-    --ground-truth /tmp/operator-sft/eval.jsonl \
+    --ground-truth /tmp/trajectories.jsonl \
     --mcp-endpoint http://localhost:8080 \
     --min-success-rate 0.95
 ```
@@ -479,7 +482,7 @@ endpoint and reuse `operator-policy-eval` on the result:
 
 ```bash
 cargo run --release -p operator-evaluation-cli --bin operator-llm-baseline -- \
-    --sft        /tmp/operator-sft/eval.jsonl \
+    --sft        /tmp/operator-sft/openai_eval.jsonl \
     --output     /tmp/operator-baseline-gpt4o \
     --api-base   https://api.openai.com/v1 \
     --api-key-file /tmp/openai.txt \
@@ -518,3 +521,93 @@ manual workarounds today:
    `operator-llm-baseline` covers frontier-LLM ceilings (§4d). The
    only outstanding work is the teacher-model-backed synthetic
    generator listed above.
+
+## Running the Operator SFT pipeline
+
+The Operator SFT pipeline is two Kubernetes Jobs in `k8s/`. Both use hostPath
+volumes for the repo and `/tmp`, so they run on a single-node cluster with local
+GPUs.
+
+### Prerequisites
+
+- Single-node Kubernetes cluster with NVIDIA GPU device plugin
+- 4x compute capability 8.0+ GPUs (Ampere or newer), ~24GB VRAM each
+- `/tmp/huggingface/` writable (HF cache externalized)
+- Input dataset at `/tmp/<DATASET_DIR>/openai_train.jsonl` +
+  `openai_eval.jsonl` (produced by `scripts/operator/prepare_operator_sft_dataset.py`
+  from a corpus `trajectories.jsonl`)
+
+### Step 1 — Train SFT LoRA
+
+```bash
+kubectl -n underpass-runtime apply -f k8s/qwen05-lora-train.yaml
+kubectl -n underpass-runtime get jobs operator-qwen05-lora-train -w
+kubectl -n underpass-runtime logs -f job/operator-qwen05-lora-train
+```
+
+Defaults: reads from `/host-tmp/operator-sft/`, writes to
+`/host-tmp/operator-qwen05-lora/`. To override, set `DATASET_DIR` and
+`OUTPUT_DIR` in the manifest before applying, or render the manifest with local
+environment overrides.
+
+What it does:
+
+- 4 GPUs via `torchrun --nproc_per_node=4` DDP
+- Qwen2.5-0.5B-Instruct + LoRA r=16, lr 2e-4 cosine, 3 epochs, bf16
+- Effective batch 16 (4 GPUs x batch 4 x grad_accum 1)
+- ~12 min wall clock on the WRX80 4x RTX 3090 node
+- Outputs final adapter + 3 epoch checkpoints + tokenizer
+
+### Step 2 — Predict over holdout
+
+```bash
+kubectl -n underpass-runtime apply -f k8s/qwen05-lora-predict.yaml
+kubectl -n underpass-runtime get jobs operator-qwen05-lora-predict -w
+kubectl -n underpass-runtime logs -f job/operator-qwen05-lora-predict
+```
+
+Defaults: reads `/host-tmp/operator-sft/openai_eval.jsonl`, loads
+`/host-tmp/operator-qwen05-lora/`, and writes
+`/host-tmp/operator-qwen05-predictions/`. For versioned runs, override
+`DATASET_JSONL`, `ADAPTER_DIR`, and `OUTPUT_DIR` before applying.
+
+What it does:
+
+- 1 GPU, base model + LoRA loaded
+- `predict_operator_sft.py` over eval JSONL, batch 8
+- Free JSON generation with `--max-new-tokens 2048`, `--temperature 0.0`, and
+  `--stop-after-json`
+- ~5-15 min for 242 eval rows
+- Outputs `predictions.jsonl` + `summary.json` + `failures.jsonl`
+
+### Step 3 — Score predictions
+
+```bash
+cargo run --release -p operator-evaluation-cli --bin operator-policy-eval -- \
+  --predictions /tmp/operator-qwen05-predictions/predictions.jsonl \
+  --ground-truth ../rehydration-kernel-artifacts/operator/<corpus>/trajectories.jsonl
+```
+
+With PR #43 shape-violation handling, predictions with invalid action shape
+count as `contract_valid=false` instead of aborting the run. Invalid JSON rows
+still abort because no action or `step_id` can be trusted.
+
+### Reproducibility
+
+Each Job's `summary.json` records:
+
+- dataset path and selected row count
+- `model_id` and adapter path for predict
+- generation controls (`max_new_tokens`, `temperature`, `stop_after_json`)
+- timestamps or completion status from the Kubernetes Job
+
+The chain `{dataset_sha -> train output -> adapter_sha -> predict output ->
+policy_eval report}` is reproducible from these.
+
+### Caveats — v8.0 vintage
+
+- The predictor does **not** use constrained decoding. Output is free JSON
+  generation with `--stop-after-json` only. This is a v8.1 backlog item.
+- Comparison vs a frontier model, for example `gpt-4o-mini`, is apples-to-apples
+  only when both predict without structured-output strict. Document this
+  precision explicitly in any closure doc.
