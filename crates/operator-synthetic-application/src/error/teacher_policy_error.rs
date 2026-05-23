@@ -1,5 +1,6 @@
 //! Error returned by a teacher policy adapter.
 
+use operator_shared_domain::value_objects::finish_reason::FinishReason;
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Error)]
@@ -27,5 +28,6 @@ pub enum TeacherPolicyError {
     Shape {
         adapter: &'static str,
         message: String,
+        finish_reason: Option<FinishReason>,
     },
 }

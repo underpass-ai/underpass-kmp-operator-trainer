@@ -1,3 +1,8 @@
+pub mod composite_corpus_event_sink;
 pub mod jsonl_calibration_episode_source;
 pub mod jsonl_scenario_source;
+pub mod jsonl_streaming_sink;
+pub mod null_corpus_event_sink;
 pub mod openai_compatible_teacher_policy;
+pub mod operator_action_schema;
+pub mod stderr_progress_sink;

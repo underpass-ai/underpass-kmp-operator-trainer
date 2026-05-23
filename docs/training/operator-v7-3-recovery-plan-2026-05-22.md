@@ -376,74 +376,21 @@ Two Python files modified (build_realistic_scenarios.py + verify_scenarios_v2.py
 
 Architectural fix: OpenAI structured output (`response_format: json_schema` with `strict: true`). API rejects shape-invalid output server-side. Wire format errors become impossible by construction.
 
-This PR starts with an API schema spike before broad Rust integration. The proposed schema below is the target shape, not assumed-valid API input. OpenAI strict mode supports only a JSON Schema subset; the spike must prove the schema is accepted by `gpt-4o-mini`.
+This PR starts with an API schema spike before broad Rust integration. OpenAI strict mode supports only a JSON Schema subset; the spike must prove the schema is accepted by `gpt-4o-mini`.
 
 ## Decision 1 — JSON Schema for `OperatorActionDto`
 
-New file `crates/operator-synthetic-infra/src/adapters/operator_action_schema.rs`:
+New file `crates/operator-synthetic-infra/src/adapters/operator_action_schema.rs`.
 
-```rust
-use serde_json::{Value, json};
+Implementation result after API spike:
 
-pub fn operator_action_schema() -> Value {
-    json!({
-        "name": "OperatorAction",
-        "strict": true,
-        "schema": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "kind": {
-                    "type": "string",
-                    "enum": ["tool_call", "stop", "escalate"]
-                }
-            },
-            "required": ["kind"],
-            "oneOf": [
-                {
-                    "properties": {
-                        "kind": {"const": "tool_call"},
-                        "tool": {
-                            "type": "string",
-                            "enum": [
-                                "kernel_wake", "kernel_ask", "kernel_near", "kernel_goto",
-                                "kernel_rewind", "kernel_forward", "kernel_trace",
-                                "kernel_inspect", "kernel_ingest", "kernel_write_memory"
-                            ]
-                        },
-                        "arguments": {"type": "object"}
-                    },
-                    "required": ["kind", "tool", "arguments"]
-                },
-                {
-                    "properties": {
-                        "kind": {"const": "stop"},
-                        "reason": {
-                            "type": "string",
-                            "enum": ["answer_ready", "no_candidate", "budget_exhausted"]
-                        },
-                        "answer": {"type": ["string", "null"]},
-                        "evidence": {"type": "array", "items": {"type": "string"}}
-                    },
-                    "required": ["kind", "reason"]
-                },
-                {
-                    "properties": {
-                        "kind": {"const": "escalate"},
-                        "reason": {"type": "string"},
-                        "target_model": {"type": "string"}
-                    },
-                    "required": ["kind", "reason", "target_model"]
-                }
-            ]
-        }
-    })
-}
-```
+- Root remains the direct `OperatorActionDto` shape (`kind`, `tool`, `arguments`, `reason`, `answer`, `evidence`, `target_model`). Do **not** wrap in `{ "action": ... }`; that schema was accepted by OpenAI but degraded calibration to 0/6 by biasing toward `escalate`.
+- OpenAI rejects `anyOf`/`oneOf` at the schema root. Therefore `kind` is a top-level enum and `arguments` is a nested `anyOf` with one concrete branch per KMP tool.
+- `tool`, `reason`, and `target_model` are non-null enums with `"none"` sentinel values for non-applicable variants. Serde ignores those fields for stop/escalate/tool-call as appropriate, while strict mode avoids nulls in fields Rust expects as strings.
+- `arguments` is never an open `{ "type": "object" }`; every tool has a concrete object shape. This is what prevents raw `{"kind":"kernel_*"}` output while keeping the calibrated prompt's direct DTO contract.
+- Ingest metadata allows only the observed string-key maps (`{}`, `kind`, `phase`, `role`, `source`, `template`) to satisfy strict-mode `additionalProperties:false`.
 
-Hand-written for MVP. Future refactor: derive from Rust DTO via `schemars` crate or similar.
-
-**Important:** OpenAI strict mode has constraints on JSON Schema features. Test that this schema is accepted. If it rejects `oneOf` with overlapping properties or open-ended `arguments`, switch to an `anyOf` schema with one branch per action/tool and concrete argument object shapes. Do not use `{"type":"object"}` for `arguments` unless the API spike proves it is accepted under `strict:true`.
+Hand-written for MVP. Future refactor: derive from Rust DTO via `schemars` or an operator-owned schema emitter once the shape stabilizes.
 
 ## Decision 2 — adapter sends `response_format`
 
@@ -511,6 +458,12 @@ cargo run --release -p operator-synthetic-cli --bin operator-teacher-calibration
 Expected: gate passes (overall ≥ 80%, per-capability ≥ 60%). v5 calibration baseline was 97.22% overall — significant drop (e.g., < 90%) would indicate strict mode over-constrains. If degraded, iterate the schema (relax `additionalProperties` on `arguments`, allow nested object freedom).
 
 Cost: ~$1-2 (36 calibration cases at ~$0.03 each).
+
+Implementation verification:
+
+- Minimal API spike: accepted by `gpt-4o-mini`.
+- Wrapper schema spike: accepted by API, rejected for production because it degraded the first 6 calibration cases to 0/6 and always selected `escalate`.
+- Direct DTO schema final run: `structured-output-verify-20260522T-pr37-v3`, 36 cases, 33 matches, 34 tool matches, 35 contract-valid, 1 shape failure, overall `0.9167`, gate passed.
 
 ## Acceptance criteria
 
@@ -638,3 +591,260 @@ Revised execution order:
 | 6 | Full 1650 paid run | Only if smoke is green. |
 
 The plan as amended is ready to execute without softening gates, without prompt iteration past v5, and without another opaque full run.
+
+---
+
+# Updates 2026-05-22-T2 — calibration and observability adjustment
+
+The first PR #38 verification showed that `max_tokens=4096` alone did not remove
+the prepared-ingest EOF failure. The adapter now uses the current Chat
+Completions field `max_completion_tokens=4096`, extends the teacher HTTP timeout
+to 180s, and records `finish_reason`, response length and content tail in shape
+failure messages. That keeps the next calibration failure auditable instead of
+only reporting `EOF while parsing`.
+
+The same PR also folds in the `CorpusEventSink` observability slice before any
+new paid smoke/full run:
+
+- `BuildRealisticCorpusUseCase` receives a fallible event sink by constructor.
+- `JsonlStreamingSink` writes `trajectories.partial.jsonl` and
+  `dropped.partial.jsonl` during the loop, flushes per row and syncs on finish.
+- `operator-realistic-corpus` promotes partial files to `trajectories.jsonl` and
+  `dropped.jsonl` after a completed run, even when `gate_passed=false`.
+- `StderrProgressSink` emits JSON progress/drop lifecycle lines to stderr.
+
+No further paid full run should start without this observability path in place.
+The prepared-ingest calibration must be rerun after this PR before declaring the
+structured-output adapter production-ready.
+
+## Known limitation 1: `kernel_goto` trace cursor variant
+
+The v5 prompt's canonical action shapes section shows `kernel_goto` only with
+`cursor.kind=ref`. When both endpoints are visible and the goal is
+path-oriented, the teacher can pick `kind=ref` over `kind=trace`. This is the
+same failure pattern documented during PR #32 calibration.
+
+Fixing this would require prompt v6 with an additional canonical example. That
+violates the v7.2.5 discipline of locking the prompt after structured
+calibration passes. Cost-benefit: one extra prompt iteration versus roughly 25
+scenarios out of 1650 dropping in the full run, about 1.5% and under the 5%
+gate budget.
+
+**Decision:** accept. The `kernel_goto:trace-cursor` scenarios that drop in
+v7.3 corpus will appear in `dropped.jsonl` with `target_mismatch`; downstream
+analysis surfaces the pattern if it becomes load-bearing.
+
+## Known limitation 2: `stop:no_candidate` adversarial trap
+
+In the adversarial calibration case where memory has no relevant evidence for
+the question, the teacher prefers `kernel_ask` ("confirm absence") over
+`stop(no_candidate)`. This is a semantic policy preference, not a wire-format
+or schema issue. Adversarials intentionally test edge behavior, and some noise
+is expected.
+
+**Decision:** accept if it persists after the post-observability calibration
+rerun. The v7.3 corpus adversarial stop scenarios may have a small drop rate
+from this pattern. It remains within the 5% gate budget and is auditable through
+`dropped.jsonl`.
+
+## Hard rule
+
+Do not add prompt v6 to fix either limitation. The discipline rationale from
+v7.2.5 still holds: chasing each calibration miss with a prompt patch creates
+Goodhart-style overfitting to the calibration suite at the cost of general
+policy quality. The structured-output guarantee plus a green calibration rerun
+is the required signal for v7.3 corpus generation.
+
+---
+
+# Updates 2026-05-22-T3 — prepared-action EOF root cause closed
+
+The prepared-ingest EOF was not fixed by larger token ceilings alone. The debug
+run showed:
+
+- `finish_reason=length`
+- `content_len=33682`
+- `content_tail` contained only whitespace
+- serde failed with `EOF while parsing an object at line 1 column 1036`
+
+That means the model started an `OperatorActionDto`, failed to complete it, and
+then exhausted the completion budget with whitespace. The root cause is
+architectural: for subjects with a typed `prepared_action`, the correct output
+is already present in the subject and has already passed domain invariants
+(`PreparedOperatorAction` must be a tool call, and `CalibrationSubject` rejects
+prepared actions outside the current mode). Asking the LLM to copy a large
+typed ingest payload reintroduced an unnecessary generation step.
+
+PR #37 now makes `OpenAiCompatibleTeacherPolicy` return
+`subject.prepared_action` directly when present. This matches the existing stub
+teacher behavior and preserves the policy contract: prepared actions are
+executed verbatim, not reconstructed.
+
+Verification:
+
+- Single prepared-ingest case:
+  `../rehydration-kernel-artifacts/operator/calibration-runs/structured-output-pr38-ingest-single-prepared-fast-path/report.json`
+  - `match_count`: 1/1
+  - `contract_valid_count`: 1/1
+  - `shape_failed_count`: 0
+- Full v5 calibration:
+  `../rehydration-kernel-artifacts/operator/calibration-runs/structured-output-pr38-full-prepared-fast-path/report.json`
+  - `total_cases`: 36
+  - `match_count`: 34
+  - `tool_match_count`: 35
+  - `contract_valid_count`: 36
+  - `shape_failed_count`: 0
+  - `overall_accuracy`: 94.44%
+  - `gate_passed`: true
+  - `kernel_ingest`: 100%
+
+The two remaining misses are the previously accepted limitations:
+
+- `calib:bug_investigation:goto-trace-cursor`: tool correct, cursor variant
+  mismatch (`ref` vs `trace`).
+- `calib:software_migration:stop-no-candidate`: contract-valid adversarial
+  policy preference for `kernel_ask` over `stop(no_candidate)`.
+
+No prompt v6 is introduced. The prepared-ingest blocker is closed without
+softening gates, widening accepted actions, or hiding drops.
+
+---
+
+# Updates 2026-05-22-T4 — calibration diagnostic resolutions
+
+The two calibration cases that did not match after the prepared-action
+fast-path fix have been diagnosed read-only. Neither requires changes to PR #37
+to merge.
+
+### Diagnostic 1 — `calib:bug_investigation:goto-trace-cursor`
+
+The kernel `kernel_goto` cursor argument is defined in
+`/home/tirso/ai/developents/rehydration-kernel/api/proto/underpass/rehydration/kernel/v1beta1/memory.proto:175-183`,
+where `GotoRequest.cursor` is a `TemporalCursor`. That `TemporalCursor` is
+defined at `memory.proto:296-300` with exactly `ref`, `time`, and optional
+`sequence`; there is no trace cursor variant. The MCP mapper routes `goto` to
+cursor key `at` in
+`/home/tirso/ai/developents/rehydration-kernel/crates/rehydration-mcp/src/grpc/requests/queries.rs:46-65`,
+then `temporal_cursor_from_arguments` accepts exactly one of `ref`, `time`, or
+`sequence` at
+`/home/tirso/ai/developents/rehydration-kernel/crates/rehydration-mcp/src/grpc/requests/temporal.rs:11-42`.
+The MCP tools/list schema for `kernel_goto` is generated by
+`temporal_tool_definition` at
+`/home/tirso/ai/developents/rehydration-kernel/crates/rehydration-mcp/src/protocol.rs:189-193`
+and declares cursor properties `time`, `sequence`, and `ref` at
+`protocol.rs:416-428`; again, no `trace`. The operator domain does expose
+`Cursor::Trace` at `crates/operator-shared-domain/src/cursor/cursor.rs:10-16`,
+`CursorDto::Trace` at `crates/operator-shared-contract/src/cursor_dto.rs:3-20`,
+and a synthetic OpenAI schema branch for `cursor.kind="trace"` at
+`crates/operator-synthetic-infra/src/adapters/operator_action_schema.rs:153-193`.
+
+Root cause: the calibration case is testing an operator-side cursor abstraction
+that is not present in the kernel `kernel_goto` wire contract. This is not a
+prompt-v5 limitation. It is an architectural drift between operator cursor
+modeling and the real kernel/MCP `goto` contract.
+
+Action: do not change PR #37 behavior. Track a follow-up alignment/cleanup:
+either remove or rewrite the `goto-trace-cursor` calibration case, and decide in
+a separate design PR whether `Cursor::Trace` belongs outside `kernel_goto`, is
+only a synthetic planning cursor, or needs a real kernel wire counterpart.
+
+### Diagnostic 2 — `calib:software_migration:stop-no-candidate`
+
+`BudgetAllowsActionSpec` at
+`crates/operator-shared-domain/src/specifications/budget_allows_action_spec.rs:19-32`
+rejects an action only if it consumes a tool slot and the visible budget does
+not allow another call. `OperatorAction::consumes_tool_slot()` is true only for
+`ToolCall` at `crates/operator-shared-domain/src/action/operator_action.rs:32-37`;
+`Stop` and `Escalate` do not consume a tool slot. `BudgetSnapshot` returns
+`false` for bounded zero calls at
+`crates/operator-shared-domain/src/visible_state/budget_snapshot.rs:52-57`.
+The spec tests cover: positive budget accepts a tool call
+(`budget_allows_action_spec.rs:60-70`), zero calls rejects an inspect tool call
+(`budget_allows_action_spec.rs:72-85`), and zero calls accepts a stop action
+(`budget_allows_action_spec.rs:87-98`).
+
+Specific behavior under `calls_remaining=0`:
+
+| Action | BudgetAllowsActionSpec result | Source |
+|---|---|---|
+| `kernel_ask` | rejected | any `ToolCall` consumes a slot (`operator_action.rs:32-37`), and zero calls disallows another call (`budget_snapshot.rs:52-57`) |
+| `kernel_inspect` | rejected | same generic `ToolCall` path; explicitly tested at `budget_allows_action_spec.rs:72-85` |
+| `stop(no_candidate)` | accepted | non-`ToolCall` exits early at `budget_allows_action_spec.rs:20-23` |
+| `stop(budget_exhausted)` | accepted | same non-`ToolCall` path; stop with exhausted budget tested at `budget_allows_action_spec.rs:87-98` |
+| `escalate` | accepted | non-`ToolCall` exits early at `budget_allows_action_spec.rs:20-23`; `Escalate` does not consume a tool slot at `operator_action.rs:32-37` |
+| `calls_remaining=1`, any tool call | accepted by this spec | positive bounded calls allow another call (`budget_snapshot.rs:52-57`); positive tool call tested at `budget_allows_action_spec.rs:60-70` |
+
+Root cause: the original `stop-no-candidate` calibration case had
+`calls_remaining=1`, so `kernel_ask` is valid under the current Rust action
+contract. The miss is a real adversarial policy preference: the teacher chooses
+a final bounded memory question instead of stopping when one call remains. The
+earlier concern that the budget spec might accept tool calls at zero budget was
+a misread; the code rejects zero-budget tool calls generically.
+
+Action: accept this calibration miss as adversarial noise for PR #37. A
+follow-up may decide whether a stronger no-candidate policy should be modeled
+as additional visible state and a new Specification, but the current budget
+contract is not missing the zero-budget rejection.
+
+## Disposition for PR #37
+
+With both diagnostics documented:
+
+- The EOF blocker is closed via the prepared-action fast-path.
+- The structured output enforcement removes the wire-format violation category.
+- The observability port closes the opaque-long-run gap.
+- The `goto-trace-cursor` miss is registered as operator/kernel cursor drift,
+  not as a prompt problem.
+- The `stop-no-candidate` miss is registered as adversarial policy noise in a
+  one-call-remaining case, not as a zero-budget contract gap.
+
+PR #37 is ready for review after user approval of these diagnostics.
+
+## Follow-up issues identified (not blocking PR #37)
+
+- Align operator `Cursor::Trace` / `CursorDto::Trace` / synthetic schema with
+  the real kernel `kernel_goto` wire contract, or remove/rewrite the calibration
+  case that expects `cursor.kind=trace`.
+- Decide whether no-candidate terminal policy needs additional visible state and
+  a dedicated Specification beyond the current generic budget rule.
+
+---
+
+# Updates 2026-05-23-T5 — semantic acceptance and deterministic regression pack
+
+The smoke investigation showed that coarse target matching was insufficient for
+corpus production: `SyntheticGenerationTarget::matches_action` intentionally
+matches only tool/action kind, so it can accept `stop(answer_ready)` for a
+`stop(no_candidate)` template or a `kernel_goto` cursor with the wrong variant.
+
+PR #38 adds a separate production-only semantic acceptance gate:
+
+- `SyntheticAcceptanceCriteria` lives in `operator-synthetic-domain` and checks
+  only the two diagnosed invariants: `stop.reason` and `goto.cursor.kind`.
+- `BuildRealisticCorpusUseCase` evaluates the semantic criteria after coarse
+  target match and before strict contract validation. Failures drop the row as
+  `semantic_mismatch`; the shared action contract is unchanged.
+- Realistic scenario generation now emits non-permissive criteria for all
+  `stop` and `kernel_goto` templates, and `verify_scenarios_v2.py` fails if
+  those criteria are missing.
+
+Drop observability is now self-contained. Each dropped JSONL row includes:
+
+- `predicted_action` when the teacher produced a parseable action;
+- `subject_hash`, computed from the canonical subject sent to the teacher;
+- `teacher_finish_reason`, when the adapter reported one.
+
+This closes the previous paid-debug gap where a drop only recorded
+`scenario_id`, `target`, `reason`, and `message`.
+
+PR #38 also adds `operator-regression-pack-v7`, driven by
+`docs/training/regression_pack_v7.txt`. The initial pack contains the three
+diagnosed scenario ids:
+
+- `scenario:kernel_inspect:after-near:0007`
+- `scenario:stop:no-candidate:0028`
+- `scenario:kernel_goto:temporal-cursor:0021`
+
+The pack is deterministic and not a first-30 truncation. It must run before any
+new paid full corpus run. Local no-cost validation uses `--mock-teacher`; the
+real adapter run remains manual because it spends API calls.

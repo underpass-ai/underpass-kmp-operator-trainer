@@ -46,7 +46,7 @@ where
         validator: &CompositeActionContractValidator,
     ) -> Result<TeacherCalibrationCaseResult, EvaluateTeacherCalibrationError> {
         match self.teacher.decide(case.subject()) {
-            Ok(action) => Ok(result_for_action(case, &action, validator)),
+            Ok(decision) => Ok(result_for_action(case, decision.action(), validator)),
             Err(TeacherPolicyError::Shape { message, .. }) => {
                 Ok(TeacherCalibrationCaseResult::shape_failure(
                     case.case_id().clone(),
@@ -142,11 +142,13 @@ mod tests {
     use operator_shared_domain::tool_arguments::wake_arguments::WakeArguments;
     use operator_shared_domain::tool_arguments::write_memory_arguments::WriteMemoryArguments;
     use operator_shared_domain::value_objects::dimension_ref::DimensionRef;
+    use operator_shared_domain::value_objects::finish_reason::FinishReason;
     use operator_shared_domain::value_objects::memory_ref::MemoryRef;
     use operator_shared_domain::value_objects::model_id::ModelId;
     use operator_shared_domain::value_objects::non_empty_string::NonEmptyString;
     use operator_shared_domain::value_objects::positive_count::PositiveCount;
     use operator_shared_domain::value_objects::string_map::StringMap;
+    use operator_shared_domain::value_objects::subject_hash::SubjectHash;
     use operator_shared_domain::value_objects::task_family::TaskFamily;
     use operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal;
     use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
@@ -157,6 +159,7 @@ mod tests {
     use operator_synthetic_domain::calibration::calibration_domain_theme::CalibrationDomainTheme;
     use operator_synthetic_domain::calibration::calibration_subject::CalibrationSubject;
     use operator_synthetic_domain::calibration::expected_action_rationale::ExpectedActionRationale;
+    use operator_synthetic_domain::calibration::teacher_decision::TeacherDecision;
 
     #[derive(Debug)]
     struct StubSource {
@@ -198,8 +201,12 @@ mod tests {
         fn decide(
             &self,
             _subject: &CalibrationSubject,
-        ) -> Result<OperatorAction, TeacherPolicyError> {
-            self.actions.lock().unwrap().remove(0)
+        ) -> Result<TeacherDecision, TeacherPolicyError> {
+            self.actions
+                .lock()
+                .unwrap()
+                .remove(0)
+                .map(|action| TeacherDecision::new(action, FinishReason::Stop, subject_hash()))
         }
     }
 
@@ -288,6 +295,7 @@ mod tests {
             QueueTeacher::new(vec![Err(TeacherPolicyError::Shape {
                 adapter: "stub",
                 message: "bad json".to_string(),
+                finish_reason: Some(FinishReason::Stop),
             })]),
         )
         .execute()
@@ -313,6 +321,11 @@ mod tests {
             case_for(stop()),
             case_for(escalate()),
         ]
+    }
+
+    fn subject_hash() -> SubjectHash {
+        SubjectHash::parse("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+            .unwrap()
     }
 
     fn case_for(action: OperatorAction) -> CalibrationCase {

@@ -20,4 +20,7 @@ pub enum ScenarioMappingError {
 
     #[error(transparent)]
     Calibration(#[from] CalibrationCaseMappingError),
+
+    #[error("scenario subject serialization failed: {message}")]
+    Serialization { message: String },
 }

@@ -9,3 +9,4 @@ pub mod calibration_domain_theme;
 pub mod calibration_subject;
 pub mod expected_action_rationale;
 pub mod prepared_operator_action;
+pub mod teacher_decision;

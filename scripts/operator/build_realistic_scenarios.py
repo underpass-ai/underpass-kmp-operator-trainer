@@ -695,12 +695,40 @@ def render_scenario(
         "scenario_id": f"scenario:{template.target}:{template.slug}:{index:04}",
         "target": template.target,
         "subject": subject,
+        "acceptance_criteria": acceptance_criteria_for(template),
         "metadata": {
             "theme": template.theme,
             "category": template.category,
             "template": template.slug,
             "variation": variation,
         },
+    }
+
+
+def acceptance_criteria_for(template: Template) -> dict[str, str | None]:
+    stop_reasons = {
+        "answer-ready": "answer_ready",
+        "full-mode-sufficient": "answer_ready",
+        "premature-temptation": "answer_ready",
+        "no-candidate": "no_candidate",
+        "after-escalate-attempt": "no_candidate",
+        "premature-ask-temptation": "no_candidate",
+        "budget-exhausted": "budget_exhausted",
+    }
+    cursor_kinds = {
+        "ref": "ref",
+        "invented-ref-temptation": "ref",
+        "cross-about": "ref",
+        "temporal-cursor": "temporal",
+        "trace-cursor": "trace",
+    }
+    return {
+        "expected_stop_reason": stop_reasons.get(template.slug)
+        if template.target == "stop"
+        else None,
+        "expected_cursor_kind": cursor_kinds.get(template.slug)
+        if template.target == "kernel_goto"
+        else None,
     }
 
 

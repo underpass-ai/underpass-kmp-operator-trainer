@@ -32,16 +32,19 @@ use operator_shared_domain::tool_arguments::trace_arguments::TraceArguments;
 use operator_shared_domain::tool_arguments::wake_arguments::WakeArguments;
 use operator_shared_domain::tool_arguments::write_memory_arguments::WriteMemoryArguments;
 use operator_shared_domain::value_objects::dimension_ref::DimensionRef;
+use operator_shared_domain::value_objects::finish_reason::FinishReason;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
 use operator_shared_domain::value_objects::model_id::ModelId;
 use operator_shared_domain::value_objects::non_empty_string::NonEmptyString;
 use operator_shared_domain::value_objects::positive_count::PositiveCount;
 use operator_shared_domain::value_objects::string_map::StringMap;
+use operator_shared_domain::value_objects::subject_hash::SubjectHash;
 use operator_synthetic_application::error::teacher_policy_error::TeacherPolicyError;
 use operator_synthetic_application::ports::calibration_episode_source::CalibrationEpisodeSource;
 use operator_synthetic_application::ports::teacher_policy::TeacherPolicy;
 use operator_synthetic_application::use_cases::evaluate_teacher_calibration_use_case::EvaluateTeacherCalibrationUseCase;
 use operator_synthetic_domain::calibration::calibration_subject::CalibrationSubject;
+use operator_synthetic_domain::calibration::teacher_decision::TeacherDecision;
 use operator_synthetic_infra::adapters::jsonl_calibration_episode_source::JsonlCalibrationEpisodeSource;
 use operator_synthetic_infra::adapters::openai_compatible_teacher_policy::OpenAiCompatibleTeacherPolicy;
 use operator_synthetic_infra::dto::teacher_calibration_run_metadata_dto::TeacherCalibrationRunMetadataDto;
@@ -119,6 +122,7 @@ fn run(cli: &Cli) -> Result<bool, CliError> {
     };
     let dto = TeacherCalibrationReportMapper::to_dto(&report, metadata);
     write_report(&cli.output, &dto)?;
+    emit_case_events(&dto)?;
     print_summary(&dto, &cli.output);
     Ok(dto.gate_passed)
 }
@@ -212,6 +216,36 @@ fn print_summary(
     );
 }
 
+fn emit_case_events(
+    dto: &operator_synthetic_infra::dto::teacher_calibration_report_dto::TeacherCalibrationReportDto,
+) -> Result<(), CliError> {
+    for case in &dto.case_results {
+        let include_details = case.shape_failed || !case.outcome.matched;
+        let mut event = serde_json::json!({
+            "event": "teacher_calibration.case_result",
+            "case_id": case.case_id,
+            "capability": case.capability,
+            "category": case.category,
+            "matched": case.outcome.matched,
+            "tool_matched": case.outcome.tool_matched,
+            "contract_valid": case.outcome.contract_valid,
+            "contract_validator": "CompositeActionContractValidator::default_strict",
+            "contract_scope": "rust_action_contract_shape_mode_refs_budget",
+            "shape_failed": case.shape_failed,
+        });
+        if include_details {
+            event["failure_message"] = serde_json::json!(case.failure_message);
+            event["predicted_action"] = serde_json::json!(case.predicted_action);
+            event["accepted_actions"] = serde_json::json!(case.accepted_actions);
+            event["expected_action_rationale"] = serde_json::json!(case.expected_action_rationale);
+        }
+        let line = serde_json::to_string(&event)
+            .map_err(|err| CliError::Generic(format!("serialize calibration event: {err}")))?;
+        eprintln!("{line}");
+    }
+    Ok(())
+}
+
 fn require_readable_non_empty(path: &Path, flag: &str) -> Result<(), CliError> {
     let metadata = fs::metadata(path).map_err(|err| {
         CliError::Generic(format!("{flag} {} is not readable: {err}", path.display()))
@@ -261,19 +295,31 @@ enum StubTeacherPolicy {
 }
 
 impl TeacherPolicy for StubTeacherPolicy {
-    fn decide(&self, subject: &CalibrationSubject) -> Result<OperatorAction, TeacherPolicyError> {
+    fn decide(&self, subject: &CalibrationSubject) -> Result<TeacherDecision, TeacherPolicyError> {
         match self {
-            Self::Accepted => Ok(stub_action_for_subject(subject)),
-            Self::Wrong => Ok(OperatorAction::Escalate(EscalateAction::new(
-                EscalateReason::BeyondCapability,
-                ModelId::parse("frontier-reasoner").unwrap(),
+            Self::Accepted => Ok(stub_decision(stub_action_for_subject(subject))),
+            Self::Wrong => Ok(stub_decision(OperatorAction::Escalate(
+                EscalateAction::new(
+                    EscalateReason::BeyondCapability,
+                    ModelId::parse("frontier-reasoner").unwrap(),
+                ),
             ))),
             Self::Shape => Err(TeacherPolicyError::Shape {
                 adapter: "stub_teacher_policy",
                 message: "stubbed shape failure".to_string(),
+                finish_reason: Some(FinishReason::Stop),
             }),
         }
     }
+}
+
+fn stub_decision(action: OperatorAction) -> TeacherDecision {
+    TeacherDecision::new(action, FinishReason::Stop, stub_subject_hash())
+}
+
+fn stub_subject_hash() -> SubjectHash {
+    SubjectHash::parse("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+        .expect("stub subject hash is valid")
 }
 
 fn stub_action_for_subject(subject: &CalibrationSubject) -> OperatorAction {

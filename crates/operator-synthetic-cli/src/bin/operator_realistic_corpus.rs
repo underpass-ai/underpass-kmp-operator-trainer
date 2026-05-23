@@ -2,7 +2,6 @@
 //! Operator trajectories from externally authored scenarios.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -17,10 +16,11 @@ use operator_shared_domain::action::tool_call_action::ToolCallAction;
 use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
 use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
 use operator_shared_domain::tool_arguments::wake_arguments::WakeArguments;
+use operator_shared_domain::value_objects::finish_reason::FinishReason;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
 use operator_shared_domain::value_objects::model_id::ModelId;
 use operator_shared_domain::value_objects::positive_count::PositiveCount;
-use operator_shared_infra::mappers::training_trajectory_mapper::TrainingTrajectoryMapper;
+use operator_shared_domain::value_objects::subject_hash::SubjectHash;
 use operator_synthetic_application::error::teacher_policy_error::TeacherPolicyError;
 use operator_synthetic_application::ports::scenario_source::ScenarioSource;
 use operator_synthetic_application::ports::teacher_policy::TeacherPolicy;
@@ -28,8 +28,14 @@ use operator_synthetic_application::use_cases::build_realistic_corpus_use_case::
 use operator_synthetic_application::use_cases::max_drop_rate::MaxDropRate;
 use operator_synthetic_application::use_cases::realistic_corpus_report::RealisticCorpusReport;
 use operator_synthetic_domain::calibration::calibration_subject::CalibrationSubject;
+use operator_synthetic_domain::calibration::teacher_decision::TeacherDecision;
+use operator_synthetic_infra::adapters::composite_corpus_event_sink::CompositeCorpusEventSink;
 use operator_synthetic_infra::adapters::jsonl_scenario_source::JsonlScenarioSource;
+use operator_synthetic_infra::adapters::jsonl_streaming_sink::{
+    DROPPED_PARTIAL_FILE, JsonlStreamingSink, TRAJECTORIES_PARTIAL_FILE,
+};
 use operator_synthetic_infra::adapters::openai_compatible_teacher_policy::OpenAiCompatibleTeacherPolicy;
+use operator_synthetic_infra::adapters::stderr_progress_sink::StderrProgressSink;
 use operator_synthetic_infra::dto::realistic_corpus_run_metadata_dto::RealisticCorpusRunMetadataDto;
 use operator_synthetic_infra::mappers::realistic_corpus_report_mapper::RealisticCorpusReportMapper;
 use reqwest::Url;
@@ -97,7 +103,14 @@ fn run(cli: &Cli) -> Result<bool, CliError> {
     let teacher = teacher_policy(cli)?;
     let validator =
         operator_shared_domain::contract::composite_action_contract_validator::CompositeActionContractValidator::default_strict();
-    let use_case = BuildRealisticCorpusUseCase::new(source, teacher, validator);
+    let event_sink = CompositeCorpusEventSink::new(vec![
+        Box::new(StderrProgressSink::default()),
+        Box::new(
+            JsonlStreamingSink::new(&cli.output)
+                .map_err(|err| CliError::Generic(format!("build event sink: {err}")))?,
+        ),
+    ]);
+    let use_case = BuildRealisticCorpusUseCase::new(source, teacher, validator, event_sink);
     let limit = if cli.limit == 0 {
         None
     } else {
@@ -112,11 +125,7 @@ fn run(cli: &Cli) -> Result<bool, CliError> {
         .execute(max_drop_rate, limit)
         .map_err(|err| CliError::Generic(format!("build realistic corpus: {err}")))?;
     let finished_at_unix = unix_now()?;
-    fs::create_dir_all(&cli.output).map_err(|err| {
-        CliError::Generic(format!("create --output {}: {err}", cli.output.display()))
-    })?;
-    write_trajectories(&cli.output, &report)?;
-    write_dropped(&cli.output, &report)?;
+    promote_streamed_outputs(&cli.output)?;
     write_report(cli, &report, started_at_unix, finished_at_unix)?;
     print_summary(&report, &cli.output);
     Ok(report.gate_passed())
@@ -164,33 +173,23 @@ fn teacher_policy(cli: &Cli) -> Result<Box<dyn TeacherPolicy>, CliError> {
     }
 }
 
-fn write_trajectories(output: &Path, report: &RealisticCorpusReport) -> Result<(), CliError> {
-    let path = output.join("trajectories.jsonl");
-    let mut file = fs::File::create(&path)
-        .map_err(|err| CliError::Generic(format!("create {}: {err}", path.display())))?;
-    for row in report.accepted() {
-        let dto = TrainingTrajectoryMapper::to_dto(row)
-            .map_err(|err| CliError::Generic(format!("map trajectory: {err}")))?;
-        let line = serde_json::to_string(&dto)
-            .map_err(|err| CliError::Generic(format!("serialize trajectory: {err}")))?;
-        writeln!(file, "{line}")
-            .map_err(|err| CliError::Generic(format!("write {}: {err}", path.display())))?;
-    }
-    Ok(())
+fn promote_streamed_outputs(output: &Path) -> Result<(), CliError> {
+    let trajectories_partial = output.join(TRAJECTORIES_PARTIAL_FILE);
+    let trajectories = output.join("trajectories.jsonl");
+    promote_file(&trajectories_partial, &trajectories)?;
+    let dropped_partial = output.join(DROPPED_PARTIAL_FILE);
+    let dropped = output.join("dropped.jsonl");
+    promote_file(&dropped_partial, &dropped)
 }
 
-fn write_dropped(output: &Path, report: &RealisticCorpusReport) -> Result<(), CliError> {
-    let path = output.join("dropped.jsonl");
-    let mut file = fs::File::create(&path)
-        .map_err(|err| CliError::Generic(format!("create {}: {err}", path.display())))?;
-    for row in report.dropped() {
-        let dto = RealisticCorpusReportMapper::drop_to_dto(row);
-        let line = serde_json::to_string(&dto)
-            .map_err(|err| CliError::Generic(format!("serialize drop entry: {err}")))?;
-        writeln!(file, "{line}")
-            .map_err(|err| CliError::Generic(format!("write {}: {err}", path.display())))?;
-    }
-    Ok(())
+fn promote_file(from: &Path, to: &Path) -> Result<(), CliError> {
+    fs::rename(from, to).map_err(|err| {
+        CliError::Generic(format!(
+            "promote {} to {}: {err}",
+            from.display(),
+            to.display()
+        ))
+    })
 }
 
 fn write_report(
@@ -298,18 +297,30 @@ enum StubTeacherPolicy {
 }
 
 impl TeacherPolicy for StubTeacherPolicy {
-    fn decide(&self, subject: &CalibrationSubject) -> Result<OperatorAction, TeacherPolicyError> {
+    fn decide(&self, subject: &CalibrationSubject) -> Result<TeacherDecision, TeacherPolicyError> {
         match self {
-            Self::Accepted => Ok(stub_action_for_subject(subject)),
-            Self::Wrong => Ok(OperatorAction::ToolCall(ToolCallAction::new(
-                ToolArguments::Wake(WakeArguments::new(subject.about().clone())),
+            Self::Accepted => Ok(stub_decision(stub_action_for_subject(subject))),
+            Self::Wrong => Ok(stub_decision(OperatorAction::ToolCall(
+                ToolCallAction::new(ToolArguments::Wake(WakeArguments::new(
+                    subject.about().clone(),
+                ))),
             ))),
             Self::Shape => Err(TeacherPolicyError::Shape {
                 adapter: "realistic_corpus_stub_teacher",
                 message: "stubbed shape failure".to_string(),
+                finish_reason: Some(FinishReason::Stop),
             }),
         }
     }
+}
+
+fn stub_decision(action: OperatorAction) -> TeacherDecision {
+    TeacherDecision::new(action, FinishReason::Stop, stub_subject_hash())
+}
+
+fn stub_subject_hash() -> SubjectHash {
+    SubjectHash::parse("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+        .expect("stub subject hash is valid")
 }
 
 fn stub_action_for_subject(subject: &CalibrationSubject) -> OperatorAction {
