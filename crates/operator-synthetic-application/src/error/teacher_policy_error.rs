@@ -30,4 +30,11 @@ pub enum TeacherPolicyError {
         message: String,
         finish_reason: Option<FinishReason>,
     },
+
+    #[error("{adapter} returned non-stop finish reason {finish_reason}: content_len={content_len}")]
+    TruncatedResponse {
+        adapter: &'static str,
+        finish_reason: FinishReason,
+        content_len: usize,
+    },
 }

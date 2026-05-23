@@ -198,6 +198,17 @@ fn drop_from_teacher_error(err: TeacherPolicyError) -> Box<DropCandidate> {
             finish_reason,
             ..
         } => DropCandidate::without_action(DropReason::ParseFailure { message }, finish_reason),
+        TeacherPolicyError::TruncatedResponse {
+            finish_reason,
+            content_len,
+            ..
+        } => DropCandidate::without_action(
+            DropReason::TeacherTruncation {
+                finish_reason,
+                content_len,
+            },
+            Some(finish_reason),
+        ),
         other => DropCandidate::without_action(
             DropReason::TeacherError {
                 message: other.to_string(),
@@ -368,6 +379,41 @@ mod tests {
             DropReason::TeacherError { .. }
         ));
         assert!(report.dropped()[0].predicted_action().is_none());
+    }
+
+    #[test]
+    fn teacher_truncation_propagated_as_drop_entry() {
+        let use_case = BuildRealisticCorpusUseCase::new(
+            StubSource {
+                scenarios: vec![inspect_scenario()],
+            },
+            StubTeacher {
+                action: Err(TeacherPolicyError::TruncatedResponse {
+                    adapter: "stub",
+                    finish_reason: FinishReason::Length,
+                    content_len: 4205,
+                }),
+            },
+            CompositeActionContractValidator::default_strict(),
+            std::sync::Arc::new(RecordingSink::default()),
+        );
+
+        let report = use_case
+            .execute(MaxDropRate::parse(1.0).unwrap(), None)
+            .unwrap();
+
+        assert!(matches!(
+            report.dropped()[0].reason(),
+            DropReason::TeacherTruncation {
+                finish_reason: FinishReason::Length,
+                content_len: 4205
+            }
+        ));
+        assert!(report.dropped()[0].predicted_action().is_none());
+        assert_eq!(
+            report.dropped()[0].teacher_finish_reason(),
+            Some(FinishReason::Length)
+        );
     }
 
     #[test]

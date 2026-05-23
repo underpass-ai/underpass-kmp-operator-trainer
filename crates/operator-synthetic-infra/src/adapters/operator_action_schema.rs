@@ -8,61 +8,60 @@ pub fn operator_action_schema() -> Value {
     json!({
         "name": "OperatorAction",
         "strict": true,
-        "schema": object(json!({
-            "kind": {
-                "type": "string",
-                "enum": ["tool_call", "stop", "escalate"]
+        "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "action": action_object(),
             },
-            "tool": {
-                "type": "string",
-                "enum": [
-                    "kernel_wake",
-                    "kernel_ask",
-                    "kernel_near",
-                    "kernel_goto",
-                    "kernel_rewind",
-                    "kernel_forward",
-                    "kernel_trace",
-                    "kernel_inspect",
-                    "kernel_ingest",
-                    "kernel_write_memory",
-                    "none"
-                ]
-            },
-            "arguments": {
-                "anyOf": [
-                    wake_arguments(),
-                    ask_arguments(),
-                    near_arguments(),
-                    goto_arguments(),
-                    rewind_arguments(),
-                    forward_arguments(),
-                    trace_arguments(),
-                    inspect_arguments(),
-                    ingest_arguments(),
-                    write_memory_arguments()
-                ]
-            },
-            "reason": {
-                "type": "string",
-                "enum": [
-                    "answer_ready",
-                    "no_candidate",
-                    "budget_exhausted",
-                    "ambiguous_intent",
-                    "beyond_capability",
-                    "low_confidence",
-                    "none"
-                ]
-            },
-            "answer": { "type": ["string", "null"] },
-            "evidence": string_array(),
-            "target_model": {
-                "type": "string",
-                "enum": ["frontier-reasoner", "claude-opus-4-7", "none"]
-            }
-        })),
+            "required": ["action"],
+        },
     })
+}
+
+fn action_object() -> Value {
+    object(json!({
+        "kind": enum_string(&["tool_call", "stop", "escalate"]),
+        "tool": enum_string(&[
+            "kernel_wake",
+            "kernel_ask",
+            "kernel_near",
+            "kernel_goto",
+            "kernel_rewind",
+            "kernel_forward",
+            "kernel_trace",
+            "kernel_inspect",
+            "kernel_ingest",
+            "kernel_write_memory",
+            "none",
+        ]),
+        "arguments": {
+            "anyOf": [
+                wake_arguments(),
+                ask_arguments(),
+                near_arguments(),
+                goto_arguments(),
+                rewind_arguments(),
+                forward_arguments(),
+                trace_arguments(),
+                inspect_arguments(),
+                ingest_arguments(),
+                write_memory_arguments(),
+            ],
+        },
+        "reason": enum_string(&[
+            "answer_ready",
+            "no_candidate",
+            "budget_exhausted",
+            "ambiguous_intent",
+            "beyond_capability",
+            "low_confidence",
+            "none",
+        ]),
+        "answer": nullable_string(),
+        "evidence": string_array(),
+        "target_model": enum_string(&["frontier-reasoner", "claude-opus-4-7", "none"]),
+    }))
 }
 
 fn wake_arguments() -> Value {
@@ -324,6 +323,10 @@ fn string_array() -> Value {
     json!({ "type": "array", "items": string() })
 }
 
+fn enum_string(values: &[&str]) -> Value {
+    json!({ "type": "string", "enum": values })
+}
+
 #[cfg(test)]
 mod tests {
     use operator_shared_contract::operator_action_dto::OperatorActionDto;
@@ -334,7 +337,7 @@ mod tests {
     #[test]
     fn schema_allows_operator_action_kind_not_raw_tool_kind() {
         let schema = operator_action_schema();
-        let kind_enum = schema["schema"]["properties"]["kind"]["enum"]
+        let kind_enum = schema["schema"]["properties"]["action"]["properties"]["kind"]["enum"]
             .as_array()
             .expect("kind enum exists");
 
@@ -343,17 +346,34 @@ mod tests {
     }
 
     #[test]
-    fn schema_exposes_kernel_inspect_argument_branch() {
+    fn schema_exposes_kernel_inspect_argument_branch_without_tool_pairing() {
         let schema = operator_action_schema();
-        let branches = schema["schema"]["properties"]["arguments"]["anyOf"]
+        let branches = schema["schema"]["properties"]["action"]["properties"]["arguments"]["anyOf"]
             .as_array()
             .expect("arguments anyOf exists");
         let inspect = branches
             .iter()
             .find(|branch| branch["properties"].get("target").is_some())
-            .expect("kernel_inspect branch exists");
+            .expect("kernel_inspect argument branch exists");
 
         assert_eq!(inspect["properties"]["target"], json!({ "type": "string" }));
+    }
+
+    #[test]
+    fn schema_exposes_kernel_goto_argument_branch_without_tool_pairing() {
+        let schema = operator_action_schema();
+        let branches = schema["schema"]["properties"]["action"]["properties"]["arguments"]["anyOf"]
+            .as_array()
+            .expect("arguments anyOf exists");
+        let goto = branches
+            .iter()
+            .find(|branch| branch["properties"].get("cursor").is_some())
+            .expect("kernel_goto argument branch exists");
+
+        assert!(
+            goto["properties"].get("cursor").is_some(),
+            "goto branch requires cursor arguments"
+        );
     }
 
     #[test]

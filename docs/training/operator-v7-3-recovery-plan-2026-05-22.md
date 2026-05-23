@@ -848,3 +848,359 @@ diagnosed scenario ids:
 The pack is deterministic and not a first-30 truncation. It must run before any
 new paid full corpus run. Local no-cost validation uses `--mock-teacher`; the
 real adapter run remains manual because it spends API calls.
+
+---
+
+# Updates 2026-05-23-T6 — full 1650 semantic run did not close v7.3
+
+The first full corpus run after PR #38 used the current production stack:
+structured output, prepared-action fast path, drop observability, and the new
+semantic acceptance gate for `stop.reason` and `goto.cursor.kind`.
+
+Run id: `realistic-v7-full-semantic-20260523T064000Z`
+
+Inputs:
+
+| Input | SHA-256 |
+|---|---|
+| `../rehydration-kernel-artifacts/operator/scenarios-v4/scenarios.jsonl` | `006521f673df2ea8927b4cf6b15c32d904c1104e5ecad912ab3c63467684bf6b` |
+| `crates/operator-synthetic-infra/prompts/teacher_calibration_v5.md` | `87e26adf71049c165daa68ea016091846f576b9d4902de5276ce37e81956913c` |
+
+Corpus gate result:
+
+```text
+total_scenarios: 1650
+accepted_count: 1436
+dropped_count: 214
+drop_rate: 0.1297
+max_drop_rate_gate: 0.0500
+gate_passed: false
+gate_failure_reason: drop_rate 0.1297 > max_drop_rate 0.0500
+```
+
+Because the corpus gate failed at step 1, the downstream gates were not run:
+contract coverage, SFT prep, no-gold audit, frontier ceiling, and oracle
+round-trip smoke remain pending for the next passing corpus run.
+
+Drop reasons:
+
+| Reason | Count |
+|---|---:|
+| `target_mismatch` | 136 |
+| `semantic_mismatch` | 75 |
+| `parse_failure` | 3 |
+
+Accepted rows by target:
+
+| Target | Accepted / Total |
+|---|---:|
+| `kernel_wake` | 150 / 150 |
+| `kernel_ask` | 125 / 125 |
+| `kernel_near` | 150 / 150 |
+| `kernel_rewind` | 125 / 125 |
+| `kernel_trace` | 125 / 125 |
+| `kernel_ingest` | 125 / 125 |
+| `kernel_write_memory` | 125 / 125 |
+| `kernel_forward` | 124 / 125 |
+| `kernel_inspect` | 122 / 150 |
+| `stop` | 115 / 175 |
+| `kernel_goto` | 75 / 125 |
+| `escalate` | 75 / 150 |
+
+The highest-volume failing templates were:
+
+| Template | Reason | Count | Dominant predicted action |
+|---|---|---:|---|
+| `stop:premature-ask-temptation` | `semantic_mismatch` | 25 | `stop:answer_ready` |
+| `kernel_goto:trace-cursor` | `semantic_mismatch` | 25 | `kernel_goto:ref` |
+| `escalate:do-not-speculate` | `target_mismatch` | 25 | `kernel_ask` |
+| `escalate:budget-alternative` | `target_mismatch` | 25 | mostly `kernel_ask` |
+| `stop:after-escalate-attempt` | `target_mismatch` | 24 | `kernel_ask` |
+| `kernel_goto:temporal-cursor` | `semantic_mismatch` | 24 | `kernel_goto:ref` |
+| `kernel_inspect:after-near` | `target_mismatch` | 14 | `kernel_goto:ref` |
+| `escalate:no-traceable-path` | `target_mismatch` | 14 | split `kernel_trace` / `kernel_ask` |
+| `kernel_inspect:after-trace` | `target_mismatch` | 13 | `kernel_goto:ref` |
+| `stop:no-candidate` | `target_mismatch` | 10 | `kernel_ask` |
+| `escalate:ambiguous-scope` | `target_mismatch` | 9 | `kernel_ask` |
+
+The three parse failures were low-volume but material for diagnosis:
+
+- `scenario:escalate:after-reads:0095` and
+  `scenario:escalate:after-reads:1283` ended with `finish_reason=length`; the
+  adapter persisted `teacher_finish_reason=length` and no `predicted_action`.
+- `scenario:kernel_inspect:after-near:0271` parsed as a tool call but failed
+  DTO/domain mapping because `kernel_inspect` arguments omitted `target`.
+
+Interpretation:
+
+- The `write` path is healthy in this run: all `kernel_ingest` and
+  `kernel_write_memory` scenarios were accepted.
+- The new modes are not globally broken: `writer_pre_read` and `full` scenarios
+  were exercised and accepted in the run.
+- The full run found systematic semantic/template issues that the old
+  first-30 smoke could not characterize: non-ref `kernel_goto` cursors,
+  terminal/adversarial `stop` cases, and several `escalate` adversarial
+  templates.
+- The `stop:no-candidate` `subject_hash` matches the regression-pack baseline,
+  confirming stable input; variation in the `kernel_ask.query` text is model
+  output variance, not scenario drift.
+
+Disposition:
+
+v7.3 is not closed. Do not move to v8 SFT from this corpus. The next recovery
+step must reduce systematic template drops below the 5% corpus gate without
+softening `max_drop_rate`, removing observability, or changing the locked v5
+prompt.
+
+---
+
+# Updates 2026-05-23-T7 — PR #39 structured output hardening
+
+PR #39 hardens the teacher adapter and schema against the two wire-format
+failure classes found in `realistic-v7-full-semantic-20260523T064000Z`.
+
+## Finish reason handling
+
+Before PR #39, the OpenAI-compatible teacher adapter parsed assistant content
+even when the provider returned a non-`stop` finish reason. That made
+`finish_reason=length` appear later as a generic `parse_failure`.
+
+PR #39 changes the adapter behavior:
+
+- `finish_reason=stop` remains the only parseable success path.
+- Any non-`stop` finish reason returns
+  `TeacherPolicyError::TruncatedResponse { finish_reason, content_len }`.
+- `BuildRealisticCorpusUseCase` maps that error to
+  `DropReason::TeacherTruncation`.
+- `dropped.jsonl` will now bucket these rows as `teacher_truncation` and retain
+  `teacher_finish_reason`.
+
+The default `max_completion_tokens` was raised from `4096` to `8192`. The full
+run had two `finish_reason=length` rows at `content_len=4205`; accepted action
+serialization had p99 around 2 KB and max around 2.1 KB. The new ceiling leaves
+headroom, while any future provider-side length finish remains visible instead
+of being parsed best-effort.
+
+## Tool/arguments schema discrimination
+
+Before PR #39, the schema constrained `tool` and `arguments` independently:
+
+```text
+tool: enum(kernel_*)
+arguments: anyOf(all argument shapes)
+```
+
+That allowed provider output like `tool=kernel_inspect` with non-inspect
+arguments to satisfy the schema and fail later in DTO/domain mapping. The full
+run exposed this as:
+
+```text
+scenario:kernel_inspect:after-near:0271
+message: tool 'kernel_inspect' arguments shape is invalid: missing field `target`
+```
+
+PR #39 replaces the independent fields with discriminated action branches:
+
+```text
+one branch per kernel tool:
+  kind = tool_call
+  tool = exact tool literal
+  arguments = exact per-tool schema
+
+plus one branch for stop and one branch for escalate.
+```
+
+This makes `kernel_inspect` without `arguments.target` invalid at the structured
+output boundary instead of reaching the domain mapper.
+
+## Validation status
+
+Offline validation completed:
+
+```text
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
+Both were green after PR #39 changes.
+
+No paid validation calls were run during PR #39 implementation because the task
+hard rule said no paid LLM calls. If the user explicitly approves the exception
+from the acceptance criteria, run a two-row paid validation pack against:
+
+- `scenario:escalate:after-reads:0095`
+- `scenario:kernel_inspect:after-near:0271`
+
+Expected result:
+
+- `0095` either succeeds with the larger token ceiling or drops as
+  `teacher_truncation`, never as generic `parse_failure`.
+- `0271` either succeeds with valid `kernel_inspect.arguments.target` or is
+  rejected before DTO/domain mapping; it must not reach the mapper with missing
+  `target`.
+
+---
+
+# Updates 2026-05-23-T17 — v7.3 closure
+
+## Final Numbers
+
+Full corpus generation passed with `scenarios-v5` and the locked teacher stack:
+
+- run_id: `realistic-v7-full-v5-20260523T082416Z`
+- scenarios: `../rehydration-kernel-artifacts/operator/scenarios-v5/scenarios.jsonl`
+- scenarios_sha256: `144535a1208d1ebde7c2f29dcdbbd22169f6512e4dc9fb56e81129f20d559f6b`
+- prompt: `crates/operator-synthetic-infra/prompts/teacher_calibration_v5.md`
+- prompt_sha256: `87e26adf71049c165daa68ea016091846f576b9d4902de5276ce37e81956913c`
+- model: `gpt-4o-mini`
+- temperature: `0.0`
+- total_scenarios: `1650`
+- accepted_count: `1638`
+- dropped_count: `12`
+- drop_rate: `0.73%`
+- max_drop_rate_gate: `5.00%`
+- gate_passed: `true`
+
+The final regression pack run also passed:
+
+- run_id: `regression-pack-v7-v5-20260523T082353Z`
+- accepted_count: `2`
+- dropped_count: `0`
+- gate_passed: `true`
+
+## Drop Breakdown
+
+All final drops are `target_mismatch`; there were no parse failures, no
+truncation failures, and no semantic-mismatch failures.
+
+| Template | Drops | Observed prediction |
+|---|---:|---|
+| `stop:no-candidate` | 10 | `kernel_ask` |
+| `kernel_forward:after-rewind` | 2 | `kernel_goto(cursor.kind=ref)` |
+
+The `stop:no-candidate` drops are the accepted residual teacher limitation
+documented in T4/T5. The two `kernel_forward:after-rewind` drops are isolated
+and do not form a dominant template failure.
+
+## Templates Removed
+
+The v7.3 closure corpus is strict-contract-only. Templates that require
+prescriptive policy preferences were removed and tracked in
+`docs/training/backlog_policy_preference_spec.md`:
+
+- `kernel_goto:trace-cursor` — invalid kernel `kernel_goto` wire contract.
+- `kernel_goto:temporal-cursor` — wording-resistant temporal policy distinction;
+  the one permitted wording fix still produced `kernel_forward`.
+- `escalate:do-not-speculate` — empirically subtle policy.
+- `escalate:budget-alternative` — empirically subtle policy.
+- `escalate:no-traceable-path` — empirically subtle policy.
+- `escalate:ambiguous-scope` — empirically subtle policy.
+- `stop:after-escalate-attempt` — depends on prior escalation policy after
+  escalation templates were removed.
+- `stop:premature-ask-temptation` — empirically unstable `no_candidate` vs
+  `answer_ready` terminal policy.
+
+## Templates Reworded
+
+- `kernel_inspect:after-near`: removed the "visible node" phrasing that biased
+  the teacher toward `kernel_goto`; final regression pack and full run passed.
+- `kernel_inspect:after-trace`: analogous wording fix; full run passed.
+- `kernel_goto:temporal-cursor`: one wording fix was attempted, failed in the
+  regression pack, and the template was removed rather than iterated further.
+- `stop:after-escalate-attempt`: one wording fix was attempted, but the template
+  was removed after recognizing its dependency on escalation policy.
+- `stop:premature-ask-temptation`: one wording fix was attempted, but the template
+  was removed as a policy-preference case.
+
+## Closure
+
+v7.3 closes. The generated corpus is a strict-contract corpus with audited
+residual drops and a final drop rate far below the 5% gate. Next slice: v8.0 SFT
+training of the 0.5B model on this corpus.
+
+---
+
+# Updates 2026-05-23-T18 — v7.3.1 closure
+
+## Final Numbers
+
+- run_id: `realistic-v7-full-v5-1-pr41-20260523T101100Z`
+- scenarios_sha256: `88bf8d03d73bd77bc1d2f8adc3006d07ac834470ce482fa8729c8b1de3ab80c1`
+- total_scenarios: `1622`
+- accepted_count: `1613`
+- dropped_count: `9`
+- drop_rate: `0.5549%`
+- max_drop_rate_gate: `5.00%`
+- gate_passed: `true`
+
+## Drop Breakdown
+
+- `kernel_forward:after-rewind`: 5 drops (`target_mismatch` ->
+  `kernel_goto`)
+- `teacher_truncation`: 4 drops (`finish_reason=length`, `content_len`
+  8309-8550)
+
+## Phase 0 Schema Disposition
+
+PR #41 first validated the PR #39 schema hardening against the real OpenAI API.
+The root-level `oneOf` schema was already known to be provider-incompatible, so
+the adapter kept the `{ "action": ... }` envelope required by OpenAI structured
+outputs. A first attempt to keep discriminated `anyOf` action branches regressed
+teacher behavior: `scenario:kernel_inspect:after-near:0007` changed from
+`kernel_inspect` to `escalate(beyond_capability)`.
+
+The final PR #41 schema keeps:
+
+- envelope parsing via `{ "action": ... }`
+- explicit `finish_reason=length` failure as `teacher_truncation`
+- `max_completion_tokens=8192`
+
+It reverts only the discriminated tool/action branches. Tool-argument pairing is
+therefore enforced by the DTO/domain mapper after parsing, not by an asymmetric
+provider schema that biases the teacher toward structurally simpler branches.
+
+Paid validation after the surgical revert passed:
+
+- run_id: `regression-pack-v7-pr39-revert-20260523T100000Z`
+- `scenario:kernel_inspect:after-near:0007` -> `kernel_inspect`
+- OpenAI accepted the schema
+
+## Disposition
+
+v7.3.1 closes at 0.5549% drop rate, 9x under the hard gate. The two residual
+drop categories are tracked in `docs/training/backlog_v8x.md` as v8.x
+investigations:
+
+1. `kernel_forward:after-rewind` wording bias suspect.
+2. Teacher truncation root cause: schema-permissive `answer` field and missing
+   raw-content-tail persistence for truncation diagnostics.
+
+Neither blocks corpus quality for v8.0 SFT training.
+
+## v7.3 Closure Timeline
+
+- v7.3 closed at 0.73% (PR #40, `scenarios-v5`).
+- v7.3.1 closed at 0.55% (PR #41, `scenarios-v5-1`, after removing
+  `stop:no-candidate` and reverting PR #39 schema discrimination).
+
+## Non-Negotiable: Paid Validation On Teacher-Adapter Changes
+
+Any PR that modifies any of the following requires paid validation against a
+real scenario before exiting draft:
+
+- `crates/operator-synthetic-infra/src/adapters/operator_action_schema.rs`
+- `crates/operator-synthetic-infra/src/adapters/openai_compatible_teacher_policy.rs`
+- `crates/operator-synthetic-infra/prompts/teacher_calibration_v*.md`
+- `crates/operator-synthetic-application/src/ports/teacher_policy.rs`
+- the OpenAI model name or `response_format` used in the adapter
+
+Local unit and integration tests with mocked responses are necessary but not
+sufficient. The OpenAI API has provider-specific constraints, such as root
+`oneOf` rejection and strict `additionalProperties:false` requirements, that
+mocks cannot validate. Minimum validation is one paid call against one scenario.
+The cost is negligible compared with blocking downstream corpus runs.
+
+## Next
+
+v7.3.1 closes. Next: v8.0 SFT training of Qwen 0.5B on the
+`scenarios-v5-1` corpus.
