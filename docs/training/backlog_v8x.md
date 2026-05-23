@@ -33,3 +33,48 @@ future corpus expansion or another teacher-backed production run.
   missing observability. Consider persisting a bounded raw content tail for
   truncation-only drops so future diagnosis does not require another paid call.
 
+## v8.1 — constrained decoding for trained-model prediction
+
+v8.0 closure was done without constrained decoding for both frontier and trained
+predictions. This is apples-to-apples, but it is not the cleanest methodology.
+A real comparison should have both sides enforcing the same structured action
+schema.
+
+Two paths for v8.1:
+
+1. **Add outlines/xgrammar to `predict_operator_sft.py`** (~2-3h):
+   load an `operator_action_schema.json` equivalent and use structured local
+   generation in the inference path. This is local, reproducible and has no
+   serving dependency.
+2. **Deploy vLLM with LoRA + guided decoding** (~1-2h if infra is ready):
+   run a real backend for `0.5b.llm.underpassai.com`, then use the same
+   OpenAI-compatible API path for interactive use and evaluation.
+
+Decision: choose after reviewing whether the v8.0 write-action exactness gap is
+capacity, decoding or evaluation normalization.
+
+## v8.1 — write-action exactness
+
+The trained 0.5B is contract-valid on every eval row, but exact match remains
+poor for write payloads:
+
+- `kernel_ingest`: 0/19 exact
+- `kernel_write_memory`: 1/22 exact
+
+The first hypothesis is that long structured payload copying is not being
+evaluated at the right abstraction level. The second is that the model needs
+either constrained decoding or deterministic prepared-payload resolution during
+prediction. Do not jump to a 1.5B fallback until these are separated.
+
+## Cluster cleanup
+
+- `0.5b.llm.underpassai.com` ingress was prepared during v8.0 but does not by
+  itself prove a live 0.5B vLLM backend is serving the trained adapter. Either
+  deploy a real 0.5B vLLM backend in v8.1 or remove the ingress host.
+- `underpass-llm-gemma-4-31b-structured` was scaled to zero during v8.0
+  training to free GPUs. Restore it if any downstream service still depends on
+  that deployment.
+- Historical scratch/evidence files still outside git:
+  `docs/training/viability_pack_gpt55.txt`,
+  `docs/training/operator-v8-0-sft-closure-audit-2026-05-23.md` and
+  `docs/training/operator-v8-0-state-explainer-2026-05-23.md`.
