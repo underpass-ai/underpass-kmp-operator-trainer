@@ -1117,3 +1117,90 @@ prescriptive policy preferences were removed and tracked in
 v7.3 closes. The generated corpus is a strict-contract corpus with audited
 residual drops and a final drop rate far below the 5% gate. Next slice: v8.0 SFT
 training of the 0.5B model on this corpus.
+
+---
+
+# Updates 2026-05-23-T18 — v7.3.1 closure
+
+## Final Numbers
+
+- run_id: `realistic-v7-full-v5-1-pr41-20260523T101100Z`
+- scenarios_sha256: `88bf8d03d73bd77bc1d2f8adc3006d07ac834470ce482fa8729c8b1de3ab80c1`
+- total_scenarios: `1622`
+- accepted_count: `1613`
+- dropped_count: `9`
+- drop_rate: `0.5549%`
+- max_drop_rate_gate: `5.00%`
+- gate_passed: `true`
+
+## Drop Breakdown
+
+- `kernel_forward:after-rewind`: 5 drops (`target_mismatch` ->
+  `kernel_goto`)
+- `teacher_truncation`: 4 drops (`finish_reason=length`, `content_len`
+  8309-8550)
+
+## Phase 0 Schema Disposition
+
+PR #41 first validated the PR #39 schema hardening against the real OpenAI API.
+The root-level `oneOf` schema was already known to be provider-incompatible, so
+the adapter kept the `{ "action": ... }` envelope required by OpenAI structured
+outputs. A first attempt to keep discriminated `anyOf` action branches regressed
+teacher behavior: `scenario:kernel_inspect:after-near:0007` changed from
+`kernel_inspect` to `escalate(beyond_capability)`.
+
+The final PR #41 schema keeps:
+
+- envelope parsing via `{ "action": ... }`
+- explicit `finish_reason=length` failure as `teacher_truncation`
+- `max_completion_tokens=8192`
+
+It reverts only the discriminated tool/action branches. Tool-argument pairing is
+therefore enforced by the DTO/domain mapper after parsing, not by an asymmetric
+provider schema that biases the teacher toward structurally simpler branches.
+
+Paid validation after the surgical revert passed:
+
+- run_id: `regression-pack-v7-pr39-revert-20260523T100000Z`
+- `scenario:kernel_inspect:after-near:0007` -> `kernel_inspect`
+- OpenAI accepted the schema
+
+## Disposition
+
+v7.3.1 closes at 0.5549% drop rate, 9x under the hard gate. The two residual
+drop categories are tracked in `docs/training/backlog_v8x.md` as v8.x
+investigations:
+
+1. `kernel_forward:after-rewind` wording bias suspect.
+2. Teacher truncation root cause: schema-permissive `answer` field and missing
+   raw-content-tail persistence for truncation diagnostics.
+
+Neither blocks corpus quality for v8.0 SFT training.
+
+## v7.3 Closure Timeline
+
+- v7.3 closed at 0.73% (PR #40, `scenarios-v5`).
+- v7.3.1 closed at 0.55% (PR #41, `scenarios-v5-1`, after removing
+  `stop:no-candidate` and reverting PR #39 schema discrimination).
+
+## Non-Negotiable: Paid Validation On Teacher-Adapter Changes
+
+Any PR that modifies any of the following requires paid validation against a
+real scenario before exiting draft:
+
+- `crates/operator-synthetic-infra/src/adapters/operator_action_schema.rs`
+- `crates/operator-synthetic-infra/src/adapters/openai_compatible_teacher_policy.rs`
+- `crates/operator-synthetic-infra/prompts/teacher_calibration_v*.md`
+- `crates/operator-synthetic-application/src/ports/teacher_policy.rs`
+- the OpenAI model name or `response_format` used in the adapter
+
+Local unit and integration tests with mocked responses are necessary but not
+sufficient. The OpenAI API has provider-specific constraints, such as root
+`oneOf` rejection and strict `additionalProperties:false` requirements, that
+mocks cannot validate. Minimum validation is one paid call against one scenario.
+The cost is negligible compared with blocking downstream corpus runs.
+
+## Next
+
+v7.3.1 closes. Next: v8.0 SFT training of Qwen 0.5B on the
+`scenarios-v5-1` corpus.
