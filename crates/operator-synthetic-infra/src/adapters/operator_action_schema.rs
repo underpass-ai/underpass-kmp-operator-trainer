@@ -10,46 +10,57 @@ pub fn operator_action_schema() -> Value {
         "strict": true,
         "schema": {
             "type": "object",
-            "oneOf": [
-                tool_call_action("kernel_wake", &wake_arguments()),
-                tool_call_action("kernel_ask", &ask_arguments()),
-                tool_call_action("kernel_near", &near_arguments()),
-                tool_call_action("kernel_goto", &goto_arguments()),
-                tool_call_action("kernel_rewind", &rewind_arguments()),
-                tool_call_action("kernel_forward", &forward_arguments()),
-                tool_call_action("kernel_trace", &trace_arguments()),
-                tool_call_action("kernel_inspect", &inspect_arguments()),
-                tool_call_action("kernel_ingest", &ingest_arguments()),
-                tool_call_action("kernel_write_memory", &write_memory_arguments()),
-                stop_action(),
-                escalate_action(),
-            ],
+            "additionalProperties": false,
+            "properties": {
+                "action": action_object(),
+            },
+            "required": ["action"],
         },
     })
 }
 
-fn tool_call_action(tool: &'static str, arguments: &Value) -> Value {
+fn action_object() -> Value {
     object(json!({
-        "kind": enum_string(&["tool_call"]),
-        "tool": enum_string(&[tool]),
-        "arguments": arguments,
-    }))
-}
-
-fn stop_action() -> Value {
-    object(json!({
-        "kind": enum_string(&["stop"]),
-        "reason": enum_string(&["answer_ready", "no_candidate", "budget_exhausted"]),
+        "kind": enum_string(&["tool_call", "stop", "escalate"]),
+        "tool": enum_string(&[
+            "kernel_wake",
+            "kernel_ask",
+            "kernel_near",
+            "kernel_goto",
+            "kernel_rewind",
+            "kernel_forward",
+            "kernel_trace",
+            "kernel_inspect",
+            "kernel_ingest",
+            "kernel_write_memory",
+            "none",
+        ]),
+        "arguments": {
+            "anyOf": [
+                wake_arguments(),
+                ask_arguments(),
+                near_arguments(),
+                goto_arguments(),
+                rewind_arguments(),
+                forward_arguments(),
+                trace_arguments(),
+                inspect_arguments(),
+                ingest_arguments(),
+                write_memory_arguments(),
+            ],
+        },
+        "reason": enum_string(&[
+            "answer_ready",
+            "no_candidate",
+            "budget_exhausted",
+            "ambiguous_intent",
+            "beyond_capability",
+            "low_confidence",
+            "none",
+        ]),
         "answer": nullable_string(),
         "evidence": string_array(),
-    }))
-}
-
-fn escalate_action() -> Value {
-    object(json!({
-        "kind": enum_string(&["escalate"]),
-        "reason": enum_string(&["ambiguous_intent", "beyond_capability", "low_confidence"]),
-        "target_model": enum_string(&["frontier-reasoner", "claude-opus-4-7"]),
+        "target_model": enum_string(&["frontier-reasoner", "claude-opus-4-7", "none"]),
     }))
 }
 
@@ -326,66 +337,42 @@ mod tests {
     #[test]
     fn schema_allows_operator_action_kind_not_raw_tool_kind() {
         let schema = operator_action_schema();
-        let variants = schema["schema"]["oneOf"]
+        let kind_enum = schema["schema"]["properties"]["action"]["properties"]["kind"]["enum"]
             .as_array()
-            .expect("root oneOf exists");
-        let kind_enum = variants[0]["properties"]["kind"]["enum"]
-            .as_array()
-            .expect("kind enum exists in branch");
+            .expect("kind enum exists");
 
         assert!(kind_enum.contains(&json!("tool_call")));
         assert!(!kind_enum.contains(&json!("kernel_inspect")));
     }
 
     #[test]
-    fn schema_discriminates_kernel_inspect_arguments_by_tool() {
+    fn schema_exposes_kernel_inspect_argument_branch_without_tool_pairing() {
         let schema = operator_action_schema();
-        let branches = schema["schema"]["oneOf"]
+        let branches = schema["schema"]["properties"]["action"]["properties"]["arguments"]["anyOf"]
             .as_array()
-            .expect("root oneOf exists");
+            .expect("arguments anyOf exists");
         let inspect = branches
             .iter()
-            .find(|branch| branch["properties"]["tool"]["enum"] == json!(["kernel_inspect"]))
-            .expect("kernel_inspect action branch exists");
+            .find(|branch| branch["properties"].get("target").is_some())
+            .expect("kernel_inspect argument branch exists");
 
-        assert_eq!(
-            inspect["properties"]["arguments"]["properties"]["target"],
-            json!({ "type": "string" })
-        );
-        assert!(
-            inspect["properties"]["arguments"]["properties"]
-                .get("cursor")
-                .is_none(),
-            "inspect branch must not accept goto cursor arguments"
-        );
-        assert_eq!(
-            inspect["properties"]["arguments"]["required"],
-            json!(["target"])
-        );
+        assert_eq!(inspect["properties"]["target"], json!({ "type": "string" }));
     }
 
     #[test]
-    fn schema_discriminates_kernel_goto_arguments_by_tool() {
+    fn schema_exposes_kernel_goto_argument_branch_without_tool_pairing() {
         let schema = operator_action_schema();
-        let branches = schema["schema"]["oneOf"]
+        let branches = schema["schema"]["properties"]["action"]["properties"]["arguments"]["anyOf"]
             .as_array()
-            .expect("root oneOf exists");
+            .expect("arguments anyOf exists");
         let goto = branches
             .iter()
-            .find(|branch| branch["properties"]["tool"]["enum"] == json!(["kernel_goto"]))
-            .expect("kernel_goto action branch exists");
+            .find(|branch| branch["properties"].get("cursor").is_some())
+            .expect("kernel_goto argument branch exists");
 
         assert!(
-            goto["properties"]["arguments"]["properties"]
-                .get("cursor")
-                .is_some(),
+            goto["properties"].get("cursor").is_some(),
             "goto branch requires cursor arguments"
-        );
-        assert!(
-            goto["properties"]["arguments"]["properties"]
-                .get("target")
-                .is_none(),
-            "goto branch must not accept inspect target arguments"
         );
     }
 

@@ -5,6 +5,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use operator_shared_contract::operator_action_dto::OperatorActionDto;
+use operator_shared_domain::action::operator_action::OperatorAction;
 use operator_shared_domain::value_objects::finish_reason::FinishReason;
 use operator_shared_domain::value_objects::subject_hash::SubjectHash;
 use operator_shared_infra::mappers::operator_action_mapper::OperatorActionMapper;
@@ -14,6 +15,7 @@ use operator_synthetic_domain::calibration::calibration_subject::CalibrationSubj
 use operator_synthetic_domain::calibration::teacher_decision::TeacherDecision;
 use reqwest::blocking::Client;
 use reqwest::header::AUTHORIZATION;
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::adapters::operator_action_schema::operator_action_schema;
@@ -223,26 +225,46 @@ impl TeacherPolicy for OpenAiCompatibleTeacherPolicy {
                 content_len: content.chars().count(),
             });
         }
-        let action_dto: OperatorActionDto =
-            serde_json::from_str(content.trim()).map_err(|err| TeacherPolicyError::Shape {
-                adapter: ADAPTER,
-                message: format!(
-                    "assistant content is not OperatorActionDto JSON: {err}; finish_reason={}; content_len={}; content_tail={}",
-                    finish_reason.as_str(),
-                    content.chars().count(),
-                    content_tail(&content),
-                ),
-                finish_reason: Some(finish_reason),
-            })?;
-        let action = OperatorActionMapper::to_domain(&action_dto).map_err(|err| {
-            TeacherPolicyError::Shape {
-                adapter: ADAPTER,
-                message: format!("assistant action violates DTO/domain mapping: {err}"),
-                finish_reason: Some(finish_reason),
-            }
-        })?;
+        let action = parse_action_envelope(&content, finish_reason)?;
         Ok(TeacherDecision::new(action, finish_reason, subject_hash))
     }
+}
+
+fn parse_action_envelope(
+    content: &str,
+    finish_reason: FinishReason,
+) -> Result<OperatorAction, TeacherPolicyError> {
+    let action_value: Value =
+        serde_json::from_str(content.trim()).map_err(|err| TeacherPolicyError::Shape {
+            adapter: ADAPTER,
+            message: format!(
+                "assistant content is not OperatorAction envelope JSON: {err}; finish_reason={}; content_len={}; content_tail={}",
+                finish_reason.as_str(),
+                content.chars().count(),
+                content_tail(content),
+            ),
+            finish_reason: Some(finish_reason),
+        })?;
+    let action_value =
+        action_value
+            .get("action")
+            .cloned()
+            .ok_or_else(|| TeacherPolicyError::Shape {
+                adapter: ADAPTER,
+                message: "assistant content missing required action envelope".to_string(),
+                finish_reason: Some(finish_reason),
+            })?;
+    let action_dto: OperatorActionDto =
+        serde_json::from_value(action_value).map_err(|err| TeacherPolicyError::Shape {
+            adapter: ADAPTER,
+            message: format!("assistant action is not OperatorActionDto JSON: {err}"),
+            finish_reason: Some(finish_reason),
+        })?;
+    OperatorActionMapper::to_domain(&action_dto).map_err(|err| TeacherPolicyError::Shape {
+        adapter: ADAPTER,
+        message: format!("assistant action violates DTO/domain mapping: {err}"),
+        finish_reason: Some(finish_reason),
+    })
 }
 
 fn is_structured_output_error(message: &str) -> bool {
@@ -375,7 +397,7 @@ mod tests {
             "choices": [
                 {
                     "message": {
-                        "content": action.to_string()
+                        "content": serde_json::json!({ "action": action }).to_string()
                     },
                     "finish_reason": "stop"
                 }
