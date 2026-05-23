@@ -11,6 +11,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
+use operator_evaluation_domain::prediction::predictions_read_outcome::PredictionsReadOutcome;
+use operator_evaluation_domain::prediction::shape_violation_record::ShapeViolationRecord;
 use operator_evaluation_domain::prediction::step_keyed_prediction::StepKeyedPrediction;
 use operator_shared_domain::ids::step_id::StepId;
 use operator_shared_infra::mappers::operator_action_mapper::OperatorActionMapper;
@@ -36,7 +38,7 @@ impl JsonlPredictionsReader {
         &self.source_path
     }
 
-    pub fn read(&self) -> Result<Vec<StepKeyedPrediction>, PredictionsReadError> {
+    pub fn read(&self) -> Result<PredictionsReadOutcome, PredictionsReadError> {
         let file = File::open(&self.source_path).map_err(|err| {
             PredictionsReadError::SourceUnavailable {
                 adapter: ADAPTER,
@@ -44,7 +46,8 @@ impl JsonlPredictionsReader {
             }
         })?;
         let reader = BufReader::new(file);
-        let mut out = Vec::new();
+        let mut parsed = Vec::new();
+        let mut shape_violations = Vec::new();
         for (index, line) in reader.lines().enumerate() {
             let line_number = index + 1;
             let line = line.map_err(|err| PredictionsReadError::SourceUnavailable {
@@ -67,15 +70,22 @@ impl JsonlPredictionsReader {
                     message: format!("step_id `{}`: {err}", dto.step_id),
                 }
             })?;
-            let action = OperatorActionMapper::to_domain(&dto.action).map_err(|err| {
-                PredictionsReadError::ShapeViolation {
-                    adapter: ADAPTER,
-                    line: line_number,
-                    message: format!("action: {err}"),
+            match OperatorActionMapper::to_domain(&dto.action) {
+                Ok(action) => {
+                    parsed.push(StepKeyedPrediction::new(step_id, action));
                 }
-            })?;
-            out.push(StepKeyedPrediction::new(step_id, action));
+                Err(err) => {
+                    let message = format!("action: {err}");
+                    let record = ShapeViolationRecord::new(line_number, Some(step_id), message)
+                        .map_err(|err| PredictionsReadError::ShapeViolation {
+                            adapter: ADAPTER,
+                            line: line_number,
+                            message: err.to_string(),
+                        })?;
+                    shape_violations.push(record);
+                }
+            }
         }
-        Ok(out)
+        Ok(PredictionsReadOutcome::new(parsed, shape_violations))
     }
 }
