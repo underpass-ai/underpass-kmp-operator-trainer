@@ -838,15 +838,206 @@ This closes the previous paid-debug gap where a drop only recorded
 `scenario_id`, `target`, `reason`, and `message`.
 
 PR #38 also adds `operator-regression-pack-v7`, driven by
-`docs/training/regression_pack_v7.txt`. PR #40 reduced the active pack to the
-two scenario ids that remain in the strict-contract corpus:
+`docs/training/regression_pack_v7.txt`. The initial pack contains the three
+diagnosed scenario ids:
 
 - `scenario:kernel_inspect:after-near:0007`
 - `scenario:stop:no-candidate:0028`
+- `scenario:kernel_goto:temporal-cursor:0021`
 
 The pack is deterministic and not a first-30 truncation. It must run before any
 new paid full corpus run. Local no-cost validation uses `--mock-teacher`; the
 real adapter run remains manual because it spends API calls.
+
+---
+
+# Updates 2026-05-23-T6 — full 1650 semantic run did not close v7.3
+
+The first full corpus run after PR #38 used the current production stack:
+structured output, prepared-action fast path, drop observability, and the new
+semantic acceptance gate for `stop.reason` and `goto.cursor.kind`.
+
+Run id: `realistic-v7-full-semantic-20260523T064000Z`
+
+Inputs:
+
+| Input | SHA-256 |
+|---|---|
+| `../rehydration-kernel-artifacts/operator/scenarios-v4/scenarios.jsonl` | `006521f673df2ea8927b4cf6b15c32d904c1104e5ecad912ab3c63467684bf6b` |
+| `crates/operator-synthetic-infra/prompts/teacher_calibration_v5.md` | `87e26adf71049c165daa68ea016091846f576b9d4902de5276ce37e81956913c` |
+
+Corpus gate result:
+
+```text
+total_scenarios: 1650
+accepted_count: 1436
+dropped_count: 214
+drop_rate: 0.1297
+max_drop_rate_gate: 0.0500
+gate_passed: false
+gate_failure_reason: drop_rate 0.1297 > max_drop_rate 0.0500
+```
+
+Because the corpus gate failed at step 1, the downstream gates were not run:
+contract coverage, SFT prep, no-gold audit, frontier ceiling, and oracle
+round-trip smoke remain pending for the next passing corpus run.
+
+Drop reasons:
+
+| Reason | Count |
+|---|---:|
+| `target_mismatch` | 136 |
+| `semantic_mismatch` | 75 |
+| `parse_failure` | 3 |
+
+Accepted rows by target:
+
+| Target | Accepted / Total |
+|---|---:|
+| `kernel_wake` | 150 / 150 |
+| `kernel_ask` | 125 / 125 |
+| `kernel_near` | 150 / 150 |
+| `kernel_rewind` | 125 / 125 |
+| `kernel_trace` | 125 / 125 |
+| `kernel_ingest` | 125 / 125 |
+| `kernel_write_memory` | 125 / 125 |
+| `kernel_forward` | 124 / 125 |
+| `kernel_inspect` | 122 / 150 |
+| `stop` | 115 / 175 |
+| `kernel_goto` | 75 / 125 |
+| `escalate` | 75 / 150 |
+
+The highest-volume failing templates were:
+
+| Template | Reason | Count | Dominant predicted action |
+|---|---|---:|---|
+| `stop:premature-ask-temptation` | `semantic_mismatch` | 25 | `stop:answer_ready` |
+| `kernel_goto:trace-cursor` | `semantic_mismatch` | 25 | `kernel_goto:ref` |
+| `escalate:do-not-speculate` | `target_mismatch` | 25 | `kernel_ask` |
+| `escalate:budget-alternative` | `target_mismatch` | 25 | mostly `kernel_ask` |
+| `stop:after-escalate-attempt` | `target_mismatch` | 24 | `kernel_ask` |
+| `kernel_goto:temporal-cursor` | `semantic_mismatch` | 24 | `kernel_goto:ref` |
+| `kernel_inspect:after-near` | `target_mismatch` | 14 | `kernel_goto:ref` |
+| `escalate:no-traceable-path` | `target_mismatch` | 14 | split `kernel_trace` / `kernel_ask` |
+| `kernel_inspect:after-trace` | `target_mismatch` | 13 | `kernel_goto:ref` |
+| `stop:no-candidate` | `target_mismatch` | 10 | `kernel_ask` |
+| `escalate:ambiguous-scope` | `target_mismatch` | 9 | `kernel_ask` |
+
+The three parse failures were low-volume but material for diagnosis:
+
+- `scenario:escalate:after-reads:0095` and
+  `scenario:escalate:after-reads:1283` ended with `finish_reason=length`; the
+  adapter persisted `teacher_finish_reason=length` and no `predicted_action`.
+- `scenario:kernel_inspect:after-near:0271` parsed as a tool call but failed
+  DTO/domain mapping because `kernel_inspect` arguments omitted `target`.
+
+Interpretation:
+
+- The `write` path is healthy in this run: all `kernel_ingest` and
+  `kernel_write_memory` scenarios were accepted.
+- The new modes are not globally broken: `writer_pre_read` and `full` scenarios
+  were exercised and accepted in the run.
+- The full run found systematic semantic/template issues that the old
+  first-30 smoke could not characterize: non-ref `kernel_goto` cursors,
+  terminal/adversarial `stop` cases, and several `escalate` adversarial
+  templates.
+- The `stop:no-candidate` `subject_hash` matches the regression-pack baseline,
+  confirming stable input; variation in the `kernel_ask.query` text is model
+  output variance, not scenario drift.
+
+Disposition:
+
+v7.3 is not closed. Do not move to v8 SFT from this corpus. The next recovery
+step must reduce systematic template drops below the 5% corpus gate without
+softening `max_drop_rate`, removing observability, or changing the locked v5
+prompt.
+
+---
+
+# Updates 2026-05-23-T7 — PR #39 structured output hardening
+
+PR #39 hardens the teacher adapter and schema against the two wire-format
+failure classes found in `realistic-v7-full-semantic-20260523T064000Z`.
+
+## Finish reason handling
+
+Before PR #39, the OpenAI-compatible teacher adapter parsed assistant content
+even when the provider returned a non-`stop` finish reason. That made
+`finish_reason=length` appear later as a generic `parse_failure`.
+
+PR #39 changes the adapter behavior:
+
+- `finish_reason=stop` remains the only parseable success path.
+- Any non-`stop` finish reason returns
+  `TeacherPolicyError::TruncatedResponse { finish_reason, content_len }`.
+- `BuildRealisticCorpusUseCase` maps that error to
+  `DropReason::TeacherTruncation`.
+- `dropped.jsonl` will now bucket these rows as `teacher_truncation` and retain
+  `teacher_finish_reason`.
+
+The default `max_completion_tokens` was raised from `4096` to `8192`. The full
+run had two `finish_reason=length` rows at `content_len=4205`; accepted action
+serialization had p99 around 2 KB and max around 2.1 KB. The new ceiling leaves
+headroom, while any future provider-side length finish remains visible instead
+of being parsed best-effort.
+
+## Tool/arguments schema discrimination
+
+Before PR #39, the schema constrained `tool` and `arguments` independently:
+
+```text
+tool: enum(kernel_*)
+arguments: anyOf(all argument shapes)
+```
+
+That allowed provider output like `tool=kernel_inspect` with non-inspect
+arguments to satisfy the schema and fail later in DTO/domain mapping. The full
+run exposed this as:
+
+```text
+scenario:kernel_inspect:after-near:0271
+message: tool 'kernel_inspect' arguments shape is invalid: missing field `target`
+```
+
+PR #39 replaces the independent fields with discriminated action branches:
+
+```text
+one branch per kernel tool:
+  kind = tool_call
+  tool = exact tool literal
+  arguments = exact per-tool schema
+
+plus one branch for stop and one branch for escalate.
+```
+
+This makes `kernel_inspect` without `arguments.target` invalid at the structured
+output boundary instead of reaching the domain mapper.
+
+## Validation status
+
+Offline validation completed:
+
+```text
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
+Both were green after PR #39 changes.
+
+No paid validation calls were run during PR #39 implementation because the task
+hard rule said no paid LLM calls. If the user explicitly approves the exception
+from the acceptance criteria, run a two-row paid validation pack against:
+
+- `scenario:escalate:after-reads:0095`
+- `scenario:kernel_inspect:after-near:0271`
+
+Expected result:
+
+- `0095` either succeeds with the larger token ceiling or drops as
+  `teacher_truncation`, never as generic `parse_failure`.
+- `0271` either succeeds with valid `kernel_inspect.arguments.target` or is
+  rejected before DTO/domain mapping; it must not reach the mapper with missing
+  `target`.
 
 ---
 
