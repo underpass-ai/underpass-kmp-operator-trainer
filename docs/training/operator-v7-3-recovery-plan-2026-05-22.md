@@ -838,13 +838,91 @@ This closes the previous paid-debug gap where a drop only recorded
 `scenario_id`, `target`, `reason`, and `message`.
 
 PR #38 also adds `operator-regression-pack-v7`, driven by
-`docs/training/regression_pack_v7.txt`. The initial pack contains the three
-diagnosed scenario ids:
+`docs/training/regression_pack_v7.txt`. PR #40 reduced the active pack to the
+two scenario ids that remain in the strict-contract corpus:
 
 - `scenario:kernel_inspect:after-near:0007`
 - `scenario:stop:no-candidate:0028`
-- `scenario:kernel_goto:temporal-cursor:0021`
 
 The pack is deterministic and not a first-30 truncation. It must run before any
 new paid full corpus run. Local no-cost validation uses `--mock-teacher`; the
 real adapter run remains manual because it spends API calls.
+
+---
+
+# Updates 2026-05-23-T17 — v7.3 closure
+
+## Final Numbers
+
+Full corpus generation passed with `scenarios-v5` and the locked teacher stack:
+
+- run_id: `realistic-v7-full-v5-20260523T082416Z`
+- scenarios: `../rehydration-kernel-artifacts/operator/scenarios-v5/scenarios.jsonl`
+- scenarios_sha256: `144535a1208d1ebde7c2f29dcdbbd22169f6512e4dc9fb56e81129f20d559f6b`
+- prompt: `crates/operator-synthetic-infra/prompts/teacher_calibration_v5.md`
+- prompt_sha256: `87e26adf71049c165daa68ea016091846f576b9d4902de5276ce37e81956913c`
+- model: `gpt-4o-mini`
+- temperature: `0.0`
+- total_scenarios: `1650`
+- accepted_count: `1638`
+- dropped_count: `12`
+- drop_rate: `0.73%`
+- max_drop_rate_gate: `5.00%`
+- gate_passed: `true`
+
+The final regression pack run also passed:
+
+- run_id: `regression-pack-v7-v5-20260523T082353Z`
+- accepted_count: `2`
+- dropped_count: `0`
+- gate_passed: `true`
+
+## Drop Breakdown
+
+All final drops are `target_mismatch`; there were no parse failures, no
+truncation failures, and no semantic-mismatch failures.
+
+| Template | Drops | Observed prediction |
+|---|---:|---|
+| `stop:no-candidate` | 10 | `kernel_ask` |
+| `kernel_forward:after-rewind` | 2 | `kernel_goto(cursor.kind=ref)` |
+
+The `stop:no-candidate` drops are the accepted residual teacher limitation
+documented in T4/T5. The two `kernel_forward:after-rewind` drops are isolated
+and do not form a dominant template failure.
+
+## Templates Removed
+
+The v7.3 closure corpus is strict-contract-only. Templates that require
+prescriptive policy preferences were removed and tracked in
+`docs/training/backlog_policy_preference_spec.md`:
+
+- `kernel_goto:trace-cursor` — invalid kernel `kernel_goto` wire contract.
+- `kernel_goto:temporal-cursor` — wording-resistant temporal policy distinction;
+  the one permitted wording fix still produced `kernel_forward`.
+- `escalate:do-not-speculate` — empirically subtle policy.
+- `escalate:budget-alternative` — empirically subtle policy.
+- `escalate:no-traceable-path` — empirically subtle policy.
+- `escalate:ambiguous-scope` — empirically subtle policy.
+- `stop:after-escalate-attempt` — depends on prior escalation policy after
+  escalation templates were removed.
+- `stop:premature-ask-temptation` — empirically unstable `no_candidate` vs
+  `answer_ready` terminal policy.
+
+## Templates Reworded
+
+- `kernel_inspect:after-near`: removed the "visible node" phrasing that biased
+  the teacher toward `kernel_goto`; final regression pack and full run passed.
+- `kernel_inspect:after-trace`: analogous wording fix; full run passed.
+- `kernel_goto:temporal-cursor`: one wording fix was attempted, failed in the
+  regression pack, and the template was removed rather than iterated further.
+- `stop:after-escalate-attempt`: one wording fix was attempted, but the template
+  was removed after recognizing its dependency on escalation policy.
+- `stop:premature-ask-temptation`: one wording fix was attempted, but the template
+  was removed as a policy-preference case.
+
+## Closure
+
+v7.3 closes. The generated corpus is a strict-contract corpus with audited
+residual drops and a final drop rate far below the 5% gate. Next slice: v8.0 SFT
+training of the 0.5B model on this corpus.

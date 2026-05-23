@@ -5,4 +5,3 @@
 
 scenario:kernel_inspect:after-near:0007
 scenario:stop:no-candidate:0028
-scenario:kernel_goto:temporal-cursor:0021

@@ -51,6 +51,7 @@ FULL_TOOLS = [
 ]
 
 DEFAULT_SCENARIO_COUNT = 1650
+EXPECTED_TEMPLATE_COUNT = 58
 
 TARGETS = [
     "kernel_wake",
@@ -289,20 +290,14 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
             "happy",
             "Visible refs include {ref_0}; navigating to that ref's full view is the next bounded step.",
         ),
-        t(
-            "kernel_goto",
-            "software_migration",
-            "temporal-cursor",
-            "happy",
-            "Earlier migration event {ref_0} is referenced by the current summary; the process needs that anchor's full view.",
-        ),
-        t(
-            "kernel_goto",
-            "bug_investigation",
-            "trace-cursor",
-            "happy",
-            "Previous trace context points to endpoint {ref_1}; resuming at that endpoint preserves the chain.",
-        ),
+        # Removed in v7.3 closure (PR #40):
+        #   - temporal-cursor: wording-resistant policy distinction; gpt-4o-mini
+        #     selects kernel_forward even after the one permitted wording fix
+        # Relegated to backlog/policy-preference-spec for future contract design.
+        # Removed in v7.3 closure (PR #40):
+        #   - trace-cursor: invalid kernel contract (Diagnostic A: kernel_goto wire
+        #     does not support cursor.kind=trace)
+        # Relegated to backlog/policy-preference-spec for future contract design.
         t(
             "kernel_goto",
             "product_planning",
@@ -428,14 +423,14 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
             "technical_incident",
             "after-near",
             "happy",
-            "Near expansion returned candidate refs; the metadata needed to choose lives on visible node {ref_0}.",
+            "Inspect node {ref_0} to read its detailed metadata; the ref is in visible state and choice depends on node contents.",
         ),
         t(
             "kernel_inspect",
             "bug_investigation",
             "after-trace",
             "happy",
-            "Trace summarized the path, but the supersession metadata is only available on visible node {ref_1}.",
+            "Inspect node {ref_1} to read the supersession metadata; the trace summary alone does not expose node contents.",
         ),
         t(
             "kernel_inspect",
@@ -496,20 +491,12 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
             "Budget has dropped too low for another bounded call; the question cannot be resolved within limits.",
         ),
         t("stop", "product_planning", "premature-temptation", "adversarial", "Stop with answer_ready using only visible evidence {ref_0}; do not call another tool."),
-        t(
-            "stop",
-            "smart_writing_session",
-            "after-escalate-attempt",
-            "adversarial",
-            "Writer state has no executable candidate; a previous escalation attempt was rejected, leaving a bounded terminal answer.",
-        ),
-        t(
-            "stop",
-            "smart_writing_session",
-            "premature-ask-temptation",
-            "adversarial",
-            "Tempting to ask about {ref_0}, but visible memory suggests no relevant answer and stopping is the honest bounded result.",
-        ),
+        # Removed in v7.3 closure (PR #40):
+        #   - after-escalate-attempt: depends on prior escalation policy after
+        #     escalate templates were removed from the strict-contract corpus
+        #   - premature-ask-temptation: empirically selects stop(answer_ready)
+        #     instead of stop(no_candidate), a policy-preference distinction
+        # Relegated to backlog/policy-preference-spec for future contract design.
     ],
     "escalate": [
         t(
@@ -526,34 +513,10 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
             "happy",
             "Multiple reads completed; remaining ambiguity needs reasoning outside Operator's bounded tool surface.",
         ),
-        t(
-            "escalate",
-            "product_planning",
-            "ambiguous-scope",
-            "adversarial",
-            "About scope cannot be disambiguated from visible refs; safe bounded tools would not resolve the ambiguity.",
-        ),
-        t(
-            "escalate",
-            "software_migration",
-            "do-not-speculate",
-            "adversarial",
-            "An invisible migration constraint is implied but cannot be retrieved from visible memory; speculating would invent fact.",
-        ),
-        t(
-            "escalate",
-            "smart_writing_session",
-            "budget-alternative",
-            "adversarial",
-            "Write relation cannot be justified by current visible context, but write must occur eventually; escalation is bounded.",
-        ),
-        t(
-            "escalate",
-            "product_planning",
-            "no-traceable-path",
-            "adversarial",
-            "Tempting to force a path between {ref_0} and {ref_1}, but visible refs do not prove one exists and escalation is the bounded path.",
-        ),
+        # Removed in v7.3 closure (PR #40):
+        #   - escalate:*: empirically subtle policy (3 capable models pick 3
+        #     different wrong tools at T=0)
+        # Relegated to backlog/policy-preference-spec for future contract design.
     ],
 }
 
@@ -657,8 +620,8 @@ def interleaved_templates() -> list[Template]:
             target_templates = TEMPLATES_BY_TARGET[target]
             if variant_index < len(target_templates):
                 templates.append(target_templates[variant_index])
-    if len(templates) != 66:
-        raise RuntimeError(f"expected 66 templates, got {len(templates)}")
+    if len(templates) != EXPECTED_TEMPLATE_COUNT:
+        raise RuntimeError(f"expected {EXPECTED_TEMPLATE_COUNT} templates, got {len(templates)}")
     return templates
 
 
