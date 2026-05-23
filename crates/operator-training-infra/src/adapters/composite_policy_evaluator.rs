@@ -6,6 +6,7 @@
 
 use operator_evaluation_application::use_cases::evaluate_operator_policy_use_case::EvaluateOperatorPolicyUseCase;
 use operator_evaluation_domain::prediction::evaluation_pair::EvaluationPair;
+use operator_evaluation_domain::prediction::shape_violation_record::ShapeViolationRecord;
 use operator_evaluation_domain::report::evaluation_report::EvaluationReport;
 use operator_shared_domain::contract::action_contract_validator::ActionContractValidator;
 use operator_training_application::errors::policy_evaluator_error::PolicyEvaluatorError;
@@ -29,12 +30,16 @@ impl<V: ActionContractValidator + std::fmt::Debug> CompositePolicyEvaluator<V> {
 impl<V: ActionContractValidator + std::fmt::Debug + Send + Sync> PolicyEvaluator
     for CompositePolicyEvaluator<V>
 {
-    fn evaluate(&self, pairs: &[EvaluationPair]) -> Result<EvaluationReport, PolicyEvaluatorError> {
-        self.inner
-            .execute(pairs)
-            .map_err(|err| PolicyEvaluatorError::DomainFailure {
+    fn evaluate(
+        &self,
+        pairs: &[EvaluationPair],
+        shape_violations: &[ShapeViolationRecord],
+    ) -> Result<EvaluationReport, PolicyEvaluatorError> {
+        self.inner.execute(pairs, shape_violations).map_err(|err| {
+            PolicyEvaluatorError::DomainFailure {
                 adapter: ADAPTER,
                 message: err.to_string(),
-            })
+            }
+        })
     }
 }

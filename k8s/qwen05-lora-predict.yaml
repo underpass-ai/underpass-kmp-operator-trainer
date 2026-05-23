@@ -7,7 +7,7 @@
 # See ../docs/training/runbook.md for the end-to-end flow.
 #
 # Inputs (host paths, mounted into the pod):
-#   /host-tmp/<dataset_dir>/eval.jsonl   <- holdout SFT JSONL
+#   /host-tmp/<dataset_dir>/openai_eval.jsonl   <- holdout SFT JSONL
 #   /host-tmp/<adapter_dir>/             <- trained LoRA adapter
 # Output:
 #   /host-tmp/<predictions_dir>/predictions.jsonl
@@ -52,7 +52,7 @@ spec:
                 "peft>=0.15.0" \
                 "accelerate>=1.7.0" \
                 sentencepiece
-              : "${DATASET_JSONL:=/host-tmp/operator-sft/eval.jsonl}"
+              : "${DATASET_JSONL:=/host-tmp/operator-sft/openai_eval.jsonl}"
               : "${ADAPTER_DIR:=/host-tmp/operator-qwen05-lora}"
               : "${OUTPUT_DIR:=/host-tmp/operator-qwen05-predictions}"
               : "${MODEL_ID:=Qwen/Qwen2.5-0.5B-Instruct}"
@@ -63,6 +63,9 @@ spec:
                 --adapter "${ADAPTER_DIR}" \
                 --output "${OUTPUT_DIR}" \
                 --batch-size 8 \
+                --max-new-tokens 2048 \
+                --temperature 0.0 \
+                --stop-after-json \
                 --force
           resources:
             limits:

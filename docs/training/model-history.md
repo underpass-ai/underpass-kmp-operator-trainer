@@ -61,6 +61,121 @@ That row must include the v7 frontier ceiling for the same held-out episode
 split. A 300-600 row v7 run is a training smoke, not a release-candidate
 baseline.
 
+## v8.0 — Qwen2.5-0.5B-Instruct LoRA SFT (2026-05-23)
+
+### Inputs
+
+- Corpus: `../rehydration-kernel-artifacts/operator/realistic-v7-full-v5-1-pr41-20260523T101100Z/trajectories.jsonl`
+- Corpus SHA-256: `3b9194f3fc14eb90228662cab3c0a71008b1375e57b0064a2021cd9df416e51e`
+- Train JSONL: `/tmp/operator-sft-v8.0/openai_train.jsonl` (1,371 rows, SHA-256 `ca6751f48cd3f9c01ae6b56558b5f99df90dab57dfc1e381bc97a4f3f67eab15`)
+- Eval JSONL: `/tmp/operator-sft-v8.0/openai_eval.jsonl` (242 rows, SHA-256 `626eec90c827296c405d75b2395316e3dfe3370ea6fd3d6934906427ec403212`)
+- Split: grouped by `about`, eval ratio 0.15
+- Base model: `Qwen/Qwen2.5-0.5B-Instruct`
+
+### Hyperparameters
+
+- LoRA: r=16, alpha=32, dropout=0.05
+- Target modules: `q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj`
+- Optimizer schedule: lr=2e-4, cosine scheduler, warmup_ratio=0.03
+- Epochs: 3
+- Effective batch: 16 (`batch_size=4` per GPU x 4 GPUs x `grad_accum=1`)
+- Max length: 2048
+- Precision: fp16
+- Distributed run: `torchrun --standalone --nproc_per_node=4`
+- NCCL: `NCCL_P2P_DISABLE=1`, `NCCL_IB_DISABLE=1`
+
+### Training run
+
+- Kubernetes Job: `underpass-runtime/operator-qwen05-lora-train-4gpu`
+- Wall clock: 713.8s (about 12 min)
+- Steps: 258 (86 steps/epoch x 3 epochs)
+- Final adapter: `/tmp/operator-qwen05-lora-v8.0/adapter_model.safetensors`
+- Final adapter SHA-256: `4a5ed6fa2057cb2f20db3289fc51ae114ad32167c4f13db1cfb68a3c8855f7b1`
+- Checkpoints: `/tmp/operator-qwen05-lora-v8.0/checkpoint-{86,172,258}/`
+
+Eval metrics:
+
+| Epoch | Step | eval_loss | eval_mean_token_accuracy |
+| --- | ---: | ---: | ---: |
+| 1 | 86 | 0.0391338058 | 0.9870025739 |
+| 2 | 172 | 0.0242082980 | 0.9899247177 |
+| 3 | 258 | 0.0235070214 | 0.9900132008 |
+
+### Process deviations
+
+1. Frontier ceiling was not run before training. Mitigation: run it retroactively on the same eval split before interpreting model accuracy.
+2. Training observability hardening (TensorBoard + step-level eval) was skipped. The run has per-epoch eval points only.
+3. The observer agent was skipped; training was monitored manually through Kubernetes logs.
+4. The first 1-GPU Kubernetes Job launch was deleted and replaced by the 4-GPU manifest.
+5. Output paths were originally non-versioned. The dataset was renamed to `/tmp/operator-sft-v8.0`; the LoRA directory could not be renamed because it is owned by `nobody` under sticky `/tmp`, so it was copied to `/tmp/operator-qwen05-lora-v8.0` and the original was left intact.
+6. Cluster side effects happened in the same session and are not part of the model result: `0.5b.llm.underpassai.com` ingress/TLS was configured, and `underpass-llm-gemma-4-31b-structured` was scaled to zero to free GPUs.
+7. The first trained-model predict job used implicit generation defaults (`max_new_tokens=350`, `stop_after_json=false`) and produced 19 `incomplete_json` failures. The run was preserved at `/tmp/operator-qwen05-predictions-v8.0/`; the repo predict manifest was updated to use explicit `--max-new-tokens 2048 --temperature 0.0 --stop-after-json`, then rerun successfully.
+
+### Artifacts
+
+- Dataset: `/tmp/operator-sft-v8.0/`
+- Adapter: `/tmp/operator-qwen05-lora-v8.0/`
+- Frontier ceiling predictions: `../rehydration-kernel-artifacts/operator/frontier-ceiling-v8.0-20260523T140341Z/predictions.jsonl`
+- Frontier ceiling policy eval: `../rehydration-kernel-artifacts/operator/frontier-ceiling-v8.0-20260523T140341Z/policy_eval_report.txt`
+- First trained prediction attempt, incomplete: `/tmp/operator-qwen05-predictions-v8.0/` (223 predictions, 19 `incomplete_json` failures)
+- Trained predictions, final: `/tmp/operator-qwen05-predictions-v8.0-2048-jsonstop/predictions.jsonl`
+- Trained prediction summary, final: `/tmp/operator-qwen05-predictions-v8.0-2048-jsonstop/summary.json`
+- Trained policy eval, final: `/tmp/operator-qwen05-predictions-v8.0-2048-jsonstop.policy_eval_report.txt`
+
+### Results
+
+Both frontier and trained runs were evaluated without constrained decoding. The
+frontier run used `gpt-4o-mini` at temperature 0.0 and produced 12 shape-invalid
+rows; PR #43 evaluator changes count those rows as evaluated failures instead
+of aborting the report. The trained run used free JSON generation with
+`--stop-after-json` and a 2048-token completion budget.
+
+Global metrics:
+
+| Metric | Frontier `gpt-4o-mini` | Qwen 0.5B LoRA | Delta |
+| --- | ---: | ---: | ---: |
+| total | 242 | 242 | - |
+| parsed | 230 | 242 | +12 |
+| shape_invalid | 12 (4.96%) | 0 (0.00%) | -4.96 pp |
+| exact_match | 90 (37.19%) | 180 (74.38%) | +37.19 pp |
+| tool_match | 230 (95.04%) | 242 (100.00%) | +4.96 pp |
+| contract_valid | 220 (90.91%) | 242 (100.00%) | +9.09 pp |
+
+Per-capability exact match:
+
+| Capability | Frontier | Qwen 0.5B LoRA | Delta |
+| --- | ---: | ---: | ---: |
+| `<stop/escalate>` | 6/6 (100.00%) | 6/6 (100.00%) | +0.00 pp |
+| `kernel_ingest` | 0/19 (0.00%) | 0/19 (0.00%) | +0.00 pp |
+| `kernel_wake` | 58/58 (100.00%) | 58/58 (100.00%) | +0.00 pp |
+| `kernel_ask` | 9/30 (30.00%) | 13/30 (43.33%) | +13.33 pp |
+| `kernel_near` | 0/18 (0.00%) | 15/18 (83.33%) | +83.33 pp |
+| `kernel_goto` | 3/3 (100.00%) | 3/3 (100.00%) | +0.00 pp |
+| `kernel_rewind` | 0/13 (0.00%) | 13/13 (100.00%) | +100.00 pp |
+| `kernel_forward` | 0/35 (0.00%) | 33/35 (94.29%) | +94.29 pp |
+| `kernel_trace` | 0/23 (0.00%) | 23/23 (100.00%) | +100.00 pp |
+| `kernel_inspect` | 14/15 (93.33%) | 15/15 (100.00%) | +6.67 pp |
+| `kernel_write_memory` | 0/22 (0.00%) | 1/22 (4.55%) | +4.55 pp |
+
+The frontier `kernel_ingest` denominator includes the 12 shape-invalid rows
+allocated back to their ground-truth capability; the printed CLI per-tool bucket
+only shows parsed rows.
+
+### Decision
+
+v8.0 closes as the first interpretable trained baseline. The 0.5B specialist
+beats the frontier ceiling by +37.19 percentage points on exact action, reaches
+100% tool selection and 100% contract validity, and confirms the research
+hypothesis that a small fine-tuned model can beat a frontier model on bounded
+operator action structure.
+
+The closure is not a production serving claim. Write payload exactness remains
+weak (`kernel_ingest` 0/19, `kernel_write_memory` 1/22), and constrained
+decoding is still backlog for v8.1. Do not fallback to 1.5B until the v8.1
+work determines whether the write gap is caused by model capacity, evaluation
+normalization, or the lack of deterministic prepared-payload resolution during
+prediction.
+
 ## Why Qwen 0.5B and not something larger?
 
 The kernel's design goal (see [`feedback_small_models`] in the

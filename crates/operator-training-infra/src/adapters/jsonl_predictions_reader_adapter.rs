@@ -16,7 +16,7 @@
 //! from the application port (e.g., for an alternate JSONL dialect
 //! emitted by a future predictor).
 
-use operator_evaluation_domain::prediction::step_keyed_prediction::StepKeyedPrediction;
+use operator_evaluation_domain::prediction::predictions_read_outcome::PredictionsReadOutcome;
 use operator_evaluation_infra::adapters::jsonl_predictions_reader::JsonlPredictionsReader;
 use operator_evaluation_infra::errors::predictions_read_error::PredictionsReadError as InfraError;
 use operator_training_application::errors::predictions_read_error::PredictionsReadError;
@@ -36,7 +36,7 @@ impl JsonlPredictionsReaderAdapter {
 }
 
 impl PredictionsReader for JsonlPredictionsReaderAdapter {
-    fn read(&self) -> Result<Vec<StepKeyedPrediction>, PredictionsReadError> {
+    fn read(&self) -> Result<PredictionsReadOutcome, PredictionsReadError> {
         self.inner.read().map_err(translate_error)
     }
 }

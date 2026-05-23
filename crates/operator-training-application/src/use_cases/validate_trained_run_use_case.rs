@@ -55,8 +55,10 @@ where
     ) -> TrainingApplicationResult<ValidateTrainedRunOutcome> {
         let predictor_outcome = self.predictor.predict(request.predictor_target())?;
         let predictions = self.reader.read()?;
-        let pairs = join_step_predictions(request.ground_truth(), &predictions);
-        let evaluation_report = self.evaluator.evaluate(&pairs)?;
+        let pairs = join_step_predictions(request.ground_truth(), predictions.parsed());
+        let evaluation_report = self
+            .evaluator
+            .evaluate(&pairs, predictions.shape_violations())?;
         Ok(ValidateTrainedRunOutcome::new(
             predictor_outcome,
             evaluation_report,
@@ -68,6 +70,8 @@ where
 mod tests {
     use super::*;
     use operator_evaluation_domain::prediction::evaluation_pair::EvaluationPair;
+    use operator_evaluation_domain::prediction::predictions_read_outcome::PredictionsReadOutcome;
+    use operator_evaluation_domain::prediction::shape_violation_record::ShapeViolationRecord;
     use operator_evaluation_domain::prediction::step_keyed_prediction::StepKeyedPrediction;
     use operator_evaluation_domain::report::evaluation_report::EvaluationReport;
     use operator_shared_domain::action::operator_action::OperatorAction;
@@ -139,11 +143,15 @@ mod tests {
     #[derive(Debug)]
     struct StubReader {
         rows: Vec<StepKeyedPrediction>,
+        shape_violations: Vec<ShapeViolationRecord>,
     }
 
     impl PredictionsReader for StubReader {
-        fn read(&self) -> Result<Vec<StepKeyedPrediction>, PredictionsReadError> {
-            Ok(self.rows.clone())
+        fn read(&self) -> Result<PredictionsReadOutcome, PredictionsReadError> {
+            Ok(PredictionsReadOutcome::new(
+                self.rows.clone(),
+                self.shape_violations.clone(),
+            ))
         }
     }
 
@@ -151,7 +159,7 @@ mod tests {
     struct FailingReader;
 
     impl PredictionsReader for FailingReader {
-        fn read(&self) -> Result<Vec<StepKeyedPrediction>, PredictionsReadError> {
+        fn read(&self) -> Result<PredictionsReadOutcome, PredictionsReadError> {
             Err(PredictionsReadError::SourceUnavailable {
                 adapter: "stub",
                 message: "missing".into(),
@@ -162,15 +170,21 @@ mod tests {
     #[derive(Debug, Default)]
     struct RecordingEvaluator {
         last_count: Mutex<usize>,
+        last_shape_count: Mutex<usize>,
     }
 
     impl PolicyEvaluator for RecordingEvaluator {
         fn evaluate(
             &self,
             pairs: &[EvaluationPair],
+            shape_violations: &[ShapeViolationRecord],
         ) -> Result<EvaluationReport, PolicyEvaluatorError> {
             *self.last_count.lock().unwrap() = pairs.len();
-            Ok(EvaluationReport::from_outcomes(Vec::new()))
+            *self.last_shape_count.lock().unwrap() = shape_violations.len();
+            Ok(EvaluationReport::from_outcomes_and_shape_violations(
+                Vec::new(),
+                shape_violations.to_vec(),
+            ))
         }
     }
 
@@ -233,6 +247,7 @@ mod tests {
                 inspect_prediction("step:1", "node:1"),
                 inspect_prediction("step:2", "node:2"),
             ],
+            shape_violations: Vec::new(),
         };
         let evaluator = RecordingEvaluator::default();
         let use_case = ValidateTrainedRunUseCase::new(predictor, reader, evaluator);
@@ -268,7 +283,10 @@ mod tests {
     #[test]
     fn predictor_failure_bubbles_out() {
         let predictor = FailingPredictor;
-        let reader = StubReader { rows: Vec::new() };
+        let reader = StubReader {
+            rows: Vec::new(),
+            shape_violations: Vec::new(),
+        };
         let evaluator = RecordingEvaluator::default();
         let use_case = ValidateTrainedRunUseCase::new(predictor, reader, evaluator);
 
@@ -304,6 +322,7 @@ mod tests {
                 inspect_prediction("step:1", "node:1"),
                 inspect_prediction("step:99-not-in-ground-truth", "node:99"),
             ],
+            shape_violations: Vec::new(),
         };
         let evaluator = RecordingEvaluator::default();
         let use_case = ValidateTrainedRunUseCase::new(predictor, reader, evaluator);
@@ -328,6 +347,7 @@ mod tests {
             fn evaluate(
                 &self,
                 _: &[EvaluationPair],
+                _: &[ShapeViolationRecord],
             ) -> Result<EvaluationReport, PolicyEvaluatorError> {
                 Err(PolicyEvaluatorError::DomainFailure {
                     adapter: "stub",
@@ -338,6 +358,7 @@ mod tests {
         let predictor = StubPredictor::new(predictor_outcome());
         let reader = StubReader {
             rows: vec![inspect_prediction("step:1", "node:1")],
+            shape_violations: Vec::new(),
         };
         let use_case = ValidateTrainedRunUseCase::new(predictor, reader, FailingEval);
 
@@ -356,7 +377,10 @@ mod tests {
     fn empty_predictions_yields_empty_evaluation() {
         let predictor =
             StubPredictor::new(PredictorOutcome::new("/tmp/p", "/tmp/s", 0, 0).unwrap());
-        let reader = StubReader { rows: Vec::new() };
+        let reader = StubReader {
+            rows: Vec::new(),
+            shape_violations: Vec::new(),
+        };
         let evaluator = RecordingEvaluator::default();
         let use_case = ValidateTrainedRunUseCase::new(predictor, reader, evaluator);
 
@@ -370,6 +394,30 @@ mod tests {
     }
 
     #[test]
+    fn shape_violations_are_passed_to_evaluator() {
+        let predictor = StubPredictor::new(predictor_outcome());
+        let violation =
+            ShapeViolationRecord::new(3, Some(StepId::parse("step:bad").unwrap()), "bad action")
+                .unwrap();
+        let reader = StubReader {
+            rows: vec![inspect_prediction("step:1", "node:1")],
+            shape_violations: vec![violation],
+        };
+        let evaluator = RecordingEvaluator::default();
+        let use_case = ValidateTrainedRunUseCase::new(predictor, reader, evaluator);
+
+        let request = ValidateTrainedRunRequest::new(
+            predictor_target(),
+            vec![inspect_trajectory("traj:1", "step:1", "node:1")],
+        );
+        let outcome = use_case.execute(&request).expect("happy path");
+
+        assert_eq!(outcome.evaluation_report().shape_invalid_count(), 1);
+        assert_eq!(*use_case.evaluator.last_count.lock().unwrap(), 1);
+        assert_eq!(*use_case.evaluator.last_shape_count.lock().unwrap(), 1);
+    }
+
+    #[test]
     #[should_panic(expected = "duplicate step_id")]
     fn duplicate_ground_truth_step_id_panics_in_debug_builds() {
         // Two trajectories share `step:1` — this is a caller-side
@@ -380,6 +428,7 @@ mod tests {
         let predictor = StubPredictor::new(predictor_outcome());
         let reader = StubReader {
             rows: vec![inspect_prediction("step:1", "node:1")],
+            shape_violations: Vec::new(),
         };
         let evaluator = RecordingEvaluator::default();
         let use_case = ValidateTrainedRunUseCase::new(predictor, reader, evaluator);

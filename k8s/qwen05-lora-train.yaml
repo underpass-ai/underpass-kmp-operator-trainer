@@ -16,8 +16,8 @@
 #   - resources.* for the local GPU / CPU / memory
 #   - volumes.repo.hostPath to point at the operator repo
 #
-# Customize the dataset by setting the two --*-jsonl args to the
-# dataset you want to train on. The job itself is generic.
+# Defaults remain generic. The caller chooses versioned dataset/output
+# paths by setting DATASET_DIR and OUTPUT_DIR before applying the Job.
 
 apiVersion: batch/v1
 kind: Job
@@ -26,12 +26,15 @@ metadata:
   labels:
     app.kubernetes.io/name: operator-qwen05-lora-train
     app.kubernetes.io/part-of: underpass-operator
+    operator.training/parallelism: ddp-4gpu
 spec:
   backoffLimit: 0
+  activeDeadlineSeconds: 7200
   template:
     metadata:
       labels:
         app.kubernetes.io/name: operator-qwen05-lora-train
+        operator.training/parallelism: ddp-4gpu
     spec:
       restartPolicy: Never
       containers:
@@ -46,12 +49,26 @@ spec:
               value: /host-tmp/huggingface/transformers
             - name: PYTORCH_CUDA_ALLOC_CONF
               value: expandable_segments:True
+            - name: NCCL_P2P_DISABLE
+              value: "1"
+            - name: NCCL_IB_DISABLE
+              value: "1"
           command:
             - bash
             - -lc
           args:
             - |
               set -euo pipefail
+              # Fail fast on dataset/path issues before spending time on deps/model load.
+              : "${DATASET_DIR:=/host-tmp/operator-sft}"
+              : "${OUTPUT_DIR:=/host-tmp/operator-qwen05-lora}"
+              : "${MODEL_ID:=Qwen/Qwen2.5-0.5B-Instruct}"
+              python scripts/operator/train_operator_sft_lora.py \
+                --train-jsonl "${DATASET_DIR}/openai_train.jsonl" \
+                --eval-jsonl  "${DATASET_DIR}/openai_eval.jsonl" \
+                --output-dir "${OUTPUT_DIR}-validate-only" \
+                --validate-only
+
               python -m pip install --upgrade pip
               python -m pip install \
                 "transformers>=4.51.0" \
@@ -60,30 +77,31 @@ spec:
                 "accelerate>=1.7.0" \
                 "trl>=0.18.0" \
                 sentencepiece
-              # Override these via `kubectl set env` or by editing the
-              # job before apply.
-              : "${DATASET_DIR:=/host-tmp/operator-sft}"
-              : "${OUTPUT_DIR:=/host-tmp/operator-qwen05-lora}"
-              : "${MODEL_ID:=Qwen/Qwen2.5-0.5B-Instruct}"
               rm -rf "${OUTPUT_DIR}"
-              python scripts/operator/train_operator_sft_lora.py \
+              torchrun --standalone --nproc_per_node=4 scripts/operator/train_operator_sft_lora.py \
                 --train-jsonl "${DATASET_DIR}/openai_train.jsonl" \
                 --eval-jsonl  "${DATASET_DIR}/openai_eval.jsonl" \
                 --model-id "${MODEL_ID}" \
                 --output-dir "${OUTPUT_DIR}" \
+                --learning-rate 2e-4 \
+                --lora-r 16 \
+                --lora-alpha 32 \
+                --lora-dropout 0.05 \
+                --lora-target-modules "q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj" \
                 --epochs 3 \
-                --batch-size 2 \
-                --grad-accum 8 \
+                --batch-size 4 \
+                --grad-accum 1 \
                 --max-length 2048 \
-                --fp16
+                --device-map none \
+                --bf16
           resources:
             limits:
-              nvidia.com/gpu: "1"
-              memory: 32Gi
+              nvidia.com/gpu: "4"
+              memory: 96Gi
             requests:
-              nvidia.com/gpu: "1"
-              cpu: "4"
-              memory: 20Gi
+              nvidia.com/gpu: "4"
+              cpu: "12"
+              memory: 64Gi
           volumeMounts:
             - name: repo
               mountPath: /workspace/repo

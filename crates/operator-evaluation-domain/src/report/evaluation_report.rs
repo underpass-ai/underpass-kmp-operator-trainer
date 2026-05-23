@@ -6,22 +6,39 @@ use std::collections::BTreeMap;
 use operator_shared_domain::tool::kernel_tool::KernelTool;
 
 use crate::outcome::prediction_evaluation_outcome::PredictionEvaluationOutcome;
+use crate::prediction::shape_violation_record::ShapeViolationRecord;
 use crate::report::tool_evaluation_metric::ToolEvaluationMetric;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvaluationReport {
     outcomes: Vec<PredictionEvaluationOutcome>,
+    shape_violations: Vec<ShapeViolationRecord>,
     per_tool: Vec<ToolEvaluationMetric>,
 }
 
 impl EvaluationReport {
     pub fn from_outcomes(outcomes: Vec<PredictionEvaluationOutcome>) -> Self {
+        Self::from_outcomes_and_shape_violations(outcomes, Vec::new())
+    }
+
+    pub fn from_outcomes_and_shape_violations(
+        outcomes: Vec<PredictionEvaluationOutcome>,
+        shape_violations: Vec<ShapeViolationRecord>,
+    ) -> Self {
         let per_tool = aggregate_per_tool(&outcomes);
-        Self { outcomes, per_tool }
+        Self {
+            outcomes,
+            shape_violations,
+            per_tool,
+        }
     }
 
     pub fn outcomes(&self) -> &[PredictionEvaluationOutcome] {
         &self.outcomes
+    }
+
+    pub fn shape_violations(&self) -> &[ShapeViolationRecord] {
+        &self.shape_violations
     }
 
     pub fn per_tool(&self) -> &[ToolEvaluationMetric] {
@@ -29,7 +46,15 @@ impl EvaluationReport {
     }
 
     pub fn total(&self) -> usize {
+        self.parsed_count() + self.shape_invalid_count()
+    }
+
+    pub fn parsed_count(&self) -> usize {
         self.outcomes.len()
+    }
+
+    pub fn shape_invalid_count(&self) -> usize {
+        self.shape_violations.len()
     }
 
     pub fn exact_match_count(&self) -> usize {
@@ -57,6 +82,10 @@ impl EvaluationReport {
 
     pub fn contract_validity_rate(&self) -> f64 {
         rate(self.contract_valid_count(), self.total())
+    }
+
+    pub fn shape_invalid_rate(&self) -> f64 {
+        rate(self.shape_invalid_count(), self.total())
     }
 }
 
@@ -140,6 +169,30 @@ mod tests {
         assert_eq!(report.tool_match_count(), 2);
         assert_eq!(report.contract_valid_count(), 3);
         assert!((report.exact_match_rate() - 1.0 / 3.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn shape_violations_count_as_invalid_rows() {
+        let violation = ShapeViolationRecord::new(7, None, "bad action").unwrap();
+        let report = EvaluationReport::from_outcomes_and_shape_violations(
+            vec![
+                outcome("t:1", &inspect("node:1"), &inspect("node:1")),
+                outcome("t:2", &inspect("node:1"), &ask("why")),
+            ],
+            vec![violation.clone()],
+        );
+
+        assert_eq!(report.parsed_count(), 2);
+        assert_eq!(report.shape_invalid_count(), 1);
+        assert_eq!(report.shape_violations(), &[violation]);
+        assert_eq!(report.total(), 3);
+        assert_eq!(report.exact_match_count(), 1);
+        assert_eq!(report.tool_match_count(), 1);
+        assert_eq!(report.contract_valid_count(), 2);
+        assert!((report.exact_match_rate() - 1.0 / 3.0).abs() < f64::EPSILON);
+        assert!((report.tool_match_rate() - 1.0 / 3.0).abs() < f64::EPSILON);
+        assert!((report.contract_validity_rate() - 2.0 / 3.0).abs() < f64::EPSILON);
+        assert!((report.shape_invalid_rate() - 1.0 / 3.0).abs() < f64::EPSILON);
     }
 
     #[test]

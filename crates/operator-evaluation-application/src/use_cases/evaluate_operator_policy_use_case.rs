@@ -6,6 +6,7 @@
 
 use operator_evaluation_domain::outcome::prediction_evaluation_outcome::PredictionEvaluationOutcome;
 use operator_evaluation_domain::prediction::evaluation_pair::EvaluationPair;
+use operator_evaluation_domain::prediction::shape_violation_record::ShapeViolationRecord;
 use operator_evaluation_domain::report::evaluation_report::EvaluationReport;
 use operator_shared_domain::contract::action_contract_validator::ActionContractValidator;
 
@@ -24,6 +25,7 @@ impl<V: ActionContractValidator> EvaluateOperatorPolicyUseCase<V> {
     pub fn execute(
         &self,
         pairs: &[EvaluationPair],
+        shape_violations: &[ShapeViolationRecord],
     ) -> Result<EvaluationReport, EvaluateOperatorPolicyError> {
         let mut outcomes = Vec::with_capacity(pairs.len());
         for pair in pairs {
@@ -47,7 +49,10 @@ impl<V: ActionContractValidator> EvaluateOperatorPolicyUseCase<V> {
                 violations,
             ));
         }
-        Ok(EvaluationReport::from_outcomes(outcomes))
+        Ok(EvaluationReport::from_outcomes_and_shape_violations(
+            outcomes,
+            shape_violations.to_vec(),
+        ))
     }
 }
 
@@ -123,7 +128,7 @@ mod tests {
             pair("t:1", inspect("node:1")),
             pair("t:2", inspect("node:1")),
         ];
-        let report = use_case.execute(&pairs).unwrap();
+        let report = use_case.execute(&pairs, &[]).unwrap();
         assert_eq!(report.total(), 2);
         assert_eq!(report.exact_match_count(), 2);
         assert_eq!(report.tool_match_count(), 2);
@@ -136,7 +141,7 @@ mod tests {
         let use_case =
             EvaluateOperatorPolicyUseCase::new(CompositeActionContractValidator::default_strict());
         let pairs = vec![pair("t:1", ask("nothing useful"))];
-        let report = use_case.execute(&pairs).unwrap();
+        let report = use_case.execute(&pairs, &[]).unwrap();
         assert_eq!(report.exact_match_count(), 0);
         assert_eq!(report.tool_match_count(), 0);
         // The prediction is Ask, which is allowed in Read mode and does
@@ -150,7 +155,7 @@ mod tests {
         let use_case =
             EvaluateOperatorPolicyUseCase::new(CompositeActionContractValidator::default_strict());
         let pairs = vec![pair("t:1", inspect("node:absent"))];
-        let report = use_case.execute(&pairs).unwrap();
+        let report = use_case.execute(&pairs, &[]).unwrap();
         assert_eq!(report.contract_valid_count(), 0);
         assert_eq!(report.tool_match_count(), 1);
     }
@@ -228,13 +233,16 @@ mod tests {
         let stop_wrong = custom_pair(stop_trajectory("t:s2"), ask("predicted instead of stop"));
 
         let report = use_case
-            .execute(&[
-                inspect_exact,
-                inspect_wrong,
-                ask_exact,
-                stop_exact,
-                stop_wrong,
-            ])
+            .execute(
+                &[
+                    inspect_exact,
+                    inspect_wrong,
+                    ask_exact,
+                    stop_exact,
+                    stop_wrong,
+                ],
+                &[],
+            )
             .unwrap();
 
         assert_eq!(report.total(), 5);
@@ -265,5 +273,26 @@ mod tests {
         assert_eq!(stop_bucket.total(), 2);
         assert_eq!(stop_bucket.exact_matches(), 1);
         assert_eq!(stop_bucket.tool_matches(), 1);
+    }
+
+    #[test]
+    fn shape_violations_are_counted_in_report_denominator() {
+        let use_case =
+            EvaluateOperatorPolicyUseCase::new(CompositeActionContractValidator::default_strict());
+        let pairs = vec![pair("t:1", inspect("node:1"))];
+        let violations = vec![
+            ShapeViolationRecord::new(7, Some(StepId::parse("s:bad").unwrap()), "bad action")
+                .unwrap(),
+        ];
+
+        let report = use_case.execute(&pairs, &violations).unwrap();
+
+        assert_eq!(report.parsed_count(), 1);
+        assert_eq!(report.shape_invalid_count(), 1);
+        assert_eq!(report.total(), 2);
+        assert_eq!(report.exact_match_count(), 1);
+        assert_eq!(report.contract_valid_count(), 1);
+        assert!((report.exact_match_rate() - 0.5).abs() < f64::EPSILON);
+        assert!((report.contract_validity_rate() - 0.5).abs() < f64::EPSILON);
     }
 }

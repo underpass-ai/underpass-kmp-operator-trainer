@@ -65,7 +65,7 @@ fn run(cli: &Cli) -> Result<bool, CliError> {
     let predictions = JsonlPredictionsReader::new(&cli.predictions)
         .read()
         .map_err(|err| CliError::Generic(format!("read predictions: {err}")))?;
-    if predictions.is_empty() {
+    if predictions.parsed().is_empty() && predictions.shape_violations().is_empty() {
         return Err(CliError::Generic(
             "predictions.jsonl is empty; nothing to score".into(),
         ));
@@ -78,8 +78,8 @@ fn run(cli: &Cli) -> Result<bool, CliError> {
         ));
     }
 
-    let pairs = join_step_predictions(&ground_truth, &predictions);
-    if pairs.is_empty() {
+    let pairs = join_step_predictions(&ground_truth, predictions.parsed());
+    if !predictions.parsed().is_empty() && pairs.is_empty() {
         return Err(CliError::Generic(
             "no predictions overlap the ground-truth set; check step_ids".into(),
         ));
@@ -88,7 +88,7 @@ fn run(cli: &Cli) -> Result<bool, CliError> {
     let evaluator =
         EvaluateOperatorPolicyUseCase::new(CompositeActionContractValidator::default_strict());
     let report = evaluator
-        .execute(&pairs)
+        .execute(&pairs, predictions.shape_violations())
         .map_err(|err| CliError::Generic(format!("evaluate: {err}")))?;
 
     print_report(&report);
@@ -133,6 +133,12 @@ fn read_trajectories_jsonl(path: &std::path::Path) -> Result<Vec<TrainingTraject
 
 fn print_report(report: &EvaluationReport) {
     println!("total:               {}", report.total());
+    println!("parsed:              {}", report.parsed_count());
+    println!(
+        "shape_invalid:       {} ({:.2}%)",
+        report.shape_invalid_count(),
+        report.shape_invalid_rate() * 100.0
+    );
     println!("exact_match:         {}", report.exact_match_count());
     println!("tool_match:          {}", report.tool_match_count());
     println!("contract_valid:      {}", report.contract_valid_count());
