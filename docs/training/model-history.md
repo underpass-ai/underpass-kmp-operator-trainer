@@ -61,6 +61,71 @@ That row must include the v7 frontier ceiling for the same held-out episode
 split. A 300-600 row v7 run is a training smoke, not a release-candidate
 baseline.
 
+## v8.0 — Qwen2.5-0.5B-Instruct LoRA SFT (2026-05-23)
+
+### Inputs
+
+- Corpus: `../rehydration-kernel-artifacts/operator/realistic-v7-full-v5-1-pr41-20260523T101100Z/trajectories.jsonl`
+- Corpus SHA-256: `3b9194f3fc14eb90228662cab3c0a71008b1375e57b0064a2021cd9df416e51e`
+- Train JSONL: `/tmp/operator-sft-v8.0/openai_train.jsonl` (1,371 rows, SHA-256 `ca6751f48cd3f9c01ae6b56558b5f99df90dab57dfc1e381bc97a4f3f67eab15`)
+- Eval JSONL: `/tmp/operator-sft-v8.0/openai_eval.jsonl` (242 rows, SHA-256 `626eec90c827296c405d75b2395316e3dfe3370ea6fd3d6934906427ec403212`)
+- Split: grouped by `about`, eval ratio 0.15
+- Base model: `Qwen/Qwen2.5-0.5B-Instruct`
+
+### Hyperparameters
+
+- LoRA: r=16, alpha=32, dropout=0.05
+- Target modules: `q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj`
+- Optimizer schedule: lr=2e-4, cosine scheduler, warmup_ratio=0.03
+- Epochs: 3
+- Effective batch: 16 (`batch_size=4` per GPU x 4 GPUs x `grad_accum=1`)
+- Max length: 2048
+- Precision: fp16
+- Distributed run: `torchrun --standalone --nproc_per_node=4`
+- NCCL: `NCCL_P2P_DISABLE=1`, `NCCL_IB_DISABLE=1`
+
+### Training run
+
+- Kubernetes Job: `underpass-runtime/operator-qwen05-lora-train-4gpu`
+- Wall clock: 713.8s (about 12 min)
+- Steps: 258 (86 steps/epoch x 3 epochs)
+- Final adapter: `/tmp/operator-qwen05-lora-v8.0/adapter_model.safetensors`
+- Final adapter SHA-256: `4a5ed6fa2057cb2f20db3289fc51ae114ad32167c4f13db1cfb68a3c8855f7b1`
+- Checkpoints: `/tmp/operator-qwen05-lora-v8.0/checkpoint-{86,172,258}/`
+
+Eval metrics:
+
+| Epoch | Step | eval_loss | eval_mean_token_accuracy |
+| --- | ---: | ---: | ---: |
+| 1 | 86 | 0.0391338058 | 0.9870025739 |
+| 2 | 172 | 0.0242082980 | 0.9899247177 |
+| 3 | 258 | 0.0235070214 | 0.9900132008 |
+
+### Process deviations
+
+1. Frontier ceiling was not run before training. Mitigation: run it retroactively on the same eval split before interpreting model accuracy.
+2. Training observability hardening (TensorBoard + step-level eval) was skipped. The run has per-epoch eval points only.
+3. The observer agent was skipped; training was monitored manually through Kubernetes logs.
+4. The first 1-GPU Kubernetes Job launch was deleted and replaced by the 4-GPU manifest.
+5. Output paths were originally non-versioned. The dataset was renamed to `/tmp/operator-sft-v8.0`; the LoRA directory could not be renamed because it is owned by `nobody` under sticky `/tmp`, so it was copied to `/tmp/operator-qwen05-lora-v8.0` and the original was left intact.
+6. Cluster side effects happened in the same session and are not part of the model result: `0.5b.llm.underpassai.com` ingress/TLS was configured, and `underpass-llm-gemma-4-31b-structured` was scaled to zero to free GPUs.
+
+### Artifacts
+
+- Dataset: `/tmp/operator-sft-v8.0/`
+- Adapter: `/tmp/operator-qwen05-lora-v8.0/`
+- Frontier ceiling: TBD
+- Trained predictions: TBD
+- Policy eval: TBD
+
+### Results
+
+TBD after retroactive frontier ceiling and constrained trained-model prediction.
+
+### Decision
+
+TBD. The checkpoint is usable as the v8.0 baseline artifact, but closure requires the frontier ceiling and constrained prediction comparison on the held-out eval split.
+
 ## Why Qwen 0.5B and not something larger?
 
 The kernel's design goal (see [`feedback_small_models`] in the
