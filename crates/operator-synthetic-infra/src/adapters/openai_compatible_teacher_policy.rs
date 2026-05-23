@@ -26,7 +26,10 @@ use crate::mappers::calibration_subject_mapper::CalibrationSubjectMapper;
 const ADAPTER: &str = "openai_compatible_teacher_policy";
 const DEFAULT_TIMEOUT_SECS: u64 = 180;
 const DEFAULT_TEMPERATURE: f32 = 0.0;
-const DEFAULT_MAX_TOKENS: u32 = 4096;
+// The 2026-05-23 full v7.3 run saw two structured-output truncations at
+// content_len=4205 with the old 4096 ceiling. Accepted action p99 was ~2 KB,
+// so 8192 leaves headroom while future length finishes remain observable.
+const DEFAULT_MAX_TOKENS: u32 = 8192;
 
 #[derive(Debug)]
 pub struct OpenAiCompatibleTeacherPolicy {
@@ -213,6 +216,13 @@ impl TeacherPolicy for OpenAiCompatibleTeacherPolicy {
             .as_deref()
             .map_or(FinishReason::Other, FinishReason::parse);
         let content = choice.message.content;
+        if finish_reason != FinishReason::Stop {
+            return Err(TeacherPolicyError::TruncatedResponse {
+                adapter: ADAPTER,
+                finish_reason,
+                content_len: content.chars().count(),
+            });
+        }
         let action_dto: OperatorActionDto =
             serde_json::from_str(content.trim()).map_err(|err| TeacherPolicyError::Shape {
                 adapter: ADAPTER,
@@ -366,7 +376,8 @@ mod tests {
                 {
                     "message": {
                         "content": action.to_string()
-                    }
+                    },
+                    "finish_reason": "stop"
                 }
             ]
         })
@@ -391,7 +402,7 @@ mod tests {
             Some(KernelTool::Inspect),
             "mock response should map through the normal DTO/domain path"
         );
-        assert_eq!(decision.finish_reason(), FinishReason::Other);
+        assert_eq!(decision.finish_reason(), FinishReason::Stop);
         assert_eq!(
             request["response_format"]["type"],
             Value::String("json_schema".to_string())
@@ -404,8 +415,82 @@ mod tests {
             request["response_format"]["json_schema"]["strict"],
             Value::Bool(true)
         );
-        assert_eq!(request["max_completion_tokens"], serde_json::json!(4096));
+        assert_eq!(request["max_completion_tokens"], serde_json::json!(8192));
         assert!(request.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn length_finish_reason_returns_truncated_response_without_parsing() {
+        let response = serde_json::json!({
+            "choices": [
+                {
+                    "message": {
+                        "content": "{"
+                    },
+                    "finish_reason": "length"
+                }
+            ]
+        })
+        .to_string();
+        let (url, handle, _rx) = spawn_mock_server_with_status("200 OK", response);
+        let policy = OpenAiCompatibleTeacherPolicy::with_client(
+            url,
+            None,
+            "gpt-4o-mini",
+            "Return one operator action.",
+            Client::new(),
+        );
+
+        let err = policy
+            .decide(&subject())
+            .expect_err("length finish should be explicit truncation");
+        handle.join().expect("mock server joins");
+
+        assert_eq!(
+            err,
+            TeacherPolicyError::TruncatedResponse {
+                adapter: ADAPTER,
+                finish_reason: FinishReason::Length,
+                content_len: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn content_filter_finish_reason_returns_truncated_response_without_parsing() {
+        let response = serde_json::json!({
+            "choices": [
+                {
+                    "message": {
+                        "content": "{}"
+                    },
+                    "finish_reason": "content_filter"
+                }
+            ]
+        })
+        .to_string();
+        let (url, handle, _rx) = spawn_mock_server_with_status("200 OK", response);
+        let policy = OpenAiCompatibleTeacherPolicy::with_client(
+            url,
+            None,
+            "gpt-4o-mini",
+            "Return one operator action.",
+            Client::new(),
+        );
+
+        let err = policy
+            .decide(&subject())
+            .expect_err("content filter finish should be explicit truncation");
+        handle.join().expect("mock server joins");
+
+        assert_eq!(
+            err,
+            TeacherPolicyError::TruncatedResponse {
+                adapter: ADAPTER,
+                finish_reason: FinishReason::ContentFilter,
+                content_len: 2,
+            }
+        );
     }
 
     #[test]
