@@ -63,6 +63,9 @@ spec:
                 --adapter "${ADAPTER_DIR}" \
                 --output "${OUTPUT_DIR}" \
                 --batch-size 8 \
+                --max-new-tokens 2048 \
+                --temperature 0.0 \
+                --stop-after-json \
                 --force
           resources:
             limits:
