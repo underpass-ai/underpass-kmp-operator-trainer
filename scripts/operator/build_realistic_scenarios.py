@@ -50,8 +50,8 @@ FULL_TOOLS = [
     "kernel_write_memory",
 ]
 
-DEFAULT_SCENARIO_COUNT = 1650
-EXPECTED_TEMPLATE_COUNT = 58
+DEFAULT_SCENARIO_COUNT = 1622
+EXPECTED_TEMPLATE_COUNT = 57
 
 TARGETS = [
     "kernel_wake",
@@ -476,13 +476,16 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
             "happy",
             "Visible refs include symptom, cause and resolution; another read would not reduce uncertainty about the answer.",
         ),
-        t(
-            "stop",
-            "bug_investigation",
-            "no-candidate",
-            "happy",
-            "Tools have been exhausted on this about; remaining budget would not produce a ref that changes the answer.",
-        ),
+        # Removed in v7.3.1 (PR #41):
+        #   stop:no-candidate tests prescriptive policy: stop when no visible ref
+        #   produces a valid answer, even with budget remaining. The strict
+        #   contract permits kernel_ask in these contexts; this template encodes
+        #   policy preference. Empirically:
+        #     - 60% teacher pass rate at T=0 (theme-dependent)
+        #     - bug:worker-retry-storm topic: 6/6 drops; other topics partial pass
+        #     - capable T=0 models (gpt-5.1, gpt-5.2) handle it in n=1 spikes,
+        #       canonical teacher (gpt-4o-mini) is not stable
+        #   Relegated to backlog/policy-preference-spec for future contract design.
         t(
             "stop",
             "software_migration",

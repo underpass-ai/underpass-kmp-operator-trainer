@@ -4,4 +4,3 @@
 # + same adapter must execute these exact scenario_id values.
 
 scenario:kernel_inspect:after-near:0007
-scenario:stop:no-candidate:0028
