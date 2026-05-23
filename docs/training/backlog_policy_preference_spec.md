@@ -63,6 +63,45 @@ chose the expected target at deterministic settings.
 - Future spec: needs a formal distinction between answer-ready and no-candidate
   terminal states.
 
+### `stop:no-candidate` (removed in v7.3.1, PR #41)
+
+- **Tests**: model should pick `Stop(reason=NoCandidate)` when no visible ref
+  produces a valid answer, even when budget allows another call.
+- **Why removed**: empirically unstable teacher behavior at T=0 (60% pass rate,
+  theme-dependent). Contract does not enforce this behavior: `kernel_ask` is
+  contract-valid when `budget.calls_remaining > 0` and tools include ask.
+- **Empirical evidence**:
+  - Full v5 run: 18/28 accepted, 10 dropped.
+  - Drops uncorrelated with budget (drops at `calls_remaining` 1, 2, 4, 8).
+  - Drop concentration by topic: `bug:worker-retry-storm` -> 6/6 drops, other
+    topics partial pass.
+  - Capable T=0 models (`gpt-5.1`, `gpt-5.2`) handled the n=1 viability spikes;
+    canonical teacher (`gpt-4o-mini`) does not produce it reliably.
+- **Consequence**: v8.0 SFT'd model will not see any
+  `StopReason::NoCandidate` examples. The variant becomes effectively dead in
+  production output. This is an explicit, documented trade-off accepted for
+  v7.3.1 closure.
+
+### Required For v8.x Prescriptive Spec Design
+
+A `NoCandidateSpec` or equivalent must:
+
+1. Detect contexts where no visible ref produces a valid answer.
+   - Probable requirement: confidence/relevance scoring in `VisibleState`, which
+     does not exist today.
+   - Alternative: explicit `NoCandidateMarker` VO set by scenario generator when
+     the template knows no answer is available.
+
+2. Generate corpus examples via the existing `subject.prepared_action()`
+   fast-path mechanism. Bypasses teacher unreliability entirely.
+
+3. Restore `stop:no-candidate` as a deterministic template with theme-balanced
+   coverage, avoiding the observed `bug:worker-retry-storm` topic bias.
+
+The `escalate:*` removals and `stop:no-candidate` removal together form the
+catalog of prescriptive policy that v8.x's prescriptive spec design must recover.
+No prescriptive behavior is currently trained.
+
 ## Architectural Gap — Prescriptive Contract Specs
 
 The current strict action contract is **rejection-only**: every spec under
