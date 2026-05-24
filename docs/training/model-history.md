@@ -270,6 +270,102 @@ fallback; it is targeted v8.1.2 data work for the failing structural fields:
 `memory.entries[*]`, `memory.relations[*]`, `memory.evidence[*]`,
 `memory.dimensions[*]` and `related[*]`.
 
+## v8.1.2 — corpus scaling and DPO targeting (in progress, 2026-05-24)
+
+v8.1.2 targets the write-side failures exposed by the v8.1
+`action_correctness` report: `kernel_ingest` and `kernel_write_memory`
+underperform because the 0.5B model does not reliably copy structured arrays
+(`memory.entries[*]`, `memory.relations[*]`, `memory.evidence[*]`,
+`memory.dimensions[*]`, `related[*]`).
+
+### Phase B audit finding
+
+Full v6 corpus generation completed with:
+
+- run_id: `realistic-v8-1-2-full-v6-20260524T202500Z`
+- scenarios_sha256: `b675e5349bfd150c48c05dad16d0b13d261a4bb5af4ce7949ef1fcc43f73277f`
+- total_scenarios: 2144
+- accepted_count: 2115
+- dropped_count: 29
+- drop_rate: 1.35%
+- gate_passed: true
+
+The write-tool expansion objective was met:
+
+- `kernel_ingest`: 320/320 accepted
+- `kernel_write_memory`: 320/320 accepted
+
+Drop audit:
+
+- 17/29 drops were stop variants (`stop:premature-temptation`,
+  `stop:full-mode-sufficient`) where the model emitted `kind=stop` with
+  non-null `arguments`. Root cause: the flat-nullable OpenAI schema allows
+  `arguments` at wire level; the mapper correctly rejects the semantically
+  hybrid shape. This is the accepted Phase 0 tradeoff versus reintroducing
+  PR #39's discriminated-schema branch bias.
+- 4/29 drops were `kernel_forward:after-rewind` target mismatches where the
+  teacher selected `kernel_goto(cursor.kind=ref)`. This is known wording bias
+  inherited from v7.3.
+- 8/29 drops were spread across read-side templates: six `tool_call` outputs
+  carried non-empty top-level `evidence`, and two `kernel_inspect` outputs used
+  a `cursor` argument shape instead of `target`. Same class as the stop drops:
+  wire-valid under the permissive flat schema, rejected by mapper-side semantic
+  validation.
+
+Disposition: all drops are excluded from training data and the run is well under
+the 5% gate. Phase C proceeds on the accepted v6 trajectories.
+
+Follow-up items:
+
+- Phase D DPO pair generation should include a `spurious_extra_field`
+  perturbation class: stop actions with non-null `arguments`, and tool calls
+  with non-empty top-level `evidence`.
+- Phase G closure should report `spurious_extra_field_rate` for the teacher,
+  v8.1.2 SFT, and v8.1.2 DPO predictions.
+- v8.2 backlog: evaluate constrained decoding with per-kind shape enforcement
+  so `kind=stop` cannot emit `arguments` and `kind=tool_call` cannot emit
+  top-level `evidence`.
+
+### Phase C SFT findings (v8.1.2-sft-attempt-1)
+
+The first v8.1.2 SFT run completed cleanly, but prediction exposed a budget
+mismatch:
+
+- train_jsonl: 1798 rows, SHA
+  `4794aae2544376c7916ab75a606e252a90feecd1c76d1e346620eac58313ad91`
+- eval_jsonl: 317 rows, SHA
+  `d3147f41eac260f063a9f277ee3b26a71bf3d634c7f95f28b08f5766df94e2f0`
+- SFT adapter: `/tmp/operator-qwen05-lora-v8.1.2-sft`
+- final eval_loss: 0.02685
+- final eval token_accuracy: 0.9881
+- prediction output:
+  `/tmp/operator-qwen05-predictions-v8.1.2-sft`
+
+Eval revealed 45/45 `kernel_ingest` predictions failed with
+`incomplete_json`. Root cause: Phase A scaled `kernel_ingest` payloads
+(`entries` up to 5, `relations` up to 3, `evidence` up to 5, `dimensions` up
+to 5) but the training and inference token budgets remained at 2048 from the
+v7.x baseline. The model learned long structured payloads but inference cut the
+JSON before completion.
+
+Measured token distribution on `/tmp/operator-sft-v8.1.2/openai_train.jsonl`
+with the Qwen2.5 tokenizer:
+
+- all rows total chat tokens: p95=2765, p99=3491, max=3879
+- `kernel_ingest` total chat tokens: p95=3543, p99=3667, max=3879
+- `kernel_ingest` assistant JSON tokens: p95=2296, p99=2407, max=2598
+- `kernel_write_memory` total chat tokens: p95=1605, p99=1618, max=1623
+
+Corrective action before continuing to Phase D:
+
+- `max_length`: 2048 -> 4096
+- `max_new_tokens`: 2048 -> 4096
+- `per_device_train_batch_size`: 4 -> 2
+- `gradient_accumulation_steps`: 1 -> 2
+
+Effective batch remains 16 (`4 GPUs x batch 2 x grad_accum 2`). Phase C must
+retrain SFT with the corrected budget before DPO data generation.
+
 ## Why Qwen 0.5B and not something larger?
 
 The kernel's design goal (see [`feedback_small_models`] in the

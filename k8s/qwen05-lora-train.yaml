@@ -89,9 +89,9 @@ spec:
                 --lora-dropout 0.05 \
                 --lora-target-modules "q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj" \
                 --epochs 3 \
-                --batch-size 4 \
-                --grad-accum 1 \
-                --max-length 2048 \
+                --batch-size 2 \
+                --grad-accum 2 \
+                --max-length 4096 \
                 --device-map none \
                 --bf16
           resources:
