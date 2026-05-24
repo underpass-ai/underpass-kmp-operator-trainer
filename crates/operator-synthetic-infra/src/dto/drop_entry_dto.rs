@@ -11,4 +11,6 @@ pub struct DropEntryDto {
     pub predicted_action: Option<OperatorActionDto>,
     pub subject_hash: String,
     pub teacher_finish_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_content_tail: Option<String>,
 }
