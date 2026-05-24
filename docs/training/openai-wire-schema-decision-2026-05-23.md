@@ -98,3 +98,23 @@ The adapter now emits request lifecycle events with:
 
 For `finish_reason=length`, drops persist a bounded `raw_content_tail` so a
 future truncation can be diagnosed without repeating a paid call.
+
+## Implementation Lesson — Primitive DTO Alignment
+
+Applying the flat-nullable fix surfaced a second mismatch in `kernel_ingest`
+metadata. The schema allowed metadata objects such as `{ "template": null }`,
+but the shared DTOs use `BTreeMap<String, String>` for metadata values. The
+mapper correctly rejected those rows.
+
+This is the same bug class as the terminal-action truncation: the provider
+schema was more permissive than the DTO boundary. The derived rule is:
+
+- Variant applicability is enforced in the adapter mapper.
+- Primitive value types must match DTO types exactly in the provider schema.
+- Any schema change must be accompanied by a cross-check against DTO field
+  optionality and primitive types.
+
+The `kernel_ingest` replay used a fixture derived from a real scenario with
+`prepared_action` removed. It is a schema test for the deployed model inference
+path, not a corpus-generation reproduction; corpus generation bypasses the LLM
+for `kernel_ingest` via the prepared-action fast-path.

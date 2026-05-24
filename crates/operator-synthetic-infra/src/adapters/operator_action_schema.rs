@@ -280,11 +280,11 @@ fn metadata() -> Value {
     json!({
         "anyOf": [
             object(json!({})),
-            object(json!({ "kind": nullable_string() })),
-            object(json!({ "phase": nullable_string() })),
-            object(json!({ "role": nullable_string() })),
-            object(json!({ "source": nullable_string() })),
-            object(json!({ "template": nullable_string() })),
+            object(json!({ "kind": string() })),
+            object(json!({ "phase": string() })),
+            object(json!({ "role": string() })),
+            object(json!({ "source": string() })),
+            object(json!({ "template": string() })),
         ]
     })
 }
@@ -446,6 +446,46 @@ mod tests {
                 .any(|branch| branch == &json!({ "type": "null" })),
             "arguments must allow null for stop/escalate"
         );
+    }
+
+    #[test]
+    fn print_schema_when_requested() {
+        if std::env::var("PRINT_OPERATOR_ACTION_SCHEMA").as_deref() == Ok("1") {
+            eprintln!(
+                "{}",
+                serde_json::to_string_pretty(&operator_action_schema()).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn ingest_metadata_values_are_strings_not_nullable() {
+        let schema = operator_action_schema();
+        let branches = schema["schema"]["properties"]["action"]["properties"]["arguments"]["anyOf"]
+            .as_array()
+            .expect("arguments anyOf exists");
+        let ingest = branches
+            .iter()
+            .find(|branch| branch["properties"].get("memory").is_some())
+            .expect("kernel_ingest argument branch exists");
+        let dimension_metadata = &ingest["properties"]["memory"]["properties"]["dimensions"]["items"]
+            ["properties"]["metadata"]["anyOf"];
+        let metadata_branches = dimension_metadata
+            .as_array()
+            .expect("metadata anyOf exists");
+
+        for branch in metadata_branches {
+            let Some(properties) = branch["properties"].as_object() else {
+                continue;
+            };
+            for value_schema in properties.values() {
+                assert_eq!(
+                    value_schema,
+                    &json!({ "type": "string" }),
+                    "metadata values must match BTreeMap<String, String> DTOs"
+                );
+            }
+        }
     }
 
     #[test]
