@@ -26,6 +26,10 @@ path = "src/bin/operator_realistic_corpus.rs"
 name = "operator-regression-pack-v7"
 path = "src/bin/operator_regression_pack_v7.rs"
 
+[[bin]]
+name = "operator-dpo-pair-generator"
+path = "src/bin/operator_dpo_pair_generator.rs"
+
 [dependencies]
 operator-shared-contract.workspace = true
 operator-shared-domain.workspace = true
