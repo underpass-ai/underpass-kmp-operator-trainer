@@ -26,12 +26,13 @@ future corpus expansion or another teacher-backed production run.
 - **Observed**: 4 drops with `teacher_finish_reason=length`.
 - **Failure mode**: `teacher_truncation` after `max_completion_tokens=8192`,
   with `content_len` in the 8309-8550 range.
-- **Likely cause**: the non-discriminated structured schema still exposes fields
-  such as `answer` on every action shape. The provider can produce a long
-  structured response before reaching a parseable action.
-- **v8.x action**: diagnose whether this is schema verbosity, model behavior, or
-  missing observability. Consider persisting a bounded raw content tail for
-  truncation-only drops so future diagnosis does not require another paid call.
+- **Confirmed cause in PR #46 Phase 0**: the original OpenAI schema forced
+  terminal actions to include tool-call-only fields. `stop(answer_ready)` could
+  therefore get stuck satisfying the large `arguments` shape until
+  `finish_reason=length`.
+- **Decision**: use a flat nullable OpenAI wire DTO and enforce variant
+  consistency in the adapter mapper. See
+  `docs/training/openai-wire-schema-decision-2026-05-23.md`.
 
 ## v8.1 — constrained decoding for trained-model prediction
 
