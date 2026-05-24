@@ -79,8 +79,8 @@ spec:
                 --learning-rate 5e-6 \
                 --beta 0.1 \
                 --epochs 2 \
-                --batch-size 2 \
-                --grad-accum 4 \
+                --batch-size 1 \
+                --grad-accum 8 \
                 --max-length 4096 \
                 --max-prompt-length 3072 \
                 --device-map none \
