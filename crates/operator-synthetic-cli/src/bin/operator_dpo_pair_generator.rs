@@ -247,12 +247,8 @@ fn run(cli: &Cli) -> Result<(), String> {
             &target_tools,
             cli.spurious_field_all_rows,
         );
-        let mut persisted_for_row = 0usize;
+        let mut valid_candidates = Vec::new();
         for candidate in candidates {
-            if persisted_for_row >= cli.max_per_row {
-                increment(&mut stats.capped_by_reason, "max_per_row_reached");
-                continue;
-            }
             let validation = validate_rejected(
                 &candidate.rejected_json,
                 &chosen_action,
@@ -282,11 +278,20 @@ fn run(cli: &Cli) -> Result<(), String> {
                 )?;
                 continue;
             }
+            valid_candidates.push((candidate, rejected_violation_codes));
+        }
+
+        for (index, (candidate, rejected_violation_codes)) in
+            valid_candidates.into_iter().enumerate()
+        {
+            if index >= cli.max_per_row {
+                increment(&mut stats.capped_by_reason, "max_per_row_reached");
+                continue;
+            }
             let pair = pair_json(row, &candidate, &rejected_violation_codes);
             writeln!(pairs_writer, "{pair}")
                 .map_err(|err| format!("write {}: {err}", cli.output.display()))?;
             pair_count += 1;
-            persisted_for_row += 1;
             increment(
                 &mut stats.persisted_by_perturbation,
                 candidate.perturbation.name(),
