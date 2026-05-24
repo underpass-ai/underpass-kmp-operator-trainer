@@ -33,7 +33,30 @@ future corpus expansion or another teacher-backed production run.
   missing observability. Consider persisting a bounded raw content tail for
   truncation-only drops so future diagnosis does not require another paid call.
 
-## v8.1 — constrained decoding for trained-model prediction
+## v8.1 — action_correctness metric
+
+Status: implemented.
+
+v8.1 adds a per-field `action_correctness` metric while preserving the legacy
+`exact_match` score. Field correctness policy lives in
+`operator-shared-domain`, so the evaluator reports the contract's own scoring
+rules instead of maintaining private string-key scoring maps.
+
+The v8.0 artifacts rescored under this metric show:
+
+- Frontier `gpt-4o-mini`: 45.87% action correctness, 37.19% exact match.
+- Qwen 0.5B LoRA: 81.40% action correctness, 74.38% exact match.
+- Trained model shape invalid rate: 0.00%.
+- Remaining trained-model blockers are concentrated in write payload structure:
+  `memory.entries[*]`, `memory.relations[*]`, `memory.evidence[*]`,
+  `memory.dimensions[*]` and `related[*]`.
+
+Important contract note: generated IDs are currently scored as schema-valid
+non-empty strings because the action domain models them as non-empty strings.
+If v8.x requires UUID-only generated IDs, add a typed UUID/generated-ID value
+object first, then tighten the correctness rule.
+
+## v8.1.1 — constrained decoding for trained-model prediction
 
 v8.0 closure was done without constrained decoding for both frontier and trained
 predictions. This is apples-to-apples, but it is not the cleanest methodology.
@@ -53,7 +76,7 @@ Two paths for v8.1:
 Decision: choose after reviewing whether the v8.0 write-action exactness gap is
 capacity, decoding or evaluation normalization.
 
-## v8.1 — write-action exactness
+## v8.1.2 — DPO and data prep for write-action correctness
 
 The trained 0.5B is contract-valid on every eval row, but exact match remains
 poor for write payloads:
@@ -65,6 +88,32 @@ The first hypothesis is that long structured payload copying is not being
 evaluated at the right abstraction level. The second is that the model needs
 either constrained decoding or deterministic prepared-payload resolution during
 prediction. Do not jump to a 1.5B fallback until these are separated.
+
+The action_correctness report gives the first concrete target list for v8.1.2:
+
+1. `kernel_ingest`: fix `memory.entries[*]`, `memory.relations[*]`,
+   `memory.evidence[*]` and `memory.dimensions[*]` reconstruction.
+2. `kernel_write_memory`: fix `related[*]` selection/copying.
+3. `kernel_near`: investigate the 3 remaining `anchor` mismatches.
+4. `kernel_forward`: investigate the 2 remaining `window` mismatches.
+
+The likely next step is DPO or targeted contrastive data for these exact field
+failures, not another broad SFT pass.
+
+## v8.2 — semantic scoring for permissive text
+
+`CorrectnessMode::Permissive` currently checks that free-text fields are
+present and type-correct. This is intentionally conservative for v8.1: it avoids
+pretending that byte-exact matching is meaningful for user-facing prose or
+queries, while still rejecting empty output.
+
+v8.2 should replace the permissive rule with semantic similarity once there is
+a stable embedding service and a calibrated threshold. Candidate fields:
+
+- `kernel_ask.arguments.query`
+- `stop.answer`
+- `kernel_write_memory.summary`
+- `kernel_write_memory.body`
 
 ## Cluster cleanup
 

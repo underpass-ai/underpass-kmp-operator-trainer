@@ -82,6 +82,38 @@ fn exact_match_predictions_pass_the_threshold() {
 }
 
 #[test]
+fn output_includes_legacy_and_action_correctness_sections() {
+    let predictions = tmp("preds-sections", "jsonl");
+    let ground_truth = tmp("truth-sections", "jsonl");
+    write_ground_truth(&ground_truth);
+    fs::write(
+        &predictions,
+        r#"{"step_id":"step:1","action":{"kind":"tool_call","tool":"kernel_inspect","arguments":{"target":"node:1"}}}
+"#,
+    )
+    .unwrap();
+
+    let output = cli()
+        .args([
+            "--predictions",
+            predictions.to_str().unwrap(),
+            "--ground-truth",
+            ground_truth.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("=== Legacy metrics ==="));
+    assert!(stdout.contains("=== Action correctness (v8.1) ==="));
+    assert!(stdout.contains("action_correct:"));
+    assert!(stdout.contains("Per-field correctness"));
+
+    fs::remove_file(&predictions).ok();
+    fs::remove_file(&ground_truth).ok();
+}
+
+#[test]
 fn wrong_target_fails_the_threshold() {
     let predictions = tmp("preds-bad", "jsonl");
     let ground_truth = tmp("truth-bad", "jsonl");

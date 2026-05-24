@@ -176,6 +176,100 @@ work determines whether the write gap is caused by model capacity, evaluation
 normalization, or the lack of deterministic prepared-payload resolution during
 prediction.
 
+## v8.1 — action_correctness metric (2026-05-24)
+
+v8.1 adds a second scoring layer next to the legacy exact-match metric. The
+legacy metric remains unchanged for historical comparison. The new
+`action_correctness` metric evaluates each action field under an explicit mode:
+
+- `Exact`: byte-equivalent display value is required.
+- `SchemaValid`: the value may differ from the gold value, but it must satisfy
+  the field's current domain shape.
+- `Permissive`: free-text content is accepted when it is non-empty and typed
+  correctly.
+
+The field policy lives in `operator-shared-domain`, not in the evaluator. This
+keeps scoring rules attached to the action/tool contract instead of hiding them
+in reporting code.
+
+One important implementation detail: v8.1 follows the current domain contract.
+Generated IDs such as `idempotency_key`, `correlation_id` and `causation_id`
+are currently typed as non-empty strings in the action domain, so their
+`SchemaValid` rule is non-empty string. If production needs UUID-only values,
+that is a separate contract change: add typed UUID/generated-ID value objects,
+then tighten the correctness rule.
+
+### v8.0 artifacts rescored
+
+No model was retrained and no new paid calls were made. The reports reuse the
+existing v8.0 predictions:
+
+- Frontier report:
+  `../rehydration-kernel-artifacts/operator/frontier-ceiling-v8.0-20260523T140341Z/action_correctness_report.txt`
+- Trained report:
+  `/tmp/operator-qwen05-action_correctness_report.txt`
+
+The trained report was written outside the prediction directory because
+`/tmp/operator-qwen05-predictions-v8.0-2048-jsonstop/` is owned by `nobody` and
+is not writable from the local shell.
+
+### Global comparison
+
+| Metric | Frontier `gpt-4o-mini` | Qwen 0.5B LoRA | Delta |
+| --- | ---: | ---: | ---: |
+| legacy exact_match | 90/242 (37.19%) | 180/242 (74.38%) | +37.19 pp |
+| action_correctness | 111/242 (45.87%) | 197/242 (81.40%) | +35.53 pp |
+| tool_selection | 230/242 (95.04%) | 242/242 (100.00%) | +4.96 pp |
+| shape_invalid | 12/242 (4.96%) | 0/242 (0.00%) | -4.96 pp |
+
+The new metric raises both models because it stops treating generated/free-text
+fields as byte-exact requirements. It does not hide structural failures: invalid
+shapes still count as incorrect, and structural arrays such as memory entries,
+relations and evidence remain exact.
+
+### Trained model: top failing fields
+
+| Field | Correct | Failure pattern |
+| --- | ---: | --- |
+| `memory.entries[*]` | 0/19 (0.00%) | `kernel_ingest` structural payload mismatch |
+| `memory.relations[*]` | 0/19 (0.00%) | `kernel_ingest` structural payload mismatch |
+| `related[*]` | 1/22 (4.55%) | `kernel_write_memory` related refs mismatch |
+| `memory.evidence[*]` | 6/19 (31.58%) | `kernel_ingest` evidence mismatch |
+| `memory.dimensions[*]` | 10/19 (52.63%) | `kernel_ingest` dimension mismatch |
+| `anchor` | 15/18 (83.33%) | `kernel_near` anchor mismatch |
+| `window` | 46/48 (95.83%) | `kernel_forward` window mismatch |
+
+Generated fields such as `idempotency_key`, `provenance.source_agent`,
+`provenance.observed_at`, `provenance.correlation_id` and
+`provenance.causation_id` were all correct under the current `SchemaValid`
+rules for the trained model.
+
+### Trained model: per-tool action correctness
+
+| Capability | action_correctness | Status |
+| --- | ---: | --- |
+| `<stop/escalate>` | 6/6 (100.00%) | clean |
+| `kernel_wake` | 58/58 (100.00%) | clean |
+| `kernel_ask` | 30/30 (100.00%) | clean under permissive query text |
+| `kernel_goto` | 3/3 (100.00%) | clean |
+| `kernel_rewind` | 13/13 (100.00%) | clean |
+| `kernel_trace` | 23/23 (100.00%) | clean |
+| `kernel_inspect` | 15/15 (100.00%) | clean |
+| `kernel_forward` | 33/35 (94.29%) | just below 95% read-side gate |
+| `kernel_near` | 15/18 (83.33%) | below 95% read-side gate |
+| `kernel_write_memory` | 1/22 (4.55%) | below 99% write-side gate |
+| `kernel_ingest` | 0/19 (0.00%) | below 99% write-side gate |
+
+### v8.1 conclusion
+
+`action_correctness` confirms the v8.0 finding while making the remaining work
+more precise. The 0.5B model is strong on bounded read-side action structure and
+fully contract-valid on this eval split, but write payload reconstruction is not
+production-ready. The next useful training iteration is not a blind 1.5B
+fallback; it is targeted v8.1.2 data work for the failing structural fields:
+`memory.entries[*]`, `memory.relations[*]`, `memory.evidence[*]`,
+`memory.dimensions[*]` and `related[*]`.
+
 ## Why Qwen 0.5B and not something larger?
 
 The kernel's design goal (see [`feedback_small_models`] in the
