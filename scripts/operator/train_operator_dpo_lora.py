@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import inspect
 import json
 import statistics
 from pathlib import Path
@@ -118,28 +119,7 @@ def main() -> None:
 
     trainer = DPOTrainer(
         model=model,
-        args=DPOConfig(
-            output_dir=str(args.output_dir),
-            num_train_epochs=args.epochs,
-            learning_rate=args.learning_rate,
-            lr_scheduler_type="cosine",
-            warmup_ratio=0.1,
-            per_device_train_batch_size=args.batch_size,
-            per_device_eval_batch_size=args.batch_size,
-            gradient_accumulation_steps=args.grad_accum,
-            max_length=args.max_length,
-            max_prompt_length=args.max_prompt_length,
-            beta=args.beta,
-            bf16=args.bf16,
-            fp16=args.fp16,
-            logging_steps=10,
-            logging_dir=str(args.output_dir / "tensorboard"),
-            eval_strategy="steps",
-            eval_steps=20,
-            save_strategy="epoch",
-            report_to="tensorboard",
-            ddp_find_unused_parameters=False,
-        ),
+        args=build_dpo_config(args, DPOConfig),
         train_dataset=splits["train"],
         eval_dataset=splits["test"],
         processing_class=tokenizer,
@@ -323,6 +303,52 @@ def torch_dtype(value: str, bf16: bool, fp16: bool, torch: Any) -> str | Any:
         "bfloat16": torch.bfloat16,
         "float32": torch.float32,
     }[value]
+
+
+def build_dpo_config(args: argparse.Namespace, dpo_config_cls: Any) -> Any:
+    kwargs: dict[str, Any] = {
+        "output_dir": str(args.output_dir),
+        "num_train_epochs": args.epochs,
+        "learning_rate": args.learning_rate,
+        "lr_scheduler_type": "cosine",
+        "warmup_ratio": 0.1,
+        "per_device_train_batch_size": args.batch_size,
+        "per_device_eval_batch_size": args.batch_size,
+        "gradient_accumulation_steps": args.grad_accum,
+        "max_length": args.max_length,
+        "beta": args.beta,
+        "bf16": args.bf16,
+        "fp16": args.fp16,
+        "logging_steps": 10,
+        "logging_dir": str(args.output_dir / "tensorboard"),
+        "eval_strategy": "steps",
+        "eval_steps": 20,
+        "save_strategy": "epoch",
+        "report_to": "tensorboard",
+        "ddp_find_unused_parameters": False,
+    }
+    supported = inspect.signature(dpo_config_cls.__init__).parameters
+    if "max_prompt_length" in supported:
+        kwargs["max_prompt_length"] = args.max_prompt_length
+    else:
+        print(
+            json.dumps(
+                {
+                    "event": "kernel_operator_dpo_train.max_prompt_length_not_supported",
+                    "max_prompt_length": args.max_prompt_length,
+                    "note": "prompt length was validated before trainer construction",
+                },
+                sort_keys=True,
+            )
+        )
+    missing = sorted(
+        key for key in ["max_length", "beta", "learning_rate"] if key not in supported
+    )
+    if missing:
+        raise SystemExit(
+            "DPOConfig does not support required arguments: " + ", ".join(missing)
+        )
+    return dpo_config_cls(**kwargs)
 
 
 def file_sha256(path: Path) -> str:
