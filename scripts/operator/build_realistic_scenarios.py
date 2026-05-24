@@ -50,8 +50,8 @@ FULL_TOOLS = [
     "kernel_write_memory",
 ]
 
-DEFAULT_SCENARIO_COUNT = 1622
-EXPECTED_TEMPLATE_COUNT = 57
+DEFAULT_SCENARIO_COUNT = 2144
+EXPECTED_TEMPLATE_COUNT = 67
 
 TARGETS = [
     "kernel_wake",
@@ -131,6 +131,98 @@ REF_VOCAB = [
     "follow-up",
     "plan",
     "resolution",
+]
+
+INGEST_CURRICULUM = [
+    {
+        "entries": 1,
+        "relations": 0,
+        "evidence": 0,
+        "dimensions": 0,
+        "provenance": "minimal",
+    },
+    {
+        "entries": 1,
+        "relations": 0,
+        "evidence": 1,
+        "dimensions": 0,
+        "provenance": "full",
+    },
+    {
+        "entries": 1,
+        "relations": 1,
+        "evidence": 1,
+        "dimensions": 2,
+        "provenance": "minimal",
+    },
+    {
+        "entries": 2,
+        "relations": 1,
+        "evidence": 3,
+        "dimensions": 2,
+        "provenance": "full",
+    },
+    {
+        "entries": 2,
+        "relations": 3,
+        "evidence": 0,
+        "dimensions": 2,
+        "provenance": "minimal",
+    },
+    {
+        "entries": 5,
+        "relations": 0,
+        "evidence": 3,
+        "dimensions": 5,
+        "provenance": "full",
+    },
+    {
+        "entries": 5,
+        "relations": 3,
+        "evidence": 5,
+        "dimensions": 5,
+        "provenance": "full",
+    },
+    {
+        "entries": 2,
+        "relations": 3,
+        "evidence": 5,
+        "dimensions": 5,
+        "provenance": "minimal",
+    },
+    {
+        "entries": 5,
+        "relations": 1,
+        "evidence": 5,
+        "dimensions": 2,
+        "provenance": "full",
+    },
+    {
+        "entries": 5,
+        "relations": 3,
+        "evidence": 1,
+        "dimensions": 0,
+        "provenance": "minimal",
+    },
+]
+
+WRITE_MEMORY_CURRICULUM = [
+    {"related": 0, "body": "short"},
+    {"related": 1, "body": "short"},
+    {"related": 1, "body": "medium"},
+    {"related": 3, "body": "medium"},
+    {"related": 5, "body": "long"},
+    {"related": 0, "body": "medium"},
+    {"related": 3, "body": "long"},
+    {"related": 5, "body": "medium"},
+]
+
+RELATION_PATTERNS = [
+    ("chosen_because", "causal", "high"),
+    ("supports", "evidential", "high"),
+    ("depends_on", "causal", "medium"),
+    ("satisfies_constraint", "constraint", "medium"),
+    ("follows", "procedural", "medium"),
 ]
 
 DIM_VOCAB = [
@@ -460,6 +552,11 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
         t("kernel_ingest", "product_planning", "after-pre-read", "happy", "Execute the prepared canonical ingest after writer pre-read."),
         t("kernel_ingest", "bug_investigation", "missing-provenance", "adversarial", "Execute the visible prepared kernel_ingest action exactly; do not reconstruct missing fields."),
         t("kernel_ingest", "software_migration", "declared-dimensions", "happy", "Execute the prepared kernel_ingest payload with declared dimensions."),
+        t("kernel_ingest", "smart_writing_session", "single-entry-minimal", "happy", "Execute the prepared single-entry kernel_ingest payload exactly."),
+        t("kernel_ingest", "technical_incident", "multi-entry-relations", "happy", "Execute the prepared kernel_ingest payload with multiple entries and relations exactly."),
+        t("kernel_ingest", "product_planning", "evidence-heavy", "happy", "Execute the prepared evidence-heavy kernel_ingest payload exactly."),
+        t("kernel_ingest", "bug_investigation", "dimension-heavy", "happy", "Execute the prepared dimension-heavy kernel_ingest payload exactly."),
+        t("kernel_ingest", "software_migration", "relation-sparse", "happy", "Execute the prepared kernel_ingest payload with sparse relations exactly."),
     ],
     "kernel_write_memory": [
         t("kernel_write_memory", "smart_writing_session", "prepared-payload", "happy", "Execute the prepared kernel_write_memory action exactly."),
@@ -467,6 +564,11 @@ TEMPLATES_BY_TARGET: dict[str, list[Template]] = {
         t("kernel_write_memory", "bug_investigation", "no-read-context", "adversarial", "Execute only the prepared kernel_write_memory action; do not invent extra refs."),
         t("kernel_write_memory", "product_planning", "related-refs", "happy", "Execute the prepared write with the visible related refs."),
         t("kernel_write_memory", "software_migration", "minimal", "happy", "Execute the minimal prepared kernel_write_memory action exactly."),
+        t("kernel_write_memory", "smart_writing_session", "related-none-short", "happy", "Execute the prepared write with no related refs exactly."),
+        t("kernel_write_memory", "technical_incident", "related-single-medium", "happy", "Execute the prepared write with one related ref exactly."),
+        t("kernel_write_memory", "bug_investigation", "related-three", "happy", "Execute the prepared write with three visible related refs exactly."),
+        t("kernel_write_memory", "product_planning", "related-five-long", "happy", "Execute the prepared write with five visible related refs exactly."),
+        t("kernel_write_memory", "software_migration", "long-body", "happy", "Execute the prepared long-form kernel_write_memory payload exactly."),
     ],
     "stop": [
         t(
@@ -641,6 +743,8 @@ def render_scenario(
         "ref_0": refs[0],
         "ref_1": refs[1],
         "ref_2": refs[2],
+        "ref_3": refs[3],
+        "ref_4": refs[4],
         "dim_0": dims[0],
         "dim_1": dims[1],
         "cursor_anchor": cursor_anchor,
@@ -715,12 +819,12 @@ def allowed_tools_for_mode(mode: str) -> list[str]:
 
 
 def refs_for(about: str, rng: random.Random) -> list[str]:
-    tokens = rng.sample(REF_VOCAB, 4)
+    tokens = rng.sample(REF_VOCAB, 5)
     return [f"{about}:node:{token}:{index:03}" for index, token in enumerate(tokens)]
 
 
 def dims_for(rng: random.Random) -> list[str]:
-    return rng.sample(DIM_VOCAB, 2)
+    return rng.sample(DIM_VOCAB, 5)
 
 
 def budget_for(template: Template, rng: random.Random) -> tuple[int, int]:
@@ -766,77 +870,190 @@ def prepared_action_for(
     variation: int,
 ) -> dict[str, Any] | None:
     if template.target == "kernel_write_memory":
-        return tool_call(
-            "kernel_write_memory",
-            {
-                "summary": f"Record {template.slug} decision.",
-                "body": f"The prepared write links visible evidence {refs[0]} to the current process state.",
-                "related": [refs[0], refs[1]],
-            },
-        )
+        return prepared_write_memory_action(template, refs, variation)
     if template.target != "kernel_ingest":
         return None
-    new_entry = f"{about}:entry:prepared:{template.slug}:{variation:03}"
-    relation = {
-        "from": refs[0],
-        "to": new_entry,
-        "rel": "chosen_because" if "anemic" not in template.slug else "follows",
-        "class": "causal" if "anemic" not in template.slug else "procedural",
-        "why": f"The prepared ingest uses visible evidence {refs[0]}.",
-        "evidence": "visible evidence supports the prepared entry",
-        "confidence": "high" if "anemic" not in template.slug else "medium",
-        "sequence": variation + 1,
-    }
+    return prepared_ingest_action(template, about, refs, dims, variation)
+
+
+def prepared_write_memory_action(
+    template: Template,
+    refs: list[str],
+    variation: int,
+) -> dict[str, Any]:
+    spec = WRITE_MEMORY_CURRICULUM[variation % len(WRITE_MEMORY_CURRICULUM)]
+    related = refs[: spec["related"]]
     return tool_call(
-        "kernel_ingest",
+        "kernel_write_memory",
         {
-            "about": about,
-            "memory": {
-                "dimensions": [
-                    {
-                        "id": dims[0],
-                        "kind": "agent",
-                        "title": "Operator writer",
-                        "metadata": {},
-                    }
-                ],
-                "entries": [
-                    {
-                        "id": new_entry,
-                        "kind": "decision",
-                        "text": f"Prepared ingest for {template.slug}.",
-                        "coordinates": [
-                            {
-                                "dimension": dims[0],
-                                "scope_id": about,
-                                "sequence": variation + 1,
-                                "metadata": {},
-                            }
-                        ],
-                        "metadata": {"template": template.slug},
-                    }
-                ],
-                "relations": [relation],
-                "evidence": [
-                    {
-                        "id": f"evidence:{template.slug}:{variation:03}",
-                        "supports": [refs[0], new_entry],
-                        "text": f"Visible evidence {refs[0]} supports {new_entry}.",
-                        "metadata": {},
-                    }
-                ],
-            },
-            "provenance": {
-                "source_kind": "agent",
-                "source_agent": "operator-scenario-builder",
-                "observed_at": "2026-05-22T00:00:00Z",
-                "correlation_id": f"corr:{template.slug}:{variation:03}",
-                "causation_id": f"cause:{template.slug}:{variation:03}",
-            },
-            "idempotency_key": f"idem:{template.slug}:{variation:03}",
-            "dry_run": True,
+            "summary": f"Record {template.slug} decision.",
+            "body": write_memory_body(template, refs, spec["body"], variation),
+            "related": related,
         },
     )
+
+
+def write_memory_body(
+    template: Template,
+    refs: list[str],
+    length: str,
+    variation: int,
+) -> str:
+    base = (
+        f"Prepared write for {template.slug} records the current process state "
+        f"and links it to visible evidence {refs[0]}."
+    )
+    if length == "short":
+        return base
+    medium = (
+        f"{base} The note preserves the selected evidence order and keeps the "
+        f"operator's write bounded to variation {variation:03}."
+    )
+    if length == "medium":
+        return medium
+    return (
+        f"{medium} The long form also captures the handoff rationale, the "
+        f"visible refs considered, and the reason the prepared writer should "
+        f"not invent additional memory references beyond {', '.join(refs[:3])}."
+    )
+
+
+def prepared_ingest_action(
+    template: Template,
+    about: str,
+    refs: list[str],
+    dims: list[str],
+    variation: int,
+) -> dict[str, Any]:
+    spec = INGEST_CURRICULUM[variation % len(INGEST_CURRICULUM)]
+    entry_ids = [
+        f"{about}:entry:prepared:{template.slug}:{variation:03}:{index:02}"
+        for index in range(spec["entries"])
+    ]
+    memory = {
+        "dimensions": [
+            ingest_dimension_payload(template, dims[index], variation, index)
+            for index in range(spec["dimensions"])
+        ],
+        "entries": [
+            ingest_entry_payload(template, about, dims, entry_id, variation, index)
+            for index, entry_id in enumerate(entry_ids)
+        ],
+        "relations": [
+            ingest_relation_payload(template, refs, entry_ids, variation, index)
+            for index in range(spec["relations"])
+        ],
+        "evidence": [
+            ingest_evidence_payload(template, refs, entry_ids, variation, index)
+            for index in range(spec["evidence"])
+        ],
+    }
+    arguments: dict[str, Any] = {
+        "about": about,
+        "memory": memory,
+        "provenance": ingest_provenance(template, variation, spec["provenance"]),
+        "idempotency_key": f"idem:{template.slug}:{variation:03}",
+        "dry_run": variation % 2 == 0,
+    }
+    return tool_call("kernel_ingest", arguments)
+
+
+def ingest_dimension_payload(
+    template: Template,
+    dimension_id: str,
+    variation: int,
+    index: int,
+) -> dict[str, Any]:
+    return {
+        "id": dimension_id,
+        "kind": ["agent", "task", "topic", "session", "attempt"][index % 5],
+        "title": f"{template.slug} dimension {index}",
+        "metadata": {"variation": f"{variation:03}", "index": str(index)},
+    }
+
+
+def ingest_entry_payload(
+    template: Template,
+    about: str,
+    dims: list[str],
+    entry_id: str,
+    variation: int,
+    index: int,
+) -> dict[str, Any]:
+    return {
+        "id": entry_id,
+        "kind": ["decision", "observation", "constraint", "derived_value", "follow_up"][
+            index % 5
+        ],
+        "text": f"Prepared ingest entry {index} for {template.slug}.",
+        "coordinates": [
+            {
+                "dimension": dims[index % len(dims)],
+                "scope_id": about,
+                "sequence": variation + index + 1,
+                "metadata": {"entry_index": str(index)},
+            }
+        ],
+        "metadata": {"template": template.slug, "entry_index": str(index)},
+    }
+
+
+def ingest_relation_payload(
+    template: Template,
+    refs: list[str],
+    entry_ids: list[str],
+    variation: int,
+    index: int,
+) -> dict[str, Any]:
+    rel, semantic_class, confidence = RELATION_PATTERNS[
+        (variation + index) % len(RELATION_PATTERNS)
+    ]
+    source = refs[index % len(refs)] if index % 2 == 0 else entry_ids[index % len(entry_ids)]
+    target = entry_ids[(index + 1) % len(entry_ids)]
+    return {
+        "from": source,
+        "to": target,
+        "rel": rel,
+        "class": semantic_class,
+        "why": f"Relation {index} preserves prepared structure for {template.slug}.",
+        "evidence": f"Prepared relation evidence {index}.",
+        "confidence": confidence,
+        "sequence": variation + index + 1,
+    }
+
+
+def ingest_evidence_payload(
+    template: Template,
+    refs: list[str],
+    entry_ids: list[str],
+    variation: int,
+    index: int,
+) -> dict[str, Any]:
+    supports = [refs[index % len(refs)], entry_ids[index % len(entry_ids)]]
+    return {
+        "id": f"evidence:{template.slug}:{variation:03}:{index:02}",
+        "supports": supports,
+        "text": f"Visible evidence {supports[0]} supports prepared entry {supports[1]}.",
+        "source": "operator-scenario-builder",
+        "time": "2026-05-22T00:00:00Z",
+        "metadata": {"evidence_index": str(index)},
+    }
+
+
+def ingest_provenance(
+    template: Template,
+    variation: int,
+    completeness: str,
+) -> dict[str, str]:
+    provenance = {
+        "source_kind": "agent",
+        "source_agent": "operator-scenario-builder",
+        "observed_at": "2026-05-22T00:00:00Z",
+    }
+    if completeness == "full":
+        provenance["correlation_id"] = f"corr:{template.slug}:{variation:03}"
+        provenance["causation_id"] = f"cause:{template.slug}:{variation:03}"
+    return provenance
 
 
 def tool_call(tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
