@@ -61,11 +61,11 @@ spec:
 
               python -m pip install --upgrade pip
               python -m pip install \
-                "transformers>=4.51.0" \
+                "transformers>=4.51.0,<5.0.0" \
                 "datasets>=3.6.0" \
                 "peft>=0.15.0" \
                 "accelerate>=1.7.0" \
-                "trl>=0.18.0" \
+                "trl>=0.18.0,<1.0.0" \
                 tensorboard \
                 sentencepiece
 
