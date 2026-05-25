@@ -1,5 +1,11 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum KmpMcpTransport {
+    Stdio,
+    Http,
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "operator-session-run")]
@@ -20,6 +26,10 @@ struct Cli {
     #[arg(long)]
     #[arg(alias = "kmp-grpc-endpoint")]
     kmp_mcp_endpoint: String,
+    #[arg(long, value_enum, default_value_t = KmpMcpTransport::Stdio)]
+    kmp_mcp_transport: KmpMcpTransport,
+    #[arg(long, default_value = "rehydration-mcp")]
+    kmp_mcp_stdio_command: PathBuf,
     #[arg(long, default_value = "read")]
     mode: String,
     #[arg(long)]
@@ -31,17 +41,24 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
     eprintln!(
-        "operator-session-run configured scenario_jsonl={} output_dir={} operator_endpoint={} adapter={} kmp_mcp_endpoint={} mode={} limit={} filter_tools={}",
+        "operator-session-run configured scenario_jsonl={} output_dir={} operator_endpoint={} adapter={} kmp_mcp_endpoint={} kmp_mcp_transport={:?} mode={} limit={} filter_tools={}",
         cli.scenario_jsonl.display(),
         cli.output_dir.display(),
         cli.operator_endpoint,
         cli.operator_adapter_id,
         cli.kmp_mcp_endpoint,
+        cli.kmp_mcp_transport,
         cli.mode,
         cli.limit
             .map_or_else(|| "none".to_string(), |value| value.to_string()),
         cli.filter_tools.as_deref().unwrap_or("none")
     );
+    if cli.kmp_mcp_transport == KmpMcpTransport::Stdio {
+        eprintln!(
+            "KMP MCP stdio command configured at {}",
+            cli.kmp_mcp_stdio_command.display()
+        );
+    }
     if let Some(cert) = &cli.operator_client_cert {
         eprintln!("operator client cert configured at {}", cert.display());
     }
