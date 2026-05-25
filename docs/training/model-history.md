@@ -176,6 +176,317 @@ work determines whether the write gap is caused by model capacity, evaluation
 normalization, or the lack of deterministic prepared-payload resolution during
 prediction.
 
+## v8.1 — action_correctness metric (2026-05-24)
+
+v8.1 adds a second scoring layer next to the legacy exact-match metric. The
+legacy metric remains unchanged for historical comparison. The new
+`action_correctness` metric evaluates each action field under an explicit mode:
+
+- `Exact`: byte-equivalent display value is required.
+- `SchemaValid`: the value may differ from the gold value, but it must satisfy
+  the field's current domain shape.
+- `Permissive`: free-text content is accepted when it is non-empty and typed
+  correctly.
+
+The field policy lives in `operator-shared-domain`, not in the evaluator. This
+keeps scoring rules attached to the action/tool contract instead of hiding them
+in reporting code.
+
+One important implementation detail: v8.1 follows the current domain contract.
+Generated IDs such as `idempotency_key`, `correlation_id` and `causation_id`
+are currently typed as non-empty strings in the action domain, so their
+`SchemaValid` rule is non-empty string. If production needs UUID-only values,
+that is a separate contract change: add typed UUID/generated-ID value objects,
+then tighten the correctness rule.
+
+### v8.0 artifacts rescored
+
+No model was retrained and no new paid calls were made. The reports reuse the
+existing v8.0 predictions:
+
+- Frontier report:
+  `../rehydration-kernel-artifacts/operator/frontier-ceiling-v8.0-20260523T140341Z/action_correctness_report.txt`
+- Trained report:
+  `/tmp/operator-qwen05-action_correctness_report.txt`
+
+The trained report was written outside the prediction directory because
+`/tmp/operator-qwen05-predictions-v8.0-2048-jsonstop/` is owned by `nobody` and
+is not writable from the local shell.
+
+### Global comparison
+
+| Metric | Frontier `gpt-4o-mini` | Qwen 0.5B LoRA | Delta |
+| --- | ---: | ---: | ---: |
+| legacy exact_match | 90/242 (37.19%) | 180/242 (74.38%) | +37.19 pp |
+| action_correctness | 111/242 (45.87%) | 197/242 (81.40%) | +35.53 pp |
+| tool_selection | 230/242 (95.04%) | 242/242 (100.00%) | +4.96 pp |
+| shape_invalid | 12/242 (4.96%) | 0/242 (0.00%) | -4.96 pp |
+
+The new metric raises both models because it stops treating generated/free-text
+fields as byte-exact requirements. It does not hide structural failures: invalid
+shapes still count as incorrect, and structural arrays such as memory entries,
+relations and evidence remain exact.
+
+### Trained model: top failing fields
+
+| Field | Correct | Failure pattern |
+| --- | ---: | --- |
+| `memory.entries[*]` | 0/19 (0.00%) | `kernel_ingest` structural payload mismatch |
+| `memory.relations[*]` | 0/19 (0.00%) | `kernel_ingest` structural payload mismatch |
+| `related[*]` | 1/22 (4.55%) | `kernel_write_memory` related refs mismatch |
+| `memory.evidence[*]` | 6/19 (31.58%) | `kernel_ingest` evidence mismatch |
+| `memory.dimensions[*]` | 10/19 (52.63%) | `kernel_ingest` dimension mismatch |
+| `anchor` | 15/18 (83.33%) | `kernel_near` anchor mismatch |
+| `window` | 46/48 (95.83%) | `kernel_forward` window mismatch |
+
+Generated fields such as `idempotency_key`, `provenance.source_agent`,
+`provenance.observed_at`, `provenance.correlation_id` and
+`provenance.causation_id` were all correct under the current `SchemaValid`
+rules for the trained model.
+
+### Trained model: per-tool action correctness
+
+| Capability | action_correctness | Status |
+| --- | ---: | --- |
+| `<stop/escalate>` | 6/6 (100.00%) | clean |
+| `kernel_wake` | 58/58 (100.00%) | clean |
+| `kernel_ask` | 30/30 (100.00%) | clean under permissive query text |
+| `kernel_goto` | 3/3 (100.00%) | clean |
+| `kernel_rewind` | 13/13 (100.00%) | clean |
+| `kernel_trace` | 23/23 (100.00%) | clean |
+| `kernel_inspect` | 15/15 (100.00%) | clean |
+| `kernel_forward` | 33/35 (94.29%) | just below 95% read-side gate |
+| `kernel_near` | 15/18 (83.33%) | below 95% read-side gate |
+| `kernel_write_memory` | 1/22 (4.55%) | below 99% write-side gate |
+| `kernel_ingest` | 0/19 (0.00%) | below 99% write-side gate |
+
+### v8.1 conclusion
+
+`action_correctness` confirms the v8.0 finding while making the remaining work
+more precise. The 0.5B model is strong on bounded read-side action structure and
+fully contract-valid on this eval split, but write payload reconstruction is not
+production-ready. The next useful training iteration is not a blind 1.5B
+fallback; it is targeted v8.1.2 data work for the failing structural fields:
+`memory.entries[*]`, `memory.relations[*]`, `memory.evidence[*]`,
+`memory.dimensions[*]` and `related[*]`.
+
+## v8.1.2 — corpus scaling and DPO targeting (in progress, 2026-05-24)
+
+v8.1.2 targets the write-side failures exposed by the v8.1
+`action_correctness` report: `kernel_ingest` and `kernel_write_memory`
+underperform because the 0.5B model does not reliably copy structured arrays
+(`memory.entries[*]`, `memory.relations[*]`, `memory.evidence[*]`,
+`memory.dimensions[*]`, `related[*]`).
+
+### Phase B audit finding
+
+Full v6 corpus generation completed with:
+
+- run_id: `realistic-v8-1-2-full-v6-20260524T202500Z`
+- scenarios_sha256: `b675e5349bfd150c48c05dad16d0b13d261a4bb5af4ce7949ef1fcc43f73277f`
+- total_scenarios: 2144
+- accepted_count: 2115
+- dropped_count: 29
+- drop_rate: 1.35%
+- gate_passed: true
+
+The write-tool expansion objective was met:
+
+- `kernel_ingest`: 320/320 accepted
+- `kernel_write_memory`: 320/320 accepted
+
+Drop audit:
+
+- 17/29 drops were stop variants (`stop:premature-temptation`,
+  `stop:full-mode-sufficient`) where the model emitted `kind=stop` with
+  non-null `arguments`. Root cause: the flat-nullable OpenAI schema allows
+  `arguments` at wire level; the mapper correctly rejects the semantically
+  hybrid shape. This is the accepted Phase 0 tradeoff versus reintroducing
+  PR #39's discriminated-schema branch bias.
+- 4/29 drops were `kernel_forward:after-rewind` target mismatches where the
+  teacher selected `kernel_goto(cursor.kind=ref)`. This is known wording bias
+  inherited from v7.3.
+- 8/29 drops were spread across read-side templates: six `tool_call` outputs
+  carried non-empty top-level `evidence`, and two `kernel_inspect` outputs used
+  a `cursor` argument shape instead of `target`. Same class as the stop drops:
+  wire-valid under the permissive flat schema, rejected by mapper-side semantic
+  validation.
+
+Disposition: all drops are excluded from training data and the run is well under
+the 5% gate. Phase C proceeds on the accepted v6 trajectories.
+
+Follow-up items:
+
+- Phase D DPO pair generation should include a `spurious_extra_field`
+  perturbation class: stop actions with non-null `arguments`, and tool calls
+  with non-empty top-level `evidence`.
+- Phase G closure should report `spurious_extra_field_rate` for the teacher,
+  v8.1.2 SFT, and v8.1.2 DPO predictions.
+- v8.2 backlog: evaluate constrained decoding with per-kind shape enforcement
+  so `kind=stop` cannot emit `arguments` and `kind=tool_call` cannot emit
+  top-level `evidence`.
+
+### Phase C SFT findings (v8.1.2-sft-attempt-1)
+
+The first v8.1.2 SFT run completed cleanly, but prediction exposed a budget
+mismatch:
+
+- train_jsonl: 1798 rows, SHA
+  `4794aae2544376c7916ab75a606e252a90feecd1c76d1e346620eac58313ad91`
+- eval_jsonl: 317 rows, SHA
+  `d3147f41eac260f063a9f277ee3b26a71bf3d634c7f95f28b08f5766df94e2f0`
+- SFT adapter: `/tmp/operator-qwen05-lora-v8.1.2-sft`
+- final eval_loss: 0.02685
+- final eval token_accuracy: 0.9881
+- prediction output:
+  `/tmp/operator-qwen05-predictions-v8.1.2-sft`
+
+Eval revealed 45/45 `kernel_ingest` predictions failed with
+`incomplete_json`. Root cause: Phase A scaled `kernel_ingest` payloads
+(`entries` up to 5, `relations` up to 3, `evidence` up to 5, `dimensions` up
+to 5) but the training and inference token budgets remained at 2048 from the
+v7.x baseline. The model learned long structured payloads but inference cut the
+JSON before completion.
+
+Measured token distribution on `/tmp/operator-sft-v8.1.2/openai_train.jsonl`
+with the Qwen2.5 tokenizer:
+
+- all rows total chat tokens: p95=2765, p99=3491, max=3879
+- `kernel_ingest` total chat tokens: p95=3543, p99=3667, max=3879
+- `kernel_ingest` assistant JSON tokens: p95=2296, p99=2407, max=2598
+- `kernel_write_memory` total chat tokens: p95=1605, p99=1618, max=1623
+
+Corrective action before continuing to Phase D:
+
+- `max_length`: 2048 -> 4096
+- `max_new_tokens`: 2048 -> 4096
+- `per_device_train_batch_size`: 4 -> 2
+- `gradient_accumulation_steps`: 1 -> 2
+
+Effective batch remains 16 (`4 GPUs x batch 2 x grad_accum 2`). Phase C must
+retrain SFT with the corrected budget before DPO data generation.
+
+### Phase C SFT findings (v8.1.2-sft-v2)
+
+The corrected-budget SFT run completed cleanly and is the selected v8.1.2
+adapter unless a later checkpoint is explicitly promoted:
+
+- SFT adapter: `/tmp/operator-qwen05-lora-v8.1.2-sft-v2`
+- adapter_sha256:
+  `43186fa848c5f0e9d71915023f8f01c2341042de8aaf57b0c3c0c574a0f44379`
+- prediction output:
+  `/tmp/operator-qwen05-predictions-v8.1.2-sft-v2`
+- eval valid predictions: 317/317
+- exact_match: 204/317 (64.35%)
+- action_correct: 226/317 (71.29%)
+- tool_selection: 317/317 (100.00%)
+- contract_valid: 310/317 (97.79%)
+
+Per-tool action correctness:
+
+| Tool | Correct | Notes |
+| --- | ---: | --- |
+| `kernel_wake` | 65/65 (100.00%) | clean |
+| `kernel_inspect` | 17/17 (100.00%) | clean |
+| `kernel_goto` | 3/3 (100.00%) | clean |
+| `kernel_ask` | 32/32 (100.00%) | clean under permissive query text |
+| `kernel_near` | 19/20 (95.00%) | meets read-side gate |
+| `kernel_forward` | 39/41 (95.12%) | meets read-side gate |
+| `kernel_trace` | 24/24 (100.00%) | clean |
+| `kernel_ingest` | 0/45 (0.00%) | still fails structured memory arrays |
+| `kernel_write_memory` | 7/50 (14.00%) | improved but still fails `related[*]` |
+| `escalate` | 7/7 (100.00%) | clean |
+
+### Phase E/F DPO experiment - failed, reverted
+
+DPO training completed technically:
+
+- adapter: `/tmp/operator-qwen05-lora-v8.1.2-dpo`
+- adapter_sha256:
+  `0a8fcb9e68b4ef8fe6302e29b72886913f7c95b2781e4f30cfd8eb0f6b68305a`
+- train_runtime: 3001.5s
+- train_loss: 0.10815
+- final rewards margin: 7.76
+- final rewards accuracy: 1.0
+
+The trained DPO adapter was rejected because inference quality regressed:
+
+| Metric | SFT v2 | DPO final |
+| --- | ---: | ---: |
+| Eval valid predictions | 317/317 | 194/317 |
+| Failure rate | 0.00% | 38.80% |
+| exact_match, adjusted over 317 rows | 64.35% | 48.26% |
+| action_correct, adjusted over 317 rows | 71.29% | 50.47% |
+| `kernel_ingest` | 0/45 (0.00%) | 0/45 (0.00%) |
+| `kernel_write_memory` | 7/50 (14.00%) | 0/50 (0.00%) |
+
+Failure breakdown for the final DPO adapter:
+
+- `incomplete_json`: 50
+- `action.arguments_missing_required:idempotency_key,memory`: 13
+- `invalid_json`: 12
+- `missing_action_kind`: 12
+- `action.arguments_missing_required:summary`: 10
+- `unsupported_action_kind`: 9
+
+The epoch-1 checkpoint (`/tmp/operator-qwen05-lora-v8.1.2-dpo/checkpoint-68`)
+was also evaluated as a possible rescue:
+
+- checkpoint_sha256:
+  `ca65644532193d7d1ff62b1555d144a578275434a513b3e76093c981a1312192`
+- eval valid predictions: 208/317
+- failures: 109
+- exact_match, adjusted over 317 rows: 152/317 (47.95%)
+- action_correct, adjusted over 317 rows: 164/317 (51.74%)
+- `kernel_write_memory`: 2/50 (4.00%)
+- `kernel_ingest`: 0/45 (0.00%)
+
+The intermediate checkpoint is slightly better than the final DPO adapter but
+still worse than SFT v2 and far above the failure threshold. It is not
+promoted.
+
+Root cause analysis: the DPO objective over-optimized preference-pair
+separation without preserving the SFT base model's JSON generation behavior.
+The `spurious_extra_field` perturbation was applied cross-tool
+(`--spurious-field-all-rows=true`), which appears to have taught a shallow
+"emit fewer tokens" signal instead of robust array fidelity. With `beta=0.1`,
+the KL constraint was too weak to prevent drift. The training reward margin
+became very large while eval generation degraded, and this TRL version did not
+emit a KL divergence metric to make that drift visible during training.
+
+The observed result was universal JSON degradation: truncations, missing action
+kinds and malformed action shapes at inference time. The failure was not
+localized to write tools; read-side capabilities such as `kernel_inspect`,
+`kernel_ask`, `kernel_trace` and `escalate` also regressed.
+
+v8.1.2 therefore ships the SFT v2 adapter:
+`/tmp/operator-qwen05-lora-v8.1.2-sft-v2`.
+
+Production gates are not met in v8.1.2:
+
+- global action_correctness: 71.29% (<90% gate)
+- `kernel_ingest`: 0/45 (0.00%, <50% interim gate)
+- `kernel_write_memory`: 7/50 (14.00%, <50% interim gate)
+
+Useful improvements over the v8.0 action_correctness baseline are still
+preserved in SFT v2:
+
+- `kernel_write_memory`: 4.55% -> 14.00%
+- `kernel_near`: 83.33% -> 95.00%
+- `kernel_forward`: 94.29% -> 95.12%
+
+Lessons for a v8.2 DPO retry:
+
+1. Do not apply cross-cut perturbations before verifying they do not create
+   shallow shortcuts.
+2. Use a stronger KL constraint (`beta >= 0.5`).
+3. Use a lower learning rate (`<= 1e-6`).
+4. Prefer one epoch with early stopping based on eval reward margin.
+5. Run per-step eval with explicit KL monitoring.
+6. Test perturbation classes in isolation before combining them.
+7. Consider KTO or IPO as gentler alternatives if DPO remains unstable.
+8. Pin a TRL version that exposes the drift metrics needed for gating.
+
 ## Why Qwen 0.5B and not something larger?
 
 The kernel's design goal (see [`feedback_small_models`] in the

@@ -63,6 +63,7 @@ impl RealisticCorpusReportMapper {
             teacher_finish_reason: entry
                 .teacher_finish_reason()
                 .map(|finish_reason| finish_reason.as_str().to_string()),
+            raw_content_tail: entry.reason().raw_content_tail().map(ToOwned::to_owned),
         })
     }
 }
@@ -119,6 +120,35 @@ mod tests {
         assert!(dto.predicted_action.is_some());
         assert_eq!(dto.subject_hash, subject_hash().as_str());
         assert_eq!(dto.teacher_finish_reason.as_deref(), Some("stop"));
+    }
+
+    #[test]
+    fn drop_to_dto_persists_truncation_raw_content_tail() {
+        let entry = DropEntry::new(
+            ScenarioId::parse("scenario:truncated").expect("scenario id parses"),
+            SyntheticGenerationTarget::from(KmpMcpCapability::Inspect),
+            DropReason::TeacherTruncation {
+                finish_reason: FinishReason::Length,
+                content_len: 8373,
+                raw_content_tail: "\"arguments\":{\"memory\":".to_string(),
+                request_bytes: 15830,
+                response_bytes: 13276,
+                elapsed_ms: 112_606,
+                request_id: Some("req_test".to_string()),
+            },
+            None,
+            subject_hash(),
+            Some(FinishReason::Length),
+        );
+
+        let dto = RealisticCorpusReportMapper::drop_to_dto(&entry).expect("drop maps");
+
+        assert_eq!(dto.reason, "teacher_truncation");
+        assert_eq!(
+            dto.raw_content_tail.as_deref(),
+            Some("\"arguments\":{\"memory\":")
+        );
+        assert_eq!(dto.teacher_finish_reason.as_deref(), Some("length"));
     }
 
     fn subject_hash() -> SubjectHash {

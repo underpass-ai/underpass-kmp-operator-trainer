@@ -52,9 +52,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--grad-accum", type=int, default=8)
-    parser.add_argument("--max-length", type=int, default=2048)
+    parser.add_argument("--max-length", type=int, default=4096)
     parser.add_argument("--lora-r", type=int, default=16)
     parser.add_argument("--lora-alpha", type=int, default=32)
+    parser.add_argument("--lora-dropout", type=float, default=0.05)
     parser.add_argument(
         "--lora-target-modules",
         default="q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj",
@@ -146,7 +147,7 @@ def main() -> None:
         peft_config=LoraConfig(
             r=args.lora_r,
             lora_alpha=args.lora_alpha,
-            lora_dropout=0.05,
+            lora_dropout=args.lora_dropout,
             bias="none",
             task_type="CAUSAL_LM",
             target_modules=lora_target_modules,

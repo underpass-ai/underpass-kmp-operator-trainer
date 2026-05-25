@@ -22,7 +22,7 @@ pub fn operator_action_schema() -> Value {
 fn action_object() -> Value {
     object(json!({
         "kind": enum_string(&["tool_call", "stop", "escalate"]),
-        "tool": enum_string(&[
+        "tool": nullable_enum_string(&[
             "kernel_wake",
             "kernel_ask",
             "kernel_near",
@@ -33,34 +33,19 @@ fn action_object() -> Value {
             "kernel_inspect",
             "kernel_ingest",
             "kernel_write_memory",
-            "none",
         ]),
-        "arguments": {
-            "anyOf": [
-                wake_arguments(),
-                ask_arguments(),
-                near_arguments(),
-                goto_arguments(),
-                rewind_arguments(),
-                forward_arguments(),
-                trace_arguments(),
-                inspect_arguments(),
-                ingest_arguments(),
-                write_memory_arguments(),
-            ],
-        },
-        "reason": enum_string(&[
+        "arguments": nullable_arguments(),
+        "reason": nullable_enum_string(&[
             "answer_ready",
             "no_candidate",
             "budget_exhausted",
             "ambiguous_intent",
             "beyond_capability",
             "low_confidence",
-            "none",
         ]),
         "answer": nullable_string(),
         "evidence": string_array(),
-        "target_model": enum_string(&["frontier-reasoner", "claude-opus-4-7", "none"]),
+        "target_model": nullable_enum_string(&["frontier-reasoner", "claude-opus-4-7"]),
     }))
 }
 
@@ -147,6 +132,24 @@ fn ingest_arguments() -> Value {
         "idempotency_key": string(),
         "dry_run": nullable_boolean(),
     }))
+}
+
+fn nullable_arguments() -> Value {
+    json!({
+        "anyOf": [
+            { "type": "null" },
+            wake_arguments(),
+            ask_arguments(),
+            near_arguments(),
+            goto_arguments(),
+            rewind_arguments(),
+            forward_arguments(),
+            trace_arguments(),
+            inspect_arguments(),
+            ingest_arguments(),
+            write_memory_arguments(),
+        ],
+    })
 }
 
 fn cursor() -> Value {
@@ -277,11 +280,11 @@ fn metadata() -> Value {
     json!({
         "anyOf": [
             object(json!({})),
-            object(json!({ "kind": nullable_string() })),
-            object(json!({ "phase": nullable_string() })),
-            object(json!({ "role": nullable_string() })),
-            object(json!({ "source": nullable_string() })),
-            object(json!({ "template": nullable_string() })),
+            object(json!({ "kind": string() })),
+            object(json!({ "phase": string() })),
+            object(json!({ "role": string() })),
+            object(json!({ "source": string() })),
+            object(json!({ "template": string() })),
         ]
     })
 }
@@ -325,6 +328,12 @@ fn string_array() -> Value {
 
 fn enum_string(values: &[&str]) -> Value {
     json!({ "type": "string", "enum": values })
+}
+
+fn nullable_enum_string(values: &[&str]) -> Value {
+    let mut enum_values = values.iter().map(|value| json!(value)).collect::<Vec<_>>();
+    enum_values.push(Value::Null);
+    json!({ "type": ["string", "null"], "enum": enum_values })
 }
 
 #[cfg(test)]
@@ -377,6 +386,109 @@ mod tests {
     }
 
     #[test]
+    fn schema_requires_flat_nullable_action_fields() {
+        let schema = operator_action_schema();
+        let action = &schema["schema"]["properties"]["action"];
+        let required = action["required"].as_array().expect("required exists");
+
+        for field in [
+            "kind",
+            "tool",
+            "arguments",
+            "reason",
+            "answer",
+            "evidence",
+            "target_model",
+        ] {
+            assert!(
+                required.contains(&json!(field)),
+                "action schema must require {field}"
+            );
+        }
+
+        assert_eq!(
+            action["properties"]["tool"]["enum"],
+            json!([
+                "kernel_wake",
+                "kernel_ask",
+                "kernel_near",
+                "kernel_goto",
+                "kernel_rewind",
+                "kernel_forward",
+                "kernel_trace",
+                "kernel_inspect",
+                "kernel_ingest",
+                "kernel_write_memory",
+                null
+            ])
+        );
+        assert_eq!(
+            action["properties"]["reason"]["enum"],
+            json!([
+                "answer_ready",
+                "no_candidate",
+                "budget_exhausted",
+                "ambiguous_intent",
+                "beyond_capability",
+                "low_confidence",
+                null
+            ])
+        );
+        assert_eq!(
+            action["properties"]["target_model"]["enum"],
+            json!(["frontier-reasoner", "claude-opus-4-7", null])
+        );
+        assert!(
+            action["properties"]["arguments"]["anyOf"]
+                .as_array()
+                .expect("arguments anyOf exists")
+                .iter()
+                .any(|branch| branch == &json!({ "type": "null" })),
+            "arguments must allow null for stop/escalate"
+        );
+    }
+
+    #[test]
+    fn print_schema_when_requested() {
+        if std::env::var("PRINT_OPERATOR_ACTION_SCHEMA").as_deref() == Ok("1") {
+            eprintln!(
+                "{}",
+                serde_json::to_string_pretty(&operator_action_schema()).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn ingest_metadata_values_are_strings_not_nullable() {
+        let schema = operator_action_schema();
+        let branches = schema["schema"]["properties"]["action"]["properties"]["arguments"]["anyOf"]
+            .as_array()
+            .expect("arguments anyOf exists");
+        let ingest = branches
+            .iter()
+            .find(|branch| branch["properties"].get("memory").is_some())
+            .expect("kernel_ingest argument branch exists");
+        let dimension_metadata = &ingest["properties"]["memory"]["properties"]["dimensions"]["items"]
+            ["properties"]["metadata"]["anyOf"];
+        let metadata_branches = dimension_metadata
+            .as_array()
+            .expect("metadata anyOf exists");
+
+        for branch in metadata_branches {
+            let Some(properties) = branch["properties"].as_object() else {
+                continue;
+            };
+            for value_schema in properties.values() {
+                assert_eq!(
+                    value_schema,
+                    &json!({ "type": "string" }),
+                    "metadata values must match BTreeMap<String, String> DTOs"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn sample_kernel_inspect_action_deserializes_as_operator_action() {
         let sample = json!({
             "kind": "tool_call",
@@ -384,10 +496,10 @@ mod tests {
             "arguments": {
                 "target": "about:id:node:X"
             },
-            "reason": "none",
+            "reason": null,
             "answer": null,
             "evidence": [],
-            "target_model": "none"
+            "target_model": null
         });
 
         serde_json::from_value::<OperatorActionDto>(sample).expect("sample action parses");
