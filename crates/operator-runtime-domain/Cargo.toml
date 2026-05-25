@@ -1,0 +1,15 @@
+[package]
+name = "operator-runtime-domain"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Operator: runtime bounded context — session request, budget, observation, and outcome domain values."
+
+[lints]
+workspace = true
+
+[dependencies]
+operator-shared-domain.workspace = true
+thiserror.workspace = true

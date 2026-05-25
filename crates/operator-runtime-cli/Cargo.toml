@@ -1,0 +1,17 @@
+[package]
+name = "operator-runtime-cli"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Operator: runtime bounded context — CLI entry points."
+
+[lints]
+workspace = true
+
+[dependencies]
+clap.workspace = true
+operator-runtime-application.workspace = true
+operator-runtime-domain.workspace = true
+operator-runtime-infra.workspace = true

@@ -14,6 +14,10 @@ members = [
     "crates/operator-replay-application",
     "crates/operator-replay-domain",
     "crates/operator-replay-infra",
+    "crates/operator-runtime-application",
+    "crates/operator-runtime-domain",
+    "crates/operator-runtime-infra",
+    "crates/operator-runtime-cli",
     "crates/operator-training-domain",
     "crates/operator-training-application",
     "crates/operator-training-infra",
@@ -45,6 +49,10 @@ operator-evaluation-application = { path = "crates/operator-evaluation-applicati
 operator-replay-application = { path = "crates/operator-replay-application" }
 operator-replay-domain = { path = "crates/operator-replay-domain" }
 operator-replay-infra = { path = "crates/operator-replay-infra" }
+operator-runtime-application = { path = "crates/operator-runtime-application" }
+operator-runtime-domain = { path = "crates/operator-runtime-domain" }
+operator-runtime-infra = { path = "crates/operator-runtime-infra" }
+operator-runtime-cli = { path = "crates/operator-runtime-cli" }
 operator-training-domain = { path = "crates/operator-training-domain" }
 operator-training-application = { path = "crates/operator-training-application" }
 operator-training-infra = { path = "crates/operator-training-infra" }

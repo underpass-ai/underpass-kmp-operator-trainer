@@ -1,0 +1,25 @@
+[package]
+name = "operator-runtime-infra"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Operator: runtime bounded context — vLLM policy, MCP executor, and event sinks."
+
+[lints]
+workspace = true
+
+[dependencies]
+operator-runtime-application.workspace = true
+operator-runtime-domain.workspace = true
+operator-shared-domain.workspace = true
+operator-shared-infra.workspace = true
+operator-synthetic-domain.workspace = true
+operator-synthetic-infra.workspace = true
+operator-replay-application.workspace = true
+operator-replay-infra.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

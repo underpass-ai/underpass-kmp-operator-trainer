@@ -1,0 +1,56 @@
+use operator_runtime_infra::adapters::vllm_openai_operator_policy::VllmOpenAiOperatorPolicy;
+use operator_shared_domain::ids::about_id::AboutId;
+use operator_shared_domain::mode::allowed_tools::AllowedTools;
+use operator_shared_domain::mode::operator_mode::OperatorMode;
+use operator_shared_domain::value_objects::task_family::TaskFamily;
+use operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal;
+use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
+use operator_shared_domain::visible_state::visible_state::VisibleState;
+use operator_synthetic_domain::calibration::calibration_subject::CalibrationSubject;
+
+fn test_subject_inspect() -> CalibrationSubject {
+    CalibrationSubject::new(
+        AboutId::parse("about:test").unwrap(),
+        OperatorMode::Read,
+        TaskFamily::parse("runtime.single_step").unwrap(),
+        TrajectoryGoal::parse("Inspect node one.").unwrap(),
+        AllowedTools::for_mode(OperatorMode::Read),
+        VisibleState::assemble([], [], None, BudgetSnapshot::bounded(1, 4096)),
+        None,
+    )
+    .unwrap()
+}
+
+#[test]
+fn build_request_body_includes_strict_json_schema() {
+    let policy = VllmOpenAiOperatorPolicy::for_testing();
+    let body = policy
+        .build_request_body(&test_subject_inspect())
+        .expect("request body builds");
+
+    assert_eq!(body["model"], "operator-v8.1.2");
+    assert_eq!(body["response_format"]["type"], "json_schema");
+    assert_eq!(body["response_format"]["json_schema"]["strict"], true);
+    assert_eq!(body["temperature"], 0.0);
+    assert_eq!(body["max_tokens"], 4096);
+}
+
+#[test]
+fn parse_response_to_action_handles_canonical_wire_format() {
+    let fixture_response = r#"{"choices":[{"message":{"content":"{\"action\":{\"kind\":\"tool_call\",\"tool\":\"kernel_inspect\",\"arguments\":{\"target\":\"node:1\"},\"reason\":null,\"answer\":null,\"evidence\":[],\"target_model\":null}}"}}]}"#;
+    let policy = VllmOpenAiOperatorPolicy::for_testing();
+
+    let action = policy
+        .parse_response_str(fixture_response)
+        .expect("canonical response parses");
+
+    assert_eq!(action.tool().expect("tool call").as_str(), "kernel_inspect");
+}
+
+#[test]
+fn parse_response_rejects_invalid_wire_shape() {
+    let fixture_invalid = r#"{"choices":[{"message":{"content":"not json"}}]}"#;
+    let policy = VllmOpenAiOperatorPolicy::for_testing();
+
+    assert!(policy.parse_response_str(fixture_invalid).is_err());
+}

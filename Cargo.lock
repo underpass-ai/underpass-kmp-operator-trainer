@@ -737,6 +737,52 @@ dependencies = [
 ]
 
 [[package]]
+name = "operator-runtime-application"
+version = "0.1.0"
+dependencies = [
+ "operator-runtime-domain",
+ "operator-shared-domain",
+ "operator-synthetic-domain",
+ "thiserror",
+]
+
+[[package]]
+name = "operator-runtime-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "operator-runtime-application",
+ "operator-runtime-domain",
+ "operator-runtime-infra",
+]
+
+[[package]]
+name = "operator-runtime-domain"
+version = "0.1.0"
+dependencies = [
+ "operator-shared-domain",
+ "thiserror",
+]
+
+[[package]]
+name = "operator-runtime-infra"
+version = "0.1.0"
+dependencies = [
+ "operator-replay-application",
+ "operator-replay-infra",
+ "operator-runtime-application",
+ "operator-runtime-domain",
+ "operator-shared-domain",
+ "operator-shared-infra",
+ "operator-synthetic-domain",
+ "operator-synthetic-infra",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "operator-shared-application"
 version = "0.1.0"
 dependencies = [

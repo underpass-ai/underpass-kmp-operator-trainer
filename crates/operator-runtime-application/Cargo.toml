@@ -1,0 +1,17 @@
+[package]
+name = "operator-runtime-application"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Operator: runtime bounded context — ports and single-step session use cases."
+
+[lints]
+workspace = true
+
+[dependencies]
+operator-runtime-domain.workspace = true
+operator-shared-domain.workspace = true
+operator-synthetic-domain.workspace = true
+thiserror.workspace = true
