@@ -777,6 +777,7 @@ dependencies = [
  "operator-replay-infra",
  "operator-runtime-application",
  "operator-runtime-domain",
+ "operator-shared-contract",
  "operator-shared-domain",
  "operator-shared-infra",
  "operator-synthetic-domain",

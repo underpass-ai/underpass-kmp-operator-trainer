@@ -37,7 +37,7 @@ fn build_request_body_includes_strict_json_schema() {
 
 #[test]
 fn parse_response_to_action_handles_canonical_wire_format() {
-    let fixture_response = r#"{"choices":[{"message":{"content":"{\"action\":{\"kind\":\"tool_call\",\"tool\":\"kernel_inspect\",\"arguments\":{\"target\":\"node:1\"},\"reason\":null,\"answer\":null,\"evidence\":[],\"target_model\":null}}"}}]}"#;
+    let fixture_response = r#"{"choices":[{"message":{"content":"{\"action\":{\"kind\":\"tool_call\",\"tool\":\"kernel_inspect\",\"arguments\":{\"target\":\"node:1\"}}}"}}]}"#;
     let policy = VllmOpenAiOperatorPolicy::for_testing();
 
     let action = policy
@@ -45,6 +45,14 @@ fn parse_response_to_action_handles_canonical_wire_format() {
         .expect("canonical response parses");
 
     assert_eq!(action.tool().expect("tool call").as_str(), "kernel_inspect");
+}
+
+#[test]
+fn parse_response_rejects_cross_kind_fields() {
+    let fixture_invalid = r#"{"choices":[{"message":{"content":"{\"action\":{\"kind\":\"stop\",\"reason\":\"answer_ready\",\"answer\":null,\"evidence\":[],\"tool\":\"kernel_inspect\"}}"}}]}"#;
+    let policy = VllmOpenAiOperatorPolicy::for_testing();
+
+    assert!(policy.parse_response_str(fixture_invalid).is_err());
 }
 
 #[test]

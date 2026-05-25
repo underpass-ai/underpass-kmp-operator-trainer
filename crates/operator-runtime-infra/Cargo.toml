@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 operator-runtime-application.workspace = true
 operator-runtime-domain.workspace = true
+operator-shared-contract.workspace = true
 operator-shared-domain.workspace = true
 operator-shared-infra.workspace = true
 operator-synthetic-domain.workspace = true

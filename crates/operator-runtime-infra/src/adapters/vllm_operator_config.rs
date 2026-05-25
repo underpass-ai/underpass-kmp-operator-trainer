@@ -20,7 +20,7 @@ impl VllmOperatorConfig {
             client_cert_path: None,
             client_key_path: None,
             timeout: Duration::from_secs(60),
-            max_tokens: 4096,
+            max_tokens: 512,
             accept_invalid_certs: false,
         }
     }

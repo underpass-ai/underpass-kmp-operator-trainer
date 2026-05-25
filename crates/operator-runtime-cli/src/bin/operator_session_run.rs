@@ -57,7 +57,7 @@ struct Cli {
     operator_client_key: Option<PathBuf>,
     #[arg(long, default_value_t = false)]
     operator_accept_invalid_certs: bool,
-    #[arg(long, default_value_t = 4096)]
+    #[arg(long, default_value_t = 512)]
     operator_max_tokens: u32,
     #[arg(long, default_value = DEFAULT_ADAPTER_SHA)]
     adapter_sha: String,
@@ -101,8 +101,6 @@ fn run(cli: &Cli) -> Result<(), String> {
         )
     })?;
 
-    let policy = Arc::new(build_operator_policy(cli)?) as Arc<dyn OperatorPolicy>;
-    let executor = build_mcp_executor(cli)?;
     let scenarios = load_scenarios(
         &cli.scenario_jsonl,
         expected_mode,
@@ -112,6 +110,10 @@ fn run(cli: &Cli) -> Result<(), String> {
     if scenarios.is_empty() {
         return Err("no scenarios selected after mode/tool filters".to_string());
     }
+    let system_prompt = shared_system_prompt(&scenarios)?;
+    let policy = Arc::new(build_operator_policy(cli)?.with_system_prompt(system_prompt))
+        as Arc<dyn OperatorPolicy>;
+    let executor = build_mcp_executor(cli)?;
 
     let mut stats = ReplayStats::default();
     for scenario in scenarios {
@@ -209,6 +211,7 @@ fn load_scenarios(
         }
         let row: OpenAiEvalRow = serde_json::from_str(&raw)
             .map_err(|err| format!("parse scenario JSON at line {line_number}: {err}"))?;
+        let row = row.into_runtime_parts(line_number)?;
         let subject = row.subject(line_number)?;
         if subject.mode != expected_mode {
             continue;
@@ -243,9 +246,27 @@ fn parse_filter_tools(raw: Option<&str>) -> Result<Option<BTreeSet<String>>, Str
     Ok(Some(tools))
 }
 
+fn shared_system_prompt(scenarios: &[RuntimeScenario]) -> Result<String, String> {
+    let first = scenarios
+        .first()
+        .ok_or_else(|| "no scenarios selected after mode/tool filters".to_string())?;
+    let prompt = first.system_prompt.as_str();
+    if scenarios
+        .iter()
+        .any(|scenario| scenario.system_prompt.as_str() != prompt)
+    {
+        return Err(
+            "selected scenarios use mixed system prompts; split by prompt profile before replay"
+                .to_string(),
+        );
+    }
+    Ok(prompt.to_string())
+}
+
 #[derive(Debug)]
 struct RuntimeScenario {
     step_id: String,
+    system_prompt: String,
     request: OperatorRequest,
     target: TargetActionSummary,
 }
@@ -271,6 +292,7 @@ impl RuntimeScenario {
         .map_err(|err| format!("build operator request for {}: {err}", row.step_id))?;
         Ok(Self {
             step_id: row.step_id,
+            system_prompt: row.system_prompt,
             request,
             target,
         })
@@ -303,6 +325,8 @@ fn budget_field_to_u32(field: BudgetField) -> u32 {
 #[derive(Debug, Deserialize)]
 struct OpenAiEvalRow {
     step_id: String,
+    #[serde(default)]
+    system_prompt: String,
     messages: Vec<OpenAiMessage>,
 }
 
@@ -318,6 +342,18 @@ impl OpenAiEvalRow {
         serde_json::from_str(content).map_err(|err| {
             format!("line {line_number} user content is not CalibrationSubjectDto JSON: {err}")
         })
+    }
+
+    fn into_runtime_parts(mut self, line_number: usize) -> Result<Self, String> {
+        let system_prompt = self
+            .messages
+            .iter()
+            .find(|message| message.role == "system")
+            .ok_or_else(|| format!("line {line_number} has no system message"))?
+            .content
+            .clone();
+        self.system_prompt = system_prompt;
+        Ok(self)
     }
 
     fn target_action(&self) -> TargetActionSummary {

@@ -3,17 +3,17 @@ use std::path::Path;
 
 use operator_runtime_application::errors::operator_policy_error::OperatorPolicyError;
 use operator_runtime_application::ports::operator_policy_port::OperatorPolicy;
+use operator_shared_contract::operator_action_dto::OperatorActionDto;
 use operator_shared_domain::action::operator_action::OperatorAction;
 use operator_shared_infra::mappers::operator_action_mapper::OperatorActionMapper;
 use operator_synthetic_domain::calibration::calibration_subject::CalibrationSubject;
-use operator_synthetic_infra::adapters::openai::openai_action_wire_dto::OpenAIActionWireDto;
-use operator_synthetic_infra::adapters::openai::openai_action_wire_dto_mapper::OpenAIActionWireDtoMapper;
-use operator_synthetic_infra::adapters::operator_action_schema::operator_action_schema;
+use operator_synthetic_infra::adapters::operator_action_schema::vllm_operator_action_schema;
 use operator_synthetic_infra::dto::openai_chat_completion_response_dto::OpenAiChatCompletionResponseDto;
 use operator_synthetic_infra::mappers::calibration_subject_mapper::CalibrationSubjectMapper;
 use reqwest::blocking::Client;
 use reqwest::header::CONTENT_TYPE;
-use serde_json::{Value, json};
+use serde::Deserialize;
+use serde_json::{Map, Value, json};
 
 use crate::adapters::vllm_operator_config::VllmOperatorConfig;
 use crate::errors::runtime_infra_error::RuntimeInfraError;
@@ -80,6 +80,12 @@ impl VllmOpenAiOperatorPolicy {
         )
     }
 
+    #[must_use]
+    pub fn with_system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
+        self.system_prompt = system_prompt.into();
+        self
+    }
+
     pub fn build_request_body(
         &self,
         subject: &CalibrationSubject,
@@ -93,7 +99,7 @@ impl VllmOpenAiOperatorPolicy {
             ],
             "response_format": {
                 "type": "json_schema",
-                "json_schema": operator_action_schema()
+                "json_schema": vllm_operator_action_schema()
             },
             "max_tokens": self.max_tokens,
             "temperature": 0.0
@@ -121,9 +127,31 @@ impl VllmOpenAiOperatorPolicy {
 
     fn user_prompt(subject: &CalibrationSubject) -> Result<String, OperatorPolicyError> {
         let subject_dto = CalibrationSubjectMapper::to_dto(subject);
-        serde_json::to_string_pretty(&subject_dto).map_err(|err| OperatorPolicyError::Protocol {
-            message: format!("serialize calibration subject: {err}"),
+        let value =
+            serde_json::to_value(&subject_dto).map_err(|err| OperatorPolicyError::Protocol {
+                message: format!("serialize calibration subject: {err}"),
+            })?;
+        serde_json::to_string(&sort_json_value(value)).map_err(|err| {
+            OperatorPolicyError::Protocol {
+                message: format!("serialize calibration subject: {err}"),
+            }
         })
+    }
+}
+
+fn sort_json_value(value: Value) -> Value {
+    match value {
+        Value::Array(items) => Value::Array(items.into_iter().map(sort_json_value).collect()),
+        Value::Object(map) => {
+            let mut entries = map.into_iter().collect::<Vec<_>>();
+            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+            let mut sorted = Map::new();
+            for (key, value) in entries {
+                sorted.insert(key, sort_json_value(value));
+            }
+            Value::Object(sorted)
+        }
+        other => other,
     }
 }
 
@@ -139,9 +167,13 @@ impl OperatorPolicy for VllmOpenAiOperatorPolicy {
             .map_err(|err| OperatorPolicyError::Transport {
                 message: err.to_string(),
             })?;
-        if !response.status().is_success() {
+        let status = response.status();
+        if !status.is_success() {
+            let body = response
+                .text()
+                .unwrap_or_else(|err| format!("failed to read vLLM error response body: {err}"));
             return Err(OperatorPolicyError::Protocol {
-                message: format!("vLLM returned HTTP status {}", response.status()),
+                message: format!("vLLM returned HTTP status {status}: {body}"),
             });
         }
         let text = response
@@ -173,16 +205,48 @@ fn load_identity(
 }
 
 fn parse_action_content(content: &str) -> Result<OperatorAction, OperatorPolicyError> {
-    let wire: OpenAIActionWireDto =
+    let value: Value =
         serde_json::from_str(content.trim()).map_err(|err| OperatorPolicyError::Shape {
-            message: format!("assistant content is not OpenAIActionWireDto JSON: {err}"),
+            message: format!("assistant content is not OperatorAction JSON: {err}"),
         })?;
-    let action_dto = OpenAIActionWireDtoMapper::to_operator_action_dto(wire).map_err(|err| {
-        OperatorPolicyError::Shape {
-            message: format!("assistant action violates OpenAI wire mapping: {err}"),
-        }
+    validate_action_field_set(&value).map_err(|message| OperatorPolicyError::Shape {
+        message: format!("{message}; content={}", content.trim()),
     })?;
-    OperatorActionMapper::to_domain(&action_dto).map_err(|err| OperatorPolicyError::Shape {
+    let envelope: VllmActionEnvelopeDto =
+        serde_json::from_value(value).map_err(|err| OperatorPolicyError::Shape {
+            message: format!("assistant content is not OperatorAction JSON: {err}"),
+        })?;
+    OperatorActionMapper::to_domain(&envelope.action).map_err(|err| OperatorPolicyError::Shape {
         message: format!("assistant action violates domain mapping: {err}"),
     })
+}
+
+#[derive(Debug, Deserialize)]
+struct VllmActionEnvelopeDto {
+    action: OperatorActionDto,
+}
+
+fn validate_action_field_set(value: &Value) -> Result<(), String> {
+    let action = value
+        .get("action")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "assistant content must contain object field action".to_string())?;
+    let kind = action
+        .get("kind")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "assistant action.kind must be a string".to_string())?;
+    let allowed = match kind {
+        "tool_call" => &["kind", "tool", "arguments"][..],
+        "stop" => &["kind", "reason", "answer", "evidence"][..],
+        "escalate" => &["kind", "reason", "target_model"][..],
+        other => return Err(format!("assistant action.kind is unsupported: {other}")),
+    };
+    for key in action.keys() {
+        if !allowed.contains(&key.as_str()) {
+            return Err(format!(
+                "assistant action field '{key}' is not allowed for {kind}"
+            ));
+        }
+    }
+    Ok(())
 }

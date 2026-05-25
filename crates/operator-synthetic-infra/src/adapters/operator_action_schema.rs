@@ -19,6 +19,36 @@ pub fn operator_action_schema() -> Value {
     })
 }
 
+pub fn vllm_operator_action_schema() -> Value {
+    json!({
+        "name": "OperatorAction",
+        "strict": true,
+        "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "action": {
+                    "anyOf": [
+                        vllm_tool_call("kernel_wake", &wake_arguments()),
+                        vllm_tool_call("kernel_ask", &ask_arguments()),
+                        vllm_tool_call("kernel_near", &near_arguments()),
+                        vllm_tool_call("kernel_goto", &goto_arguments()),
+                        vllm_tool_call("kernel_rewind", &rewind_arguments()),
+                        vllm_tool_call("kernel_forward", &forward_arguments()),
+                        vllm_tool_call("kernel_trace", &trace_arguments()),
+                        vllm_tool_call("kernel_inspect", &inspect_arguments()),
+                        vllm_tool_call("kernel_ingest", &ingest_arguments()),
+                        vllm_tool_call("kernel_write_memory", &write_memory_arguments()),
+                        vllm_stop_action(),
+                        vllm_escalate_action(),
+                    ],
+                },
+            },
+            "required": ["action"],
+        },
+    })
+}
+
 fn action_object() -> Value {
     object(json!({
         "kind": enum_string(&["tool_call", "stop", "escalate"]),
@@ -46,6 +76,45 @@ fn action_object() -> Value {
         "answer": nullable_string(),
         "evidence": string_array(),
         "target_model": nullable_enum_string(&["frontier-reasoner", "claude-opus-4-7"]),
+    }))
+}
+
+fn vllm_tool_call(tool_name: &str, arguments: &Value) -> Value {
+    object(json!({
+        "kind": enum_string(&["tool_call"]),
+        "tool": enum_string(&[tool_name]),
+        "arguments": arguments.clone(),
+    }))
+}
+
+fn vllm_stop_action() -> Value {
+    object(json!({
+        "kind": enum_string(&["stop"]),
+        "reason": enum_string(&[
+            "answer_ready",
+            "no_candidate",
+            "budget_exhausted",
+            "ambiguous_intent",
+            "beyond_capability",
+            "low_confidence",
+        ]),
+        "answer": nullable_string(),
+        "evidence": string_array(),
+    }))
+}
+
+fn vllm_escalate_action() -> Value {
+    object(json!({
+        "kind": enum_string(&["escalate"]),
+        "reason": enum_string(&[
+            "answer_ready",
+            "no_candidate",
+            "budget_exhausted",
+            "ambiguous_intent",
+            "beyond_capability",
+            "low_confidence",
+        ]),
+        "target_model": enum_string(&["frontier-reasoner", "claude-opus-4-7"]),
     }))
 }
 
