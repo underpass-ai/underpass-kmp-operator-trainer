@@ -101,6 +101,51 @@ The action_correctness report gives the first concrete target list for v8.1.2:
 The likely next step is DPO or targeted contrastive data for these exact field
 failures, not another broad SFT pass.
 
+### v8.1.2 closure note
+
+v8.1.2 ships the corrected-budget SFT v2 adapter, not the DPO adapter:
+
+- shipped adapter: `/tmp/operator-qwen05-lora-v8.1.2-sft-v2`
+- adapter_sha256:
+  `43186fa848c5f0e9d71915023f8f01c2341042de8aaf57b0c3c0c574a0f44379`
+- action_correct: 226/317 (71.29%)
+- valid predictions: 317/317
+
+The DPO experiment is archived as a failed run. It achieved strong preference
+metrics during training but degraded inference generation:
+
+- final DPO valid predictions: 194/317
+- final DPO action_correct, adjusted over all eval rows: 160/317 (50.47%)
+- DPO epoch-1 checkpoint valid predictions: 208/317
+- DPO epoch-1 action_correct, adjusted over all eval rows: 164/317 (51.74%)
+
+Both DPO checkpoints are worse than SFT v2 and should not be promoted.
+
+## v8.2 priorities - post v8.1.2 closure
+
+1. **DPO retry with safer perturbation design**:
+   - no cross-cut perturbations until a single-class experiment proves they do
+     not create shallow shortcuts
+   - `spurious_extra_field` must not be applied to all rows by default
+   - test perturbation classes in isolation before combining
+2. **DPO retry with safer hyperparameters**:
+   - `beta >= 0.5`
+   - learning rate `<= 1e-6`
+   - one epoch by default
+   - early stopping on eval reward margin
+   - explicit KL monitoring as a hard gate
+3. **Constrained decoding via Outlines/XGrammar**:
+   - eliminate malformed JSON and invalid action shapes regardless of model
+     state
+   - make trained-model comparison cleaner against frontier structured output
+4. **Alternative preference optimization**:
+   - evaluate KTO or IPO if vanilla DPO remains unstable
+5. **Action-correctness metric refinement**:
+   - add multiset comparison for order-insensitive arrays where production
+     semantics do not require ordering (`entries[]`, `relations[]`,
+     `evidence[]`, `dimensions[]`, `related[]`)
+   - keep exact matching for fields where order is contract-relevant
+
 ## v8.2 — semantic scoring for permissive text
 
 `CorrectnessMode::Permissive` currently checks that free-text fields are

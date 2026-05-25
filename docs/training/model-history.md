@@ -366,6 +366,127 @@ Corrective action before continuing to Phase D:
 Effective batch remains 16 (`4 GPUs x batch 2 x grad_accum 2`). Phase C must
 retrain SFT with the corrected budget before DPO data generation.
 
+### Phase C SFT findings (v8.1.2-sft-v2)
+
+The corrected-budget SFT run completed cleanly and is the selected v8.1.2
+adapter unless a later checkpoint is explicitly promoted:
+
+- SFT adapter: `/tmp/operator-qwen05-lora-v8.1.2-sft-v2`
+- adapter_sha256:
+  `43186fa848c5f0e9d71915023f8f01c2341042de8aaf57b0c3c0c574a0f44379`
+- prediction output:
+  `/tmp/operator-qwen05-predictions-v8.1.2-sft-v2`
+- eval valid predictions: 317/317
+- exact_match: 204/317 (64.35%)
+- action_correct: 226/317 (71.29%)
+- tool_selection: 317/317 (100.00%)
+- contract_valid: 310/317 (97.79%)
+
+Per-tool action correctness:
+
+| Tool | Correct | Notes |
+| --- | ---: | --- |
+| `kernel_wake` | 65/65 (100.00%) | clean |
+| `kernel_inspect` | 17/17 (100.00%) | clean |
+| `kernel_goto` | 3/3 (100.00%) | clean |
+| `kernel_ask` | 32/32 (100.00%) | clean under permissive query text |
+| `kernel_near` | 19/20 (95.00%) | meets read-side gate |
+| `kernel_forward` | 39/41 (95.12%) | meets read-side gate |
+| `kernel_trace` | 24/24 (100.00%) | clean |
+| `kernel_ingest` | 0/45 (0.00%) | still fails structured memory arrays |
+| `kernel_write_memory` | 7/50 (14.00%) | improved but still fails `related[*]` |
+| `escalate` | 7/7 (100.00%) | clean |
+
+### Phase E/F DPO experiment - failed, reverted
+
+DPO training completed technically:
+
+- adapter: `/tmp/operator-qwen05-lora-v8.1.2-dpo`
+- adapter_sha256:
+  `0a8fcb9e68b4ef8fe6302e29b72886913f7c95b2781e4f30cfd8eb0f6b68305a`
+- train_runtime: 3001.5s
+- train_loss: 0.10815
+- final rewards margin: 7.76
+- final rewards accuracy: 1.0
+
+The trained DPO adapter was rejected because inference quality regressed:
+
+| Metric | SFT v2 | DPO final |
+| --- | ---: | ---: |
+| Eval valid predictions | 317/317 | 194/317 |
+| Failure rate | 0.00% | 38.80% |
+| exact_match, adjusted over 317 rows | 64.35% | 48.26% |
+| action_correct, adjusted over 317 rows | 71.29% | 50.47% |
+| `kernel_ingest` | 0/45 (0.00%) | 0/45 (0.00%) |
+| `kernel_write_memory` | 7/50 (14.00%) | 0/50 (0.00%) |
+
+Failure breakdown for the final DPO adapter:
+
+- `incomplete_json`: 50
+- `action.arguments_missing_required:idempotency_key,memory`: 13
+- `invalid_json`: 12
+- `missing_action_kind`: 12
+- `action.arguments_missing_required:summary`: 10
+- `unsupported_action_kind`: 9
+
+The epoch-1 checkpoint (`/tmp/operator-qwen05-lora-v8.1.2-dpo/checkpoint-68`)
+was also evaluated as a possible rescue:
+
+- checkpoint_sha256:
+  `ca65644532193d7d1ff62b1555d144a578275434a513b3e76093c981a1312192`
+- eval valid predictions: 208/317
+- failures: 109
+- exact_match, adjusted over 317 rows: 152/317 (47.95%)
+- action_correct, adjusted over 317 rows: 164/317 (51.74%)
+- `kernel_write_memory`: 2/50 (4.00%)
+- `kernel_ingest`: 0/45 (0.00%)
+
+The intermediate checkpoint is slightly better than the final DPO adapter but
+still worse than SFT v2 and far above the failure threshold. It is not
+promoted.
+
+Root cause analysis: the DPO objective over-optimized preference-pair
+separation without preserving the SFT base model's JSON generation behavior.
+The `spurious_extra_field` perturbation was applied cross-tool
+(`--spurious-field-all-rows=true`), which appears to have taught a shallow
+"emit fewer tokens" signal instead of robust array fidelity. With `beta=0.1`,
+the KL constraint was too weak to prevent drift. The training reward margin
+became very large while eval generation degraded, and this TRL version did not
+emit a KL divergence metric to make that drift visible during training.
+
+The observed result was universal JSON degradation: truncations, missing action
+kinds and malformed action shapes at inference time. The failure was not
+localized to write tools; read-side capabilities such as `kernel_inspect`,
+`kernel_ask`, `kernel_trace` and `escalate` also regressed.
+
+v8.1.2 therefore ships the SFT v2 adapter:
+`/tmp/operator-qwen05-lora-v8.1.2-sft-v2`.
+
+Production gates are not met in v8.1.2:
+
+- global action_correctness: 71.29% (<90% gate)
+- `kernel_ingest`: 0/45 (0.00%, <50% interim gate)
+- `kernel_write_memory`: 7/50 (14.00%, <50% interim gate)
+
+Useful improvements over the v8.0 action_correctness baseline are still
+preserved in SFT v2:
+
+- `kernel_write_memory`: 4.55% -> 14.00%
+- `kernel_near`: 83.33% -> 95.00%
+- `kernel_forward`: 94.29% -> 95.12%
+
+Lessons for a v8.2 DPO retry:
+
+1. Do not apply cross-cut perturbations before verifying they do not create
+   shallow shortcuts.
+2. Use a stronger KL constraint (`beta >= 0.5`).
+3. Use a lower learning rate (`<= 1e-6`).
+4. Prefer one epoch with early stopping based on eval reward margin.
+5. Run per-step eval with explicit KL monitoring.
+6. Test perturbation classes in isolation before combining them.
+7. Consider KTO or IPO as gentler alternatives if DPO remains unstable.
+8. Pin a TRL version that exposes the drift metrics needed for gating.
+
 ## Why Qwen 0.5B and not something larger?
 
 The kernel's design goal (see [`feedback_small_models`] in the
