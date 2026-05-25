@@ -8,11 +8,16 @@ use operator_runtime_infra::adapters::kmp_mcp_stdio_config::KmpMcpStdioConfig;
 use operator_runtime_infra::adapters::kmp_mcp_stdio_executor::KmpMcpStdioExecutor;
 use operator_shared_domain::action::operator_action::OperatorAction;
 use operator_shared_domain::action::tool_call_action::ToolCallAction;
+use operator_shared_domain::cursor::temporal_anchor::TemporalAnchor;
+use operator_shared_domain::cursor::temporal_cursor::TemporalCursor;
+use operator_shared_domain::cursor::temporal_cursor_key::TemporalCursorKey;
 use operator_shared_domain::ids::about_id::AboutId;
+use operator_shared_domain::tool_arguments::forward_arguments::ForwardArguments;
 use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
 use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
 use operator_shared_domain::tool_arguments::write_memory_arguments::WriteMemoryArguments;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
+use operator_shared_domain::value_objects::positive_count::PositiveCount;
 use serde_json::Value;
 
 #[test]
@@ -93,6 +98,33 @@ fn executor_maps_mcp_tool_error_to_observation() {
 }
 
 #[test]
+fn executor_sends_temporal_sequence_cursor_for_forward() {
+    let capture_path = temp_path("stdio-forward-request.json");
+    let response = r#"{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"not found"}],"isError":true}}"#;
+    let executor = KmpMcpStdioExecutor::new(shell_config(&capture_path, response));
+    let about = AboutId::parse("about:test").unwrap();
+
+    let observation = executor
+        .execute(&forward_action("seq:3"), &about)
+        .expect("tool error remains an observation");
+
+    assert!(matches!(observation, Observation::ToolError { .. }));
+    let request: Value =
+        serde_json::from_str(&fs::read_to_string(capture_path).expect("request captured"))
+            .expect("request JSON parses");
+    assert_eq!(request["params"]["name"], "kernel_forward");
+    assert_eq!(request["params"]["arguments"]["about"], "about:test");
+    assert_eq!(request["params"]["arguments"]["from"]["sequence"], 3);
+    assert!(request["params"]["arguments"]["from"].get("key").is_none());
+    assert!(
+        request["params"]["arguments"]["from"]
+            .get("anchor")
+            .is_none()
+    );
+    assert_eq!(request["params"]["arguments"]["window"]["after_entries"], 2);
+}
+
+#[test]
 fn executor_maps_non_zero_process_exit_to_transport_error() {
     let executor = KmpMcpStdioExecutor::new(
         KmpMcpStdioConfig::new("/bin/sh", "https://kernel.example.test")
@@ -109,6 +141,16 @@ fn executor_maps_non_zero_process_exit_to_transport_error() {
 fn inspect_action(target: &str) -> OperatorAction {
     OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Inspect(
         InspectArguments::new(MemoryRef::parse(target).unwrap()),
+    )))
+}
+
+fn forward_action(anchor: &str) -> OperatorAction {
+    let cursor = TemporalCursor::new(
+        TemporalCursorKey::Created,
+        TemporalAnchor::parse(anchor).unwrap(),
+    );
+    OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Forward(
+        ForwardArguments::new(cursor, PositiveCount::parse(2, "window").unwrap()),
     )))
 }
 

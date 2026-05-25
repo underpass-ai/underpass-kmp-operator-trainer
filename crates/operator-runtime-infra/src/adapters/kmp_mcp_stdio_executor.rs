@@ -223,10 +223,7 @@ fn goto_arguments(args: &GotoArguments, about: &AboutId) -> Value {
 fn rewind_arguments(args: &RewindArguments, about: &AboutId) -> Value {
     json!({
         "about": about.as_str(),
-        "from": {
-            "key": args.cursor().key().as_str(),
-            "anchor": args.cursor().anchor().as_str(),
-        },
+        "from": temporal_anchor_json(args.cursor().anchor().as_str()),
         "window": { "before_entries": args.window().as_usize() },
     })
 }
@@ -234,10 +231,7 @@ fn rewind_arguments(args: &RewindArguments, about: &AboutId) -> Value {
 fn forward_arguments(args: &ForwardArguments, about: &AboutId) -> Value {
     json!({
         "about": about.as_str(),
-        "from": {
-            "key": args.cursor().key().as_str(),
-            "anchor": args.cursor().anchor().as_str(),
-        },
+        "from": temporal_anchor_json(args.cursor().anchor().as_str()),
         "window": { "after_entries": args.window().as_usize() },
     })
 }
@@ -261,15 +255,26 @@ fn cursor_to_anchor_json(cursor: &Cursor) -> Value {
     match cursor {
         Cursor::Ref(c) => json!({ "ref": c.target().as_str() }),
         Cursor::Around(c) => json!({ "ref": c.anchor().as_str() }),
-        Cursor::Temporal(c) => json!({
-            "key": c.key().as_str(),
-            "anchor": c.anchor().as_str(),
-        }),
+        Cursor::Temporal(c) => temporal_anchor_json(c.anchor().as_str()),
         Cursor::Trace(c) => json!({
             "from": c.from().as_str(),
             "to": c.to().as_str(),
         }),
     }
+}
+
+fn temporal_anchor_json(anchor: &str) -> Value {
+    if let Some(sequence) = anchor
+        .strip_prefix("seq:")
+        .and_then(|raw| raw.parse::<u32>().ok())
+        .filter(|sequence| *sequence > 0)
+    {
+        return json!({ "sequence": sequence });
+    }
+    if anchor.contains('T') && anchor.ends_with('Z') {
+        return json!({ "time": anchor });
+    }
+    json!({ "ref": anchor })
 }
 
 fn map_structured_content(
