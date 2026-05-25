@@ -63,12 +63,15 @@ external trainer wired by a CLI in this context.
 Owns executing a predicted `OperatorAction` against real MCP/KMP and
 recording the observed outcome. It depends on `shared` and on a KMP/MCP
 client adapter living in `replay-infra`. **The client adapter must not be a
-Rust dependency on `rehydration-*`**; it talks gRPC/MCP over the network.
+Rust dependency on `rehydration-*`**; it talks MCP JSON-RPC over a process or
+network boundary.
 
 ## runtime
 
 Owns the composition of an LLM, the Operator policy, the KMP/MCP client and
-the budget/escalation policy at serving time.
+the budget/escalation policy at serving time. The current implementation is
+single-step only: predict, validate, optionally execute one MCP call, observe,
+and persist the outcome.
 
 ## Allowed dependency edges
 
@@ -78,7 +81,8 @@ synthetic        ──▶  shared
 evaluation       ──▶  shared
 training         ──▶  shared, evaluation (only for readiness gates)
 replay           ──▶  shared
-runtime          ──▶  shared, evaluation (only for online contract checks)
+runtime          ──▶  shared, replay infra (MCP DTOs/mappers),
+                      synthetic DTOs/mappers (replay input parsing)
 ```
 
 Edges not listed above are forbidden. In particular:

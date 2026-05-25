@@ -208,3 +208,104 @@ bounded-task setting.
 
 [`feedback_small_models`]: ../../README.md
 [licensing requirements]: ../../LICENSE
+
+### v8.1.2 SFT v2 — live replay validation (operator-runtime v0)
+
+Built the minimal operator runtime bounded context (`operator-runtime-*`
+crates) to validate the v8.1.2 SFT v2 adapter against a live vLLM endpoint
+and KMP through MCP JSON-RPC stdio.
+
+#### Setup
+
+- vLLM endpoint: `https://0.5b.llm.underpassai.com/v1`
+- Model id: `operator-v8.1.2`
+- Adapter SHA-256:
+  `43186fa848c5f0e9d71915023f8f01c2341042de8aaf57b0c3c0c574a0f44379`
+- KMP endpoint: `https://rehydration-kernel.underpassai.com` through
+  `rehydration-mcp` stdio (`REHYDRATION_MCP_BACKEND=grpc`)
+- Eval source: `/tmp/operator-sft-v8.1.2/openai_eval.jsonl`
+- Replay filter: `read_profile` = `read` + `writer_pre_read`, excluding
+  `kernel_ingest` and `kernel_write_memory`
+- Selected scenarios: 222 rows. The current split has no `stop` rows in this
+  profile.
+
+#### Results
+
+The first live replay surfaced a runtime adapter bug for temporal cursor
+requests: `kernel_forward` and `kernel_rewind` were sent as `{key, anchor}`
+while `rehydration-mcp` expects exactly one of `{ref, time, sequence}`. The
+runtime stdio executor was fixed to translate `seq:N` anchors to
+`{"sequence": N}` and non-sequence anchors to `{"ref": ...}`.
+
+Final replay after that fix:
+
+| Tool | Scenarios | target/predicted match | live MCP success | Notes |
+| --- | ---: | ---: | ---: | --- |
+| `kernel_wake` | 65 | 65/65 (100%) | 0/65 (0%) | KMP `NotFound` |
+| `kernel_ask` | 32 | 32/32 (100%) | 0/32 (0%) | KMP `NotFound` |
+| `kernel_near` | 20 | 20/20 (100%) | 0/20 (0%) | KMP `NotFound` |
+| `kernel_goto` | 3 | 3/3 (100%) | 0/3 (0%) | KMP `NotFound` |
+| `kernel_rewind` | 13 | 13/13 (100%) | 0/13 (0%) | KMP `NotFound` after cursor-shape fix |
+| `kernel_forward` | 41 | 41/41 (100%) | 0/41 (0%) | KMP `NotFound` after cursor-shape fix |
+| `kernel_trace` | 24 | 24/24 (100%) | 0/24 (0%) | KMP `NotFound` |
+| `kernel_inspect` | 17 | 17/17 (100%) | 0/17 (0%) | KMP `NotFound` |
+| `escalate` | 7 | 7/7 (100%) | 7/7 (100%) | Terminal, no MCP call |
+| **Global** | **222** | **222/222 (100%)** | **7/222 (3.15%)** | Includes terminal escalations |
+
+MCP-attempted success rate:
+
+| Metric | Value |
+| --- | ---: |
+| MCP attempted | 215 |
+| MCP completed | 0 |
+| `mcp_execution_success_rate` | 0/215 (0%) |
+
+Outcome class distribution:
+
+| Outcome class | Count |
+| --- | ---: |
+| `Escalated` | 7 |
+| `McpExecutionFailure` | 215 |
+| `Completed` | 0 |
+| `ContractViolation` | 0 |
+| `BudgetExhausted` | 0 |
+
+Failure category distribution after the cursor-shape fix:
+
+| Category | Count |
+| --- | ---: |
+| KMP `NotFound` | 215 |
+| MCP request shape rejected | 0 |
+
+Latency:
+
+| Percentile | Value |
+| --- | ---: |
+| p50 | 220 ms |
+| p90 | 368 ms |
+| p99 | 404 ms |
+
+#### Conclusion
+
+The live runtime path is validated end to end: vLLM strict structured output,
+scenario prompt reconstruction, local contract validation, MCP stdio execution,
+JSONL persistence, and replay aggregation all work.
+
+This run does **not** validate production read success for v8.1.2 because the
+eval split references synthetic `about:*` / `node:*` ids that are not loaded in
+the live KMP. The 0% MCP-attempted success rate is therefore a fixture/data
+availability result, not a model action-selection regression. Model action
+selection in this replay was 222/222 against the selected target actions.
+
+To turn `mcp_execution_success_rate` into a production-readiness metric, the
+next run must either ingest the eval fixture graph into an isolated KMP
+namespace or replay scenarios derived from refs already present in the target
+KMP.
+
+#### Known limitations
+
+- Single-step replay only; multi-step state updates remain v8.2.x scope.
+- Write profile (`kernel_ingest`, `kernel_write_memory`) excluded.
+- No Best-of-N or reranking.
+- Live replay currently uses MCP JSON-RPC stdio through `rehydration-mcp`;
+  HTTP JSON-RPC can be enabled later when a kernel bridge exists.

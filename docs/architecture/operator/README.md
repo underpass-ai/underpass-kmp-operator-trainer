@@ -36,7 +36,9 @@ the implementation is not documented in this tree, that is a bug.
 - [50-training-context.md](50-training-context.md) — Training run
   preparation: dataset provenance, readiness gates, manifests,
   `TrainingRun` aggregate root.
-- 60-runtime-context.md *(pending)* — Compose LLM, Operator, KMP/MCP, budget.
+- [60-runtime-context.md](60-runtime-context.md) — Runtime MVP:
+  compose vLLM Operator policy, strict contract validation, MCP JSON-RPC
+  execution, budget and JSONL replay outcomes. **Single-step scope.**
 
 External benchmark translation (LongMemEval, MemoryArena, …) is **not** an
 Operator bounded context. Those adapters belong to the kernel
@@ -92,6 +94,13 @@ to shape Operator's training surface.
     manifest writer, `std::process::Command` trainer invoker, e2e
     integration tests).
 
-The `runtime` context is still out of scope. Benchmark adapters are not
-an Operator concern at all — they live in the kernel
-(`rehydration-kernel`) because their purpose is to measure KMP itself.
+- **Pass 6** — `runtime` bounded context MVP:
+  `operator-runtime-domain`, `operator-runtime-application`,
+  `operator-runtime-infra`, and `operator-runtime-cli`. The implemented
+  runtime is single-step only: predict one action, validate against the
+  strict contract, execute at most one MCP call through MCP JSON-RPC, and
+  persist one session outcome. Multi-step visible-state updates remain
+  follow-up work.
+
+Benchmark adapters are not an Operator concern at all — they live in the
+kernel (`rehydration-kernel`) because their purpose is to measure KMP itself.
