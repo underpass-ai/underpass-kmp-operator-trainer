@@ -84,7 +84,7 @@ fn main() {
 }
 
 fn run(cli: &Cli) -> Result<(), String> {
-    let expected_mode = cli.mode.as_str();
+    let mode_filter = ModeFilter::parse(cli.mode.as_str())?;
     let filter_tools = parse_filter_tools(cli.filter_tools.as_deref())?;
     let sessions_dir = cli.output_dir.join("sessions");
     let events_dir = cli.output_dir.join("events");
@@ -103,20 +103,20 @@ fn run(cli: &Cli) -> Result<(), String> {
 
     let scenarios = load_scenarios(
         &cli.scenario_jsonl,
-        expected_mode,
+        mode_filter,
         filter_tools.as_ref(),
         cli.limit,
     )?;
     if scenarios.is_empty() {
         return Err("no scenarios selected after mode/tool filters".to_string());
     }
-    let system_prompt = shared_system_prompt(&scenarios)?;
-    let policy = Arc::new(build_operator_policy(cli)?.with_system_prompt(system_prompt))
-        as Arc<dyn OperatorPolicy>;
     let executor = build_mcp_executor(cli)?;
 
     let mut stats = ReplayStats::default();
     for scenario in scenarios {
+        let policy = Arc::new(
+            build_operator_policy(cli)?.with_system_prompt(scenario.system_prompt.clone()),
+        ) as Arc<dyn OperatorPolicy>;
         let event_path = events_dir.join(format!("{}.jsonl", safe_filename(&scenario.step_id)));
         let event_sink = Arc::new(
             JsonlSessionEventSink::new(
@@ -194,7 +194,7 @@ fn build_mcp_executor(cli: &Cli) -> Result<Arc<dyn McpExecutor>, String> {
 
 fn load_scenarios(
     path: &Path,
-    expected_mode: &str,
+    mode_filter: ModeFilter,
     filter_tools: Option<&BTreeSet<String>>,
     limit: Option<usize>,
 ) -> Result<Vec<RuntimeScenario>, String> {
@@ -213,10 +213,10 @@ fn load_scenarios(
             .map_err(|err| format!("parse scenario JSON at line {line_number}: {err}"))?;
         let row = row.into_runtime_parts(line_number)?;
         let subject = row.subject(line_number)?;
-        if subject.mode != expected_mode {
+        let target = row.target_action();
+        if !mode_filter.accepts(subject.mode.as_str(), &target) {
             continue;
         }
-        let target = row.target_action();
         if let Some(filter) = filter_tools
             && !target
                 .tool
@@ -228,6 +228,40 @@ fn load_scenarios(
         scenarios.push(RuntimeScenario::from_row(row, &subject, target)?);
     }
     Ok(scenarios)
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ModeFilter {
+    Exact(&'static str),
+    ReadProfile,
+}
+
+impl ModeFilter {
+    fn parse(raw: &str) -> Result<Self, String> {
+        match raw {
+            "read-profile" | "read_profile" => Ok(Self::ReadProfile),
+            "read" => Ok(Self::Exact("read")),
+            "write" => Ok(Self::Exact("write")),
+            "full" => Ok(Self::Exact("full")),
+            "writer_pre_read" | "writer-pre-read" => Ok(Self::Exact("writer_pre_read")),
+            other => Err(format!(
+                "unsupported mode '{other}'; expected read, write, full, writer_pre_read, or read_profile"
+            )),
+        }
+    }
+
+    fn accepts(self, scenario_mode: &str, target: &TargetActionSummary) -> bool {
+        match self {
+            Self::Exact(expected) => scenario_mode == expected,
+            Self::ReadProfile => {
+                matches!(scenario_mode, "read" | "writer_pre_read")
+                    && !matches!(
+                        target.tool.as_deref(),
+                        Some("kernel_ingest" | "kernel_write_memory")
+                    )
+            }
+        }
+    }
 }
 
 fn parse_filter_tools(raw: Option<&str>) -> Result<Option<BTreeSet<String>>, String> {
@@ -244,23 +278,6 @@ fn parse_filter_tools(raw: Option<&str>) -> Result<Option<BTreeSet<String>>, Str
         tools.insert(item.to_string());
     }
     Ok(Some(tools))
-}
-
-fn shared_system_prompt(scenarios: &[RuntimeScenario]) -> Result<String, String> {
-    let first = scenarios
-        .first()
-        .ok_or_else(|| "no scenarios selected after mode/tool filters".to_string())?;
-    let prompt = first.system_prompt.as_str();
-    if scenarios
-        .iter()
-        .any(|scenario| scenario.system_prompt.as_str() != prompt)
-    {
-        return Err(
-            "selected scenarios use mixed system prompts; split by prompt profile before replay"
-                .to_string(),
-        );
-    }
-    Ok(prompt.to_string())
 }
 
 #[derive(Debug)]
