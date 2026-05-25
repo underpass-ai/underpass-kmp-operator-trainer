@@ -15,6 +15,11 @@ pub enum DropReason {
     TeacherTruncation {
         finish_reason: FinishReason,
         content_len: usize,
+        raw_content_tail: String,
+        request_bytes: usize,
+        response_bytes: usize,
+        elapsed_ms: u128,
+        request_id: Option<String>,
     },
     ParseFailure {
         message: String,
@@ -57,13 +62,27 @@ impl DropReason {
             Self::TeacherTruncation {
                 finish_reason,
                 content_len,
+                raw_content_tail,
+                request_bytes,
+                response_bytes,
+                elapsed_ms,
+                request_id,
             } => format!(
-                "teacher finished with {} before producing a parseable action; content_len={content_len}",
-                finish_reason.as_str()
+                "teacher finished with {} before producing a parseable action; content_len={content_len}; raw_content_tail={raw_content_tail}; request_bytes={request_bytes}; response_bytes={response_bytes}; elapsed_ms={elapsed_ms}; request_id={request_id:?}",
+                finish_reason.as_str(),
             ),
             Self::TeacherError { message }
             | Self::ParseFailure { message }
             | Self::TrajectoryBuild { message } => message.clone(),
+        }
+    }
+
+    pub fn raw_content_tail(&self) -> Option<&str> {
+        match self {
+            Self::TeacherTruncation {
+                raw_content_tail, ..
+            } => Some(raw_content_tail),
+            _ => None,
         }
     }
 }

@@ -201,11 +201,21 @@ fn drop_from_teacher_error(err: TeacherPolicyError) -> Box<DropCandidate> {
         TeacherPolicyError::TruncatedResponse {
             finish_reason,
             content_len,
+            raw_content_tail,
+            request_bytes,
+            response_bytes,
+            elapsed_ms,
+            request_id,
             ..
         } => DropCandidate::without_action(
             DropReason::TeacherTruncation {
                 finish_reason,
                 content_len,
+                raw_content_tail,
+                request_bytes,
+                response_bytes,
+                elapsed_ms,
+                request_id,
             },
             Some(finish_reason),
         ),
@@ -392,6 +402,11 @@ mod tests {
                     adapter: "stub",
                     finish_reason: FinishReason::Length,
                     content_len: 4205,
+                    raw_content_tail: "\"partial\":true".to_string(),
+                    request_bytes: 1234,
+                    response_bytes: 4321,
+                    elapsed_ms: 99,
+                    request_id: Some("req_test".to_string()),
                 }),
             },
             CompositeActionContractValidator::default_strict(),
@@ -406,7 +421,12 @@ mod tests {
             report.dropped()[0].reason(),
             DropReason::TeacherTruncation {
                 finish_reason: FinishReason::Length,
-                content_len: 4205
+                content_len: 4205,
+                raw_content_tail: _,
+                request_bytes: 1234,
+                response_bytes: 4321,
+                elapsed_ms: 99,
+                request_id: Some(_)
             }
         ));
         assert!(report.dropped()[0].predicted_action().is_none());

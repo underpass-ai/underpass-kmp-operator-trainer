@@ -31,10 +31,17 @@ pub enum TeacherPolicyError {
         finish_reason: Option<FinishReason>,
     },
 
-    #[error("{adapter} returned non-stop finish reason {finish_reason}: content_len={content_len}")]
+    #[error(
+        "{adapter} returned non-stop finish reason {finish_reason}: content_len={content_len}; raw_content_tail={raw_content_tail}; request_bytes={request_bytes}; response_bytes={response_bytes}; elapsed_ms={elapsed_ms}; request_id={request_id:?}"
+    )]
     TruncatedResponse {
         adapter: &'static str,
         finish_reason: FinishReason,
         content_len: usize,
+        raw_content_tail: String,
+        request_bytes: usize,
+        response_bytes: usize,
+        elapsed_ms: u128,
+        request_id: Option<String>,
     },
 }

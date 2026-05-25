@@ -192,6 +192,42 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[test]
+    fn writes_truncation_raw_content_tail_to_dropped_jsonl() {
+        let root = std::env::temp_dir().join(format!(
+            "operator-jsonl-streaming-sink-truncation-drop-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let sink = JsonlStreamingSink::new(&root).unwrap();
+        let scenario = scenario();
+        let drop = DropEntry::new(
+            scenario.id().clone(),
+            scenario.target(),
+            DropReason::TeacherTruncation {
+                finish_reason:
+                    operator_shared_domain::value_objects::finish_reason::FinishReason::Length,
+                content_len: 8373,
+                raw_content_tail: "\"arguments\":{\"memory\":".to_string(),
+                request_bytes: 15830,
+                response_bytes: 13276,
+                elapsed_ms: 112_606,
+                request_id: Some("req_test".to_string()),
+            },
+            None,
+            subject_hash(),
+            Some(operator_shared_domain::value_objects::finish_reason::FinishReason::Length),
+        );
+
+        sink.on_row_dropped(0, &scenario, &drop).unwrap();
+
+        let contents = fs::read_to_string(root.join(DROPPED_PARTIAL_FILE)).unwrap();
+        assert!(contents.contains("\"reason\":\"teacher_truncation\""));
+        assert!(contents.contains("\"teacher_finish_reason\":\"length\""));
+        assert!(contents.contains("\"raw_content_tail\":\"\\\"arguments\\\":{\\\"memory\\\":\""));
+        let _ = fs::remove_dir_all(root);
+    }
+
     fn scenario() -> Scenario {
         Scenario::new(
             ScenarioId::parse("scenario:inspect").unwrap(),
