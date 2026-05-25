@@ -754,6 +754,11 @@ dependencies = [
  "operator-runtime-application",
  "operator-runtime-domain",
  "operator-runtime-infra",
+ "operator-shared-domain",
+ "operator-shared-infra",
+ "operator-synthetic-infra",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
