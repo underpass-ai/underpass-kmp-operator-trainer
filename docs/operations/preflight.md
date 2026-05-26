@@ -18,7 +18,7 @@ The preflight verifies, where applicable:
 
 - git branch, HEAD, and clean working tree state;
 - freshly built local CLIs are newer than the source HEAD;
-- mTLS certs and API key files are present;
+- mTLS certs are present and valid;
 - live Helm releases and Kubernetes pods match expected configuration;
 - vLLM endpoints list the expected model ids;
 - KMP/MCP smoke calls work against a known real anchor;
