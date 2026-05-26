@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+pub const DEFAULT_MAX_TOKENS: u32 = 1024;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VllmOperatorConfig {
     base_url: String,
@@ -20,7 +22,7 @@ impl VllmOperatorConfig {
             client_cert_path: None,
             client_key_path: None,
             timeout: Duration::from_secs(60),
-            max_tokens: 4096,
+            max_tokens: DEFAULT_MAX_TOKENS,
             accept_invalid_certs: false,
         }
     }

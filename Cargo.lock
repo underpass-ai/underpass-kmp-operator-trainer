@@ -754,6 +754,11 @@ dependencies = [
  "operator-runtime-application",
  "operator-runtime-domain",
  "operator-runtime-infra",
+ "operator-shared-domain",
+ "operator-shared-infra",
+ "operator-synthetic-infra",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -768,10 +773,12 @@ dependencies = [
 name = "operator-runtime-infra"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "operator-replay-application",
  "operator-replay-infra",
  "operator-runtime-application",
  "operator-runtime-domain",
+ "operator-shared-contract",
  "operator-shared-domain",
  "operator-shared-infra",
  "operator-synthetic-domain",

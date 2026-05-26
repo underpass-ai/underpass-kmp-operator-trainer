@@ -13,12 +13,14 @@ workspace = true
 [dependencies]
 operator-runtime-application.workspace = true
 operator-runtime-domain.workspace = true
+operator-shared-contract.workspace = true
 operator-shared-domain.workspace = true
 operator-shared-infra.workspace = true
 operator-synthetic-domain.workspace = true
 operator-synthetic-infra.workspace = true
 operator-replay-application.workspace = true
 operator-replay-infra.workspace = true
+chrono.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

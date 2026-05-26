@@ -39,12 +39,6 @@ check_adapter_sha "$NAMESPACE" "$OPERATOR_POD_SELECTOR" "$OPERATOR_ADAPTER_PATH"
 check_endpoint_model "$OPERATOR_MODELS_URL" "$CLIENT_CERT" "$CLIENT_KEY" "$EXPECTED_OPERATOR_MODEL_ID" "operator /v1/models"
 check_mtls_cert "$CLIENT_CERT" "client cert validity"
 
-if [[ -s /tmp/openai.txt && -s /tmp/claude.txt ]]; then
-  ok "api key files" "/tmp/openai.txt and /tmp/claude.txt are present and non-empty"
-else
-  fail "api key files" "expected non-empty /tmp/openai.txt and /tmp/claude.txt"
-fi
-
 if helm list -n "$NAMESPACE" >/tmp/operator-e2e-helm-list.txt 2>&1; then
   ok "helm list" "helm list succeeded for namespace $NAMESPACE"
   if [[ "$VERBOSE" == "1" ]]; then

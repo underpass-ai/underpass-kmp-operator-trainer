@@ -1,5 +1,6 @@
+use std::io::Write;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
 
 use operator_replay_application::error::kmp_client_error::KmpClientError;
 use operator_replay_infra::jsonrpc::envelope_violation::EnvelopeViolation;
@@ -24,36 +25,23 @@ use operator_shared_domain::tool::kernel_tool::KernelTool;
 use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
 use operator_shared_domain::tool_outcomes::tool_outcome::ToolOutcome;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
-use reqwest::blocking::Client;
 use serde_json::Value;
 
 use crate::adapters::kmp_mcp_request_arguments::{self, McpRequestArgumentsError};
+use crate::adapters::kmp_mcp_stdio_config::KmpMcpStdioConfig;
 
 const TOOL_ERROR_CODE: &str = "mcp_tool_error";
-const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Debug)]
-pub struct KmpMcpHttpExecutor {
-    endpoint: String,
-    client: Client,
+pub struct KmpMcpStdioExecutor {
+    config: KmpMcpStdioConfig,
     next_id: AtomicU64,
 }
 
-impl KmpMcpHttpExecutor {
-    pub fn new(endpoint: impl Into<String>) -> Result<Self, McpExecutorError> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
-            .build()
-            .map_err(|err| McpExecutorError::Transport {
-                message: format!("failed to build reqwest client: {err}"),
-            })?;
-        Ok(Self::with_client(endpoint, client))
-    }
-
-    pub fn with_client(endpoint: impl Into<String>, client: Client) -> Self {
+impl KmpMcpStdioExecutor {
+    pub fn new(config: KmpMcpStdioConfig) -> Self {
         Self {
-            endpoint: endpoint.into(),
-            client,
+            config,
             next_id: AtomicU64::new(1),
         }
     }
@@ -69,26 +57,14 @@ impl KmpMcpHttpExecutor {
     ) -> Result<Observation, McpExecutorError> {
         let request_id = self.next_id();
         let request = ToolsCallRequest::new(request_id, tool.as_str(), arguments);
-        let response = self
-            .client
-            .post(&self.endpoint)
-            .json(&request)
-            .send()
-            .map_err(|err| McpExecutorError::Transport {
-                message: err.to_string(),
+        let request_line =
+            serde_json::to_string(&request).map_err(|err| McpExecutorError::Protocol {
+                message: format!("failed to serialize JSON-RPC request: {err}"),
             })?;
-        let status = response.status();
-        let body = response.text().map_err(|err| McpExecutorError::Transport {
-            message: format!("failed to read MCP HTTP response body: {err}"),
-        })?;
-        if !status.is_success() {
-            return Err(McpExecutorError::Protocol {
-                message: format!("MCP HTTP status {status}: {body}"),
-            });
-        }
+        let response_line = self.invoke_stdio(&request_line)?;
         let envelope: ToolsCallResponse =
-            serde_json::from_str(&body).map_err(|err| McpExecutorError::Protocol {
-                message: format!("invalid JSON-RPC envelope from HTTP MCP: {err}"),
+            serde_json::from_str(&response_line).map_err(|err| McpExecutorError::Protocol {
+                message: format!("invalid JSON-RPC envelope from stdio MCP: {err}"),
             })?;
         if let Err(violation) = envelope.validate(request_id) {
             return Err(McpExecutorError::Protocol {
@@ -125,9 +101,73 @@ impl KmpMcpHttpExecutor {
             Err(error) => Ok(mcp_argument_error_observation(&error)),
         }
     }
+
+    fn invoke_stdio(&self, request_line: &str) -> Result<String, McpExecutorError> {
+        let mut child = Command::new(self.config.command())
+            .args(self.config.args())
+            .envs(self.config.env())
+            .env(
+                "REHYDRATION_KERNEL_GRPC_ENDPOINT",
+                self.config.grpc_endpoint(),
+            )
+            .env("REHYDRATION_MCP_BACKEND", "grpc")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|err| McpExecutorError::Transport {
+                message: format!("failed to spawn {}: {err}", self.config.command().display()),
+            })?;
+
+        {
+            let stdin = child
+                .stdin
+                .as_mut()
+                .ok_or_else(|| McpExecutorError::Transport {
+                    message: "failed to open stdin for stdio MCP process".to_string(),
+                })?;
+            writeln!(stdin, "{request_line}").map_err(|err| McpExecutorError::Transport {
+                message: format!("failed to write JSON-RPC request to stdio MCP process: {err}"),
+            })?;
+        }
+
+        let output = child
+            .wait_with_output()
+            .map_err(|err| McpExecutorError::Transport {
+                message: format!("failed to wait for stdio MCP process: {err}"),
+            })?;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout =
+            String::from_utf8(output.stdout).map_err(|err| McpExecutorError::Protocol {
+                message: format!("stdio MCP process produced non-UTF-8 stdout: {err}"),
+            })?;
+        let first_stdout_line = stdout
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .map(str::to_string);
+        if !output.status.success() {
+            if let Some(line) = first_stdout_line {
+                return Ok(line);
+            }
+            return Err(McpExecutorError::Transport {
+                message: format!(
+                    "stdio MCP process exited with {}; stderr: {}; stdout: {}",
+                    output.status,
+                    stderr.trim(),
+                    stdout.trim()
+                ),
+            });
+        }
+        first_stdout_line.ok_or_else(|| McpExecutorError::Protocol {
+            message: format!(
+                "stdio MCP process produced no JSON-RPC response; stderr: {}",
+                stderr.trim()
+            ),
+        })
+    }
 }
 
-impl McpExecutor for KmpMcpHttpExecutor {
+impl McpExecutor for KmpMcpStdioExecutor {
     fn execute(
         &self,
         action: &OperatorAction,
@@ -183,7 +223,7 @@ fn map_structured_content(
     match tool {
         KernelTool::Ingest | KernelTool::WriteMemory => Err(KmpClientError::Protocol {
             tool: tool.as_str(),
-            message: "write tool reached read-profile HTTP executor".to_string(),
+            message: "write tool reached read-profile stdio executor".to_string(),
         }),
         KernelTool::Wake => WakeResponseMapper::to_outcome(structured)
             .map(ToolOutcome::Wake)
