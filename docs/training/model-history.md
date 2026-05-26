@@ -255,6 +255,12 @@ Post-audit live subsets covered 20 general read-profile scenarios plus 10
 impacted `kernel_trace`/`kernel_near`/`kernel_goto` scenarios. The remaining
 failures were KMP `NotFound` responses, not argument-shape rejections.
 
+A control MCP smoke against a live graph anchor
+`article:incident:checkout-latency:20260504T233722Z:frontend` returned a
+successful `kernel_wake` response. That confirms the KMP endpoint and MCP
+transport were healthy during diagnosis; the replay `NotFound` failures are
+from eval refs absent from the live graph.
+
 Full replay result after the initial cursor-shape fix:
 
 | Tool | Scenarios | target/predicted match | live MCP success | Notes |

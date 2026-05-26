@@ -161,6 +161,12 @@ covered 20 general read-profile scenarios plus 10 impacted
 `kernel_trace`/`kernel_near`/`kernel_goto` scenarios. The remaining failures
 were still KMP `NotFound` responses, not argument-shape rejections.
 
+A control MCP smoke against an existing live KMP anchor
+`article:incident:checkout-latency:20260504T233722Z:frontend` returned a
+successful `kernel_wake` response. That confirms the KMP endpoint and MCP
+transport are healthy; the replay failures are caused by eval refs that are
+absent from the live graph.
+
 The live path is operational, but the selected eval split uses synthetic refs
 that are not loaded in production KMP. The result validates runtime wiring and
 schema behavior, not production read success. A production-readiness
