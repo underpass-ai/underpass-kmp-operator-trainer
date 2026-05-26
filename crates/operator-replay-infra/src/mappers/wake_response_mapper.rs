@@ -1,8 +1,10 @@
 //! Map the structured content of a `kernel_wake` response to a typed
 //! `WakeOutcome`. First-pass capture: the human-readable `summary`
-//! plus every `evidence_ref` collected from `wake.causal_spine`. The
-//! richer wake packet (objective, `open_loops`, `next_actions`, proof)
-//! is ignored until a use case needs it.
+//! plus every non-empty `evidence_ref` collected from `wake.causal_spine`.
+//! Live kernel responses can include structural causal-spine entries with an
+//! empty evidence ref; those are filtered at the infra boundary so the domain
+//! keeps `MemoryRef` non-empty. The richer wake packet (objective,
+//! `open_loops`, `next_actions`, proof) is ignored until a use case needs it.
 
 use operator_shared_domain::tool_outcomes::wake_outcome::WakeOutcome;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
@@ -54,6 +56,9 @@ fn collect_causal_spine_refs(structured: &Value) -> Result<Vec<MemoryRef>, Mappi
         let Some(raw) = entry.get("evidence_ref").and_then(Value::as_str) else {
             continue;
         };
+        if raw.is_empty() {
+            continue;
+        }
         out.push(
             MemoryRef::parse(raw).map_err(|err| MappingError::InvalidValue {
                 tool: TOOL,
@@ -100,5 +105,39 @@ mod tests {
                 field: "summary"
             }
         ));
+    }
+
+    #[test]
+    fn filters_empty_causal_spine_evidence_refs() {
+        let value: Value = serde_json::json!({
+            "summary": "Objective: live anchor\nStatus: ACTIVE\nNext: continue",
+            "wake": {
+                "causal_spine": [
+                    {
+                        "claim": "anchor -> dimension",
+                        "because": "Memory anchor includes this dimension.",
+                        "evidence_ref": ""
+                    },
+                    {
+                        "claim": "evidence -> claim",
+                        "because": "Evidence supports this memory entry.",
+                        "evidence_ref": "article:20260504T233722Z:evidence:frontend-cache"
+                    },
+                    {
+                        "claim": "anchor -> claim",
+                        "because": "Memory anchor records this entry.",
+                        "evidence_ref": ""
+                    }
+                ]
+            }
+        });
+
+        let outcome = WakeResponseMapper::to_outcome(&value).expect("empty refs are filtered");
+
+        assert_eq!(outcome.surfaced_refs().len(), 1);
+        assert_eq!(
+            outcome.surfaced_refs()[0].as_str(),
+            "article:20260504T233722Z:evidence:frontend-cache"
+        );
     }
 }
