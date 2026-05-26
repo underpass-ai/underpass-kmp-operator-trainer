@@ -6,6 +6,7 @@ use crate::per_tool::ingest_evidence_dto::IngestEvidenceDto;
 use crate::per_tool::ingest_relation_dto::IngestRelationDto;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IngestMemoryDto {
     pub dimensions: Vec<IngestDimensionDto>,
     pub entries: Vec<IngestEntryDto>,

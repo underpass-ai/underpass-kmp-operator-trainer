@@ -20,22 +20,14 @@ use operator_runtime_application::ports::mcp_executor_port::McpExecutor;
 use operator_runtime_domain::session::observation::Observation;
 use operator_runtime_domain::session::observation_error_code::ObservationErrorCode;
 use operator_shared_domain::action::operator_action::OperatorAction;
-use operator_shared_domain::cursor::cursor::Cursor;
 use operator_shared_domain::ids::about_id::AboutId;
 use operator_shared_domain::tool::kernel_tool::KernelTool;
-use operator_shared_domain::tool_arguments::ask_arguments::AskArguments;
-use operator_shared_domain::tool_arguments::forward_arguments::ForwardArguments;
-use operator_shared_domain::tool_arguments::goto_arguments::GotoArguments;
-use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
-use operator_shared_domain::tool_arguments::near_arguments::NearArguments;
-use operator_shared_domain::tool_arguments::rewind_arguments::RewindArguments;
 use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
-use operator_shared_domain::tool_arguments::trace_arguments::TraceArguments;
-use operator_shared_domain::tool_arguments::wake_arguments::WakeArguments;
 use operator_shared_domain::tool_outcomes::tool_outcome::ToolOutcome;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
-use serde_json::{Value, json};
+use serde_json::Value;
 
+use crate::adapters::kmp_mcp_request_arguments::{self, McpRequestArgumentsError};
 use crate::adapters::kmp_mcp_stdio_config::KmpMcpStdioConfig;
 
 const TOOL_ERROR_CODE: &str = "mcp_tool_error";
@@ -99,15 +91,26 @@ impl KmpMcpStdioExecutor {
         Ok(tool_response(outcome))
     }
 
+    fn call_read_tool(
+        &self,
+        tool: KernelTool,
+        arguments: Result<Value, McpRequestArgumentsError>,
+    ) -> Result<Observation, McpExecutorError> {
+        match arguments {
+            Ok(arguments) => self.call_tool(tool, arguments),
+            Err(error) => Ok(mcp_argument_error_observation(&error)),
+        }
+    }
+
     fn invoke_stdio(&self, request_line: &str) -> Result<String, McpExecutorError> {
         let mut child = Command::new(self.config.command())
             .args(self.config.args())
-            .env("REHYDRATION_MCP_BACKEND", "grpc")
+            .envs(self.config.env())
             .env(
                 "REHYDRATION_KERNEL_GRPC_ENDPOINT",
                 self.config.grpc_endpoint(),
             )
-            .envs(self.config.env())
+            .env("REHYDRATION_MCP_BACKEND", "grpc")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -134,26 +137,33 @@ impl KmpMcpStdioExecutor {
                 message: format!("failed to wait for stdio MCP process: {err}"),
             })?;
         let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout =
+            String::from_utf8(output.stdout).map_err(|err| McpExecutorError::Protocol {
+                message: format!("stdio MCP process produced non-UTF-8 stdout: {err}"),
+            })?;
+        let first_stdout_line = stdout
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .map(str::to_string);
         if !output.status.success() {
+            if let Some(line) = first_stdout_line {
+                return Ok(line);
+            }
             return Err(McpExecutorError::Transport {
                 message: format!(
-                    "stdio MCP process exited with {}; stderr: {}",
+                    "stdio MCP process exited with {}; stderr: {}; stdout: {}",
                     output.status,
-                    stderr.trim()
+                    stderr.trim(),
+                    stdout.trim()
                 ),
             });
         }
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        stdout
-            .lines()
-            .find(|line| !line.trim().is_empty())
-            .map(str::to_string)
-            .ok_or_else(|| McpExecutorError::Protocol {
-                message: format!(
-                    "stdio MCP process produced no JSON-RPC response; stderr: {}",
-                    stderr.trim()
-                ),
-            })
+        first_stdout_line.ok_or_else(|| McpExecutorError::Protocol {
+            message: format!(
+                "stdio MCP process produced no JSON-RPC response; stderr: {}",
+                stderr.trim()
+            ),
+        })
     }
 }
 
@@ -173,108 +183,37 @@ impl McpExecutor for KmpMcpStdioExecutor {
             ToolArguments::Ingest(_) | ToolArguments::WriteMemory(_) => {
                 Err(McpExecutorError::WriteToolNotAllowedInReadProfile)
             }
-            ToolArguments::Wake(args) => self.call_tool(KernelTool::Wake, wake_arguments(args)),
-            ToolArguments::Ask(args) => self.call_tool(KernelTool::Ask, ask_arguments(args, about)),
-            ToolArguments::Near(args) => {
-                self.call_tool(KernelTool::Near, near_arguments(args, about))
+            ToolArguments::Wake(args) => {
+                self.call_tool(KernelTool::Wake, kmp_mcp_request_arguments::wake(args))
             }
-            ToolArguments::Goto(args) => {
-                self.call_tool(KernelTool::Goto, goto_arguments(args, about))
+            ToolArguments::Ask(args) => {
+                self.call_tool(KernelTool::Ask, kmp_mcp_request_arguments::ask(args, about))
             }
-            ToolArguments::Rewind(args) => {
-                self.call_tool(KernelTool::Rewind, rewind_arguments(args, about))
+            ToolArguments::Near(args) => self.call_tool(
+                KernelTool::Near,
+                kmp_mcp_request_arguments::near(args, about),
+            ),
+            ToolArguments::Goto(args) => self.call_read_tool(
+                KernelTool::Goto,
+                kmp_mcp_request_arguments::goto(args, about),
+            ),
+            ToolArguments::Rewind(args) => self.call_read_tool(
+                KernelTool::Rewind,
+                kmp_mcp_request_arguments::rewind(args, about),
+            ),
+            ToolArguments::Forward(args) => self.call_read_tool(
+                KernelTool::Forward,
+                kmp_mcp_request_arguments::forward(args, about),
+            ),
+            ToolArguments::Trace(args) => {
+                self.call_read_tool(KernelTool::Trace, kmp_mcp_request_arguments::trace(args))
             }
-            ToolArguments::Forward(args) => {
-                self.call_tool(KernelTool::Forward, forward_arguments(args, about))
-            }
-            ToolArguments::Trace(args) => self.call_tool(KernelTool::Trace, trace_arguments(args)),
-            ToolArguments::Inspect(args) => {
-                self.call_tool(KernelTool::Inspect, inspect_arguments(args))
-            }
+            ToolArguments::Inspect(args) => self.call_tool(
+                KernelTool::Inspect,
+                kmp_mcp_request_arguments::inspect(args),
+            ),
         }
     }
-}
-
-fn wake_arguments(args: &WakeArguments) -> Value {
-    json!({ "about": args.about().as_str() })
-}
-
-fn ask_arguments(args: &AskArguments, about: &AboutId) -> Value {
-    json!({
-        "about": about.as_str(),
-        "question": args.query().as_str(),
-    })
-}
-
-fn near_arguments(args: &NearArguments, about: &AboutId) -> Value {
-    json!({
-        "about": about.as_str(),
-        "around": { "ref": args.anchor().as_str() },
-    })
-}
-
-fn goto_arguments(args: &GotoArguments, about: &AboutId) -> Value {
-    json!({
-        "about": about.as_str(),
-        "at": cursor_to_anchor_json(args.cursor()),
-    })
-}
-
-fn rewind_arguments(args: &RewindArguments, about: &AboutId) -> Value {
-    json!({
-        "about": about.as_str(),
-        "from": temporal_anchor_json(args.cursor().anchor().as_str()),
-        "window": { "before_entries": args.window().as_usize() },
-    })
-}
-
-fn forward_arguments(args: &ForwardArguments, about: &AboutId) -> Value {
-    json!({
-        "about": about.as_str(),
-        "from": temporal_anchor_json(args.cursor().anchor().as_str()),
-        "window": { "after_entries": args.window().as_usize() },
-    })
-}
-
-fn trace_arguments(args: &TraceArguments) -> Value {
-    let mut body = json!({
-        "from": args.from().as_str(),
-        "page": args.page().as_usize(),
-    });
-    if let Some(to) = args.to() {
-        body["to"] = Value::String(to.as_str().to_string());
-    }
-    body
-}
-
-fn inspect_arguments(args: &InspectArguments) -> Value {
-    json!({ "ref": args.target().as_str() })
-}
-
-fn cursor_to_anchor_json(cursor: &Cursor) -> Value {
-    match cursor {
-        Cursor::Ref(c) => json!({ "ref": c.target().as_str() }),
-        Cursor::Around(c) => json!({ "ref": c.anchor().as_str() }),
-        Cursor::Temporal(c) => temporal_anchor_json(c.anchor().as_str()),
-        Cursor::Trace(c) => json!({
-            "from": c.from().as_str(),
-            "to": c.to().as_str(),
-        }),
-    }
-}
-
-fn temporal_anchor_json(anchor: &str) -> Value {
-    if let Some(sequence) = anchor
-        .strip_prefix("seq:")
-        .and_then(|raw| raw.parse::<u32>().ok())
-        .filter(|sequence| *sequence > 0)
-    {
-        return json!({ "sequence": sequence });
-    }
-    if anchor.contains('T') && anchor.ends_with('Z') {
-        return json!({ "time": anchor });
-    }
-    json!({ "ref": anchor })
 }
 
 fn map_structured_content(
@@ -328,6 +267,14 @@ fn into_kmp_client_error(tool: KernelTool, err: &MappingError) -> KmpClientError
     KmpClientError::MalformedResponse {
         tool: tool.as_str(),
         message: err.to_string(),
+    }
+}
+
+fn mcp_argument_error_observation(error: &McpRequestArgumentsError) -> Observation {
+    Observation::ToolError {
+        code: ObservationErrorCode::parse(TOOL_ERROR_CODE)
+            .expect("static observation error code is valid"),
+        message: format!("invalid MCP request arguments: {error}"),
     }
 }
 

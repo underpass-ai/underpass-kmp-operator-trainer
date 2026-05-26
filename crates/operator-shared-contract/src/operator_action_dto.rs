@@ -9,6 +9,7 @@ use crate::tool_call_action_dto::ToolCallActionDto;
 /// the wire format.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum OperatorActionDto {
     ToolCall(ToolCallActionDto),
     Stop(StopActionDto),

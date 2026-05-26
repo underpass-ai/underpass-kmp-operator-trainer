@@ -76,10 +76,11 @@ updates are a later runtime concern.
 
 - `VllmOpenAiOperatorPolicy` — OpenAI-compatible vLLM client. It sends
   `response_format: {"type":"json_schema"}` with a strict vLLM-oriented
-  action schema, `temperature: 0.0`, mTLS client identity when configured,
-  and the exact scenario system prompt during replay. It parses the assistant
-  content into an action envelope and rejects cross-kind fields before mapping
-  to domain.
+  action schema named `VllmOperatorAction`, `temperature: 0.0`, mTLS client
+  identity when configured, and the exact non-empty scenario system prompt
+  during replay. It rejects non-`stop` `finish_reason` values before parsing
+  content, parses the assistant content into an action envelope, and rejects
+  cross-kind fields before mapping to domain.
 - `KmpMcpStdioExecutor` — MCP JSON-RPC stdio executor. It spawns
   `rehydration-mcp` per tool call, writes one newline-delimited JSON-RPC
   `tools/call` request, reads one response, validates the envelope with
@@ -87,21 +88,29 @@ updates are a later runtime concern.
   and maps structured successful content through the replay response mappers.
   It defensively rejects write tools before spawning the subprocess.
 - `KmpMcpHttpExecutor` — HTTP JSON-RPC executor retained for a future kernel
-  HTTP bridge. It is not used by the current live deployment.
+  HTTP bridge. It uses the same canonical MCP request builder as the stdio
+  executor, but is not used by the current live deployment.
 - `JsonlSessionEventSink` — writes request, prediction, observation and final
   outcome events to JSONL. The runtime CLI writes one top-level session JSONL
-  row per scenario as well.
+  row per scenario as well. Both paths append to preserve replay evidence
+  across repeated runs.
 - `StderrSessionEventSink` — lightweight operational sink for local runs.
 
 The stdio executor translates Operator's temporal cursor anchors to the MCP
 shape KMP expects:
 
 - `seq:N` -> `{ "sequence": N }`
-- ISO-like `...T...Z` -> `{ "time": ... }`
+- RFC3339 timestamps, including offset timestamps -> `{ "time": ... }`
 - otherwise -> `{ "ref": ... }`
 
 This translation is infra-only; the domain still treats temporal anchors as
 opaque values.
+
+The shared MCP request builder also preserves tool-specific wire semantics:
+`kernel_trace.page` is sent as a page object, `kernel_trace.to` is required
+before a trace call is attempted, `kernel_near` preserves `dimensions` and
+`limit`, and trace cursors are rejected for `kernel_goto` because KMP accepts
+only `{ref,time,sequence}` anchors there.
 
 ## CLI
 
@@ -142,6 +151,15 @@ Observed:
 - MCP attempted: 215.
 - MCP completed: 0.
 - Failure category after request-shape fixes: 215 KMP `NotFound` responses.
+
+A follow-up request-shape audit fixed additional confirmed runtime adapter
+defects before merge: trace page encoding, required trace target handling,
+trace cursor handling for goto, near dimensions/limit preservation, stdio/HTTP
+argument alignment, evidence-preserving JSONL writes, `finish_reason`
+handling, and strict DTO unknown-field rejection. Post-audit live subsets
+covered 20 general read-profile scenarios plus 10 impacted
+`kernel_trace`/`kernel_near`/`kernel_goto` scenarios. The remaining failures
+were still KMP `NotFound` responses, not argument-shape rejections.
 
 The live path is operational, but the selected eval split uses synthetic refs
 that are not loaded in production KMP. The result validates runtime wiring and

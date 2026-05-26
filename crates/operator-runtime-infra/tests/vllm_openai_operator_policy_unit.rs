@@ -30,9 +30,13 @@ fn build_request_body_includes_strict_json_schema() {
 
     assert_eq!(body["model"], "operator-v8.1.2");
     assert_eq!(body["response_format"]["type"], "json_schema");
+    assert_eq!(
+        body["response_format"]["json_schema"]["name"],
+        "VllmOperatorAction"
+    );
     assert_eq!(body["response_format"]["json_schema"]["strict"], true);
     assert_eq!(body["temperature"], 0.0);
-    assert_eq!(body["max_tokens"], 4096);
+    assert_eq!(body["max_tokens"], 1024);
 }
 
 #[test]
@@ -53,6 +57,80 @@ fn parse_response_rejects_cross_kind_fields() {
     let policy = VllmOpenAiOperatorPolicy::for_testing();
 
     assert!(policy.parse_response_str(fixture_invalid).is_err());
+}
+
+#[test]
+fn parse_response_rejects_non_stop_finish_reason_before_content_parse() {
+    let fixture_invalid = r#"{"choices":[{"finish_reason":"length","message":{"content":"{\"action\":{\"kind\":\"tool_call\",\"tool\":\"kernel_inspect\",\"arguments\":{\"target\":\"node:1\"}}}"}}]}"#;
+    let policy = VllmOpenAiOperatorPolicy::for_testing();
+
+    let error = policy
+        .parse_response_str(fixture_invalid)
+        .expect_err("length finish reason is not accepted");
+
+    assert!(error.to_string().contains("finish_reason=length"));
+}
+
+#[test]
+fn empty_system_prompt_does_not_replace_default_prompt() {
+    let policy = VllmOpenAiOperatorPolicy::for_testing();
+    let default_body = policy
+        .build_request_body(&test_subject_inspect())
+        .expect("default body builds");
+    let blank_body = VllmOpenAiOperatorPolicy::for_testing()
+        .with_system_prompt("  ")
+        .build_request_body(&test_subject_inspect())
+        .expect("blank override body builds");
+
+    assert_eq!(blank_body["messages"][0], default_body["messages"][0]);
+}
+
+#[test]
+fn parse_response_rejects_missing_tool_arguments() {
+    let fixture_invalid = r#"{"choices":[{"message":{"content":"{\"action\":{\"kind\":\"tool_call\",\"tool\":\"kernel_inspect\"}}"}}]}"#;
+    let policy = VllmOpenAiOperatorPolicy::for_testing();
+
+    let error = policy
+        .parse_response_str(fixture_invalid)
+        .expect_err("missing arguments rejected");
+
+    assert!(error.to_string().contains("arguments"));
+}
+
+#[test]
+fn parse_response_rejects_null_tool_arguments() {
+    let fixture_invalid = r#"{"choices":[{"message":{"content":"{\"action\":{\"kind\":\"tool_call\",\"tool\":\"kernel_inspect\",\"arguments\":null}}"}}]}"#;
+    let policy = VllmOpenAiOperatorPolicy::for_testing();
+
+    let error = policy
+        .parse_response_str(fixture_invalid)
+        .expect_err("null arguments rejected");
+
+    assert!(error.to_string().contains("arguments"));
+}
+
+#[test]
+fn parse_response_rejects_extra_envelope_fields() {
+    let fixture_invalid = r#"{"choices":[{"message":{"content":"{\"action\":{\"kind\":\"tool_call\",\"tool\":\"kernel_inspect\",\"arguments\":{\"target\":\"node:1\"}},\"debug\":true}"}}]}"#;
+    let policy = VllmOpenAiOperatorPolicy::for_testing();
+
+    let error = policy
+        .parse_response_str(fixture_invalid)
+        .expect_err("extra envelope field rejected");
+
+    assert!(error.to_string().contains("envelope field"));
+}
+
+#[test]
+fn parse_response_rejects_extra_argument_fields() {
+    let fixture_invalid = r#"{"choices":[{"message":{"content":"{\"action\":{\"kind\":\"tool_call\",\"tool\":\"kernel_inspect\",\"arguments\":{\"target\":\"node:1\",\"debug\":true}}}"}}]}"#;
+    let policy = VllmOpenAiOperatorPolicy::for_testing();
+
+    let error = policy
+        .parse_response_str(fixture_invalid)
+        .expect_err("extra argument field rejected");
+
+    assert!(error.to_string().contains("debug"));
 }
 
 #[test]

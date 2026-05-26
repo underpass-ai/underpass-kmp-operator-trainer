@@ -1,5 +1,6 @@
 pub mod jsonl_session_event_sink;
 pub mod kmp_mcp_http_executor;
+mod kmp_mcp_request_arguments;
 pub mod kmp_mcp_stdio_config;
 pub mod kmp_mcp_stdio_executor;
 pub mod stderr_session_event_sink;

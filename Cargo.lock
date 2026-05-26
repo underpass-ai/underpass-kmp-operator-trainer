@@ -773,6 +773,7 @@ dependencies = [
 name = "operator-runtime-infra"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "operator-replay-application",
  "operator-replay-infra",
  "operator-runtime-application",

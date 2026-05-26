@@ -4,6 +4,7 @@ use crate::per_tool::ingest_memory_dto::IngestMemoryDto;
 use crate::per_tool::ingest_provenance_dto::IngestProvenanceDto;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IngestArgumentsDto {
     pub about: String,
     pub memory: IngestMemoryDto,

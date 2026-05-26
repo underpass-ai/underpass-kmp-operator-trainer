@@ -15,6 +15,7 @@ use reqwest::header::CONTENT_TYPE;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
+use crate::adapters::vllm_operator_config::DEFAULT_MAX_TOKENS;
 use crate::adapters::vllm_operator_config::VllmOperatorConfig;
 use crate::errors::runtime_infra_error::RuntimeInfraError;
 
@@ -76,13 +77,16 @@ impl VllmOpenAiOperatorPolicy {
             "https://0.5b.llm.underpassai.com/v1",
             "operator-v8.1.2",
             Client::builder().build().expect("test client builds"),
-            4096,
+            DEFAULT_MAX_TOKENS,
         )
     }
 
     #[must_use]
     pub fn with_system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
-        self.system_prompt = system_prompt.into();
+        let system_prompt = system_prompt.into();
+        if !system_prompt.trim().is_empty() {
+            self.system_prompt = system_prompt;
+        }
         self
     }
 
@@ -117,6 +121,15 @@ impl VllmOpenAiOperatorPolicy {
             .ok_or_else(|| OperatorPolicyError::Protocol {
                 message: "chat completion response has no choices".to_string(),
             })?;
+        if let Some(finish_reason) = choice.finish_reason.as_deref()
+            && finish_reason != "stop"
+        {
+            return Err(OperatorPolicyError::Protocol {
+                message: format!(
+                    "vLLM stopped with finish_reason={finish_reason}; completion may be truncated"
+                ),
+            });
+        }
         parse_action_content(&choice.message.content)
     }
 
@@ -222,11 +235,20 @@ fn parse_action_content(content: &str) -> Result<OperatorAction, OperatorPolicyE
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct VllmActionEnvelopeDto {
     action: OperatorActionDto,
 }
 
 fn validate_action_field_set(value: &Value) -> Result<(), String> {
+    let envelope = value
+        .as_object()
+        .ok_or_else(|| "assistant content must be an object".to_string())?;
+    for key in envelope.keys() {
+        if key != "action" {
+            return Err(format!("assistant envelope field '{key}' is not allowed"));
+        }
+    }
     let action = value
         .get("action")
         .and_then(Value::as_object)
@@ -241,12 +263,22 @@ fn validate_action_field_set(value: &Value) -> Result<(), String> {
         "escalate" => &["kind", "reason", "target_model"][..],
         other => return Err(format!("assistant action.kind is unsupported: {other}")),
     };
+    for required in allowed {
+        if !action.contains_key(*required) {
+            return Err(format!(
+                "assistant action field '{required}' is required for {kind}"
+            ));
+        }
+    }
     for key in action.keys() {
         if !allowed.contains(&key.as_str()) {
             return Err(format!(
                 "assistant action field '{key}' is not allowed for {kind}"
             ));
         }
+    }
+    if kind == "tool_call" && !action.get("arguments").is_some_and(Value::is_object) {
+        return Err("assistant action.arguments must be an object for tool_call".to_string());
     }
     Ok(())
 }

@@ -235,9 +235,27 @@ The first live replay surfaced a runtime adapter bug for temporal cursor
 requests: `kernel_forward` and `kernel_rewind` were sent as `{key, anchor}`
 while `rehydration-mcp` expects exactly one of `{ref, time, sequence}`. The
 runtime stdio executor was fixed to translate `seq:N` anchors to
-`{"sequence": N}` and non-sequence anchors to `{"ref": ...}`.
+`{"sequence": N}`, RFC3339 anchors to `{"time": ...}`, and other anchors to
+`{"ref": ...}`.
 
-Final replay after that fix:
+A follow-up request-shape audit fixed the remaining confirmed runtime adapter
+issues before merge:
+
+- `kernel_trace.page` now uses the KMP page object shape and `kernel_trace.to`
+  is required before the call is attempted.
+- `kernel_goto` rejects trace cursors before transport because KMP accepts only
+  `{ref,time,sequence}` anchors.
+- `kernel_near` preserves predicted `dimensions` and `limit`.
+- stdio and HTTP MCP executors use the same canonical argument builder.
+- JSONL sinks append instead of truncating evidence.
+- vLLM parsing rejects non-`stop` finish reasons and enforces stricter DTO
+  field sets.
+
+Post-audit live subsets covered 20 general read-profile scenarios plus 10
+impacted `kernel_trace`/`kernel_near`/`kernel_goto` scenarios. The remaining
+failures were KMP `NotFound` responses, not argument-shape rejections.
+
+Full replay result after the initial cursor-shape fix:
 
 | Tool | Scenarios | target/predicted match | live MCP success | Notes |
 | --- | ---: | ---: | ---: | --- |
@@ -270,7 +288,7 @@ Outcome class distribution:
 | `ContractViolation` | 0 |
 | `BudgetExhausted` | 0 |
 
-Failure category distribution after the cursor-shape fix:
+Failure category distribution after request-shape fixes:
 
 | Category | Count |
 | --- | ---: |
@@ -296,6 +314,8 @@ eval split references synthetic `about:*` / `node:*` ids that are not loaded in
 the live KMP. The 0% MCP-attempted success rate is therefore a fixture/data
 availability result, not a model action-selection regression. Model action
 selection in this replay was 222/222 against the selected target actions.
+The post-audit subsets support the same diagnosis after correcting all
+confirmed wire-shape defects.
 
 To turn `mcp_execution_success_rate` into a production-readiness metric, the
 next run must either ingest the eval fixture graph into an isolated KMP

@@ -27,11 +27,7 @@ impl JsonlSessionEventSink {
         mcp_endpoint: impl Into<String>,
         adapter_sha: impl Into<String>,
     ) -> std::io::Result<Self> {
-        let file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(path)?;
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
         Ok(Self {
             file: Mutex::new(file),
             operator_endpoint: operator_endpoint.into(),

@@ -11,6 +11,7 @@ use serde_json::Value;
 /// shape is enforced by the `ToolArgumentsMapper` in
 /// `operator-shared-infra`, which produces typed domain `ToolArguments`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ToolArgumentsDto {
     pub tool: String,
     pub arguments: Value,

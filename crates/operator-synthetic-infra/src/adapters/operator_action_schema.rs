@@ -21,7 +21,7 @@ pub fn operator_action_schema() -> Value {
 
 pub fn vllm_operator_action_schema() -> Value {
     json!({
-        "name": "OperatorAction",
+        "name": "VllmOperatorAction",
         "strict": true,
         "schema": {
             "type": "object",

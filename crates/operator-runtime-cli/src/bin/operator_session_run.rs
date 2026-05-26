@@ -19,6 +19,7 @@ use operator_runtime_infra::adapters::kmp_mcp_http_executor::KmpMcpHttpExecutor;
 use operator_runtime_infra::adapters::kmp_mcp_stdio_config::KmpMcpStdioConfig;
 use operator_runtime_infra::adapters::kmp_mcp_stdio_executor::KmpMcpStdioExecutor;
 use operator_runtime_infra::adapters::vllm_openai_operator_policy::VllmOpenAiOperatorPolicy;
+use operator_runtime_infra::adapters::vllm_operator_config::DEFAULT_MAX_TOKENS;
 use operator_runtime_infra::adapters::vllm_operator_config::VllmOperatorConfig;
 use operator_shared_domain::contract::composite_action_contract_validator::CompositeActionContractValidator;
 use operator_shared_domain::tool::kernel_tool::KernelTool;
@@ -57,7 +58,7 @@ struct Cli {
     operator_client_key: Option<PathBuf>,
     #[arg(long, default_value_t = false)]
     operator_accept_invalid_certs: bool,
-    #[arg(long, default_value_t = 512)]
+    #[arg(long, default_value_t = DEFAULT_MAX_TOKENS)]
     operator_max_tokens: u32,
     #[arg(long, default_value = DEFAULT_ADAPTER_SHA)]
     adapter_sha: String,
@@ -151,7 +152,7 @@ fn run(cli: &Cli) -> Result<(), String> {
         );
     }
     stats.print();
-    write_summary(&cli.output_dir.join("summary.json"), &stats)?;
+    write_summary(&cli.output_dir.join("summary.jsonl"), &stats)?;
     Ok(())
 }
 
@@ -296,7 +297,7 @@ impl RuntimeScenario {
     ) -> Result<Self, String> {
         let subject = CalibrationSubjectMapper::to_domain(subject_dto)
             .map_err(|err| format!("map subject for {}: {err}", row.step_id))?;
-        let budget = session_budget_from_visible(subject.visible_state());
+        let budget = session_budget_from_visible(subject.visible_state())?;
         let request = OperatorRequest::new(
             OperatorSessionId::parse(row.step_id.clone()).map_err(|err| err.to_string())?,
             subject.goal().clone(),
@@ -325,17 +326,21 @@ impl RuntimeScenario {
 
 fn session_budget_from_visible(
     visible: &operator_shared_domain::visible_state::visible_state::VisibleState,
-) -> SessionBudget {
-    SessionBudget::new(
-        budget_field_to_u32(visible.budget().calls_remaining()),
-        budget_field_to_u32(visible.budget().tokens_remaining()),
-    )
+) -> Result<SessionBudget, String> {
+    Ok(SessionBudget::new(
+        budget_field_to_u32(visible.budget().calls_remaining(), "calls_remaining")?,
+        budget_field_to_u32(visible.budget().tokens_remaining(), "tokens_remaining")?,
+    ))
 }
 
-fn budget_field_to_u32(field: BudgetField) -> u32 {
+fn budget_field_to_u32(field: BudgetField, field_name: &str) -> Result<u32, String> {
     match field {
-        BudgetField::Unbounded => u32::MAX,
-        BudgetField::Bounded(value) => u32::try_from(value).unwrap_or(u32::MAX),
+        BudgetField::Unbounded => Ok(u32::MAX),
+        BudgetField::Bounded(value) => u32::try_from(value).map_err(|_| {
+            format!(
+                "visible_state.budget.{field_name} bounded value {value} exceeds runtime u32 limit"
+            )
+        }),
     }
 }
 
@@ -474,8 +479,7 @@ fn write_outcome_row(
     let path = sessions_dir.join(format!("{}.jsonl", safe_filename(&scenario.step_id)));
     let mut file = OpenOptions::new()
         .create(true)
-        .write(true)
-        .truncate(true)
+        .append(true)
         .open(&path)
         .map_err(|err| format!("open session outcome {}: {err}", path.display()))?;
     let row = outcome_row(scenario, outcome, cli)?;
@@ -491,8 +495,12 @@ fn write_summary(path: &Path, stats: &ReplayStats) -> Result<(), String> {
         "mcp_completed": stats.mcp_completed,
         "mcp_execution_success_rate": stats.mcp_execution_success_rate(),
     });
-    fs::write(path, format!("{value}\n"))
-        .map_err(|err| format!("write summary {}: {err}", path.display()))
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|err| format!("open summary {}: {err}", path.display()))?;
+    writeln!(file, "{value}").map_err(|err| format!("write summary {}: {err}", path.display()))
 }
 
 fn outcome_row(
@@ -584,4 +592,24 @@ fn safe_filename(value: &str) -> String {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn budget_field_keeps_unbounded_distinct_from_huge_bounded_values() {
+        assert_eq!(
+            budget_field_to_u32(BudgetField::Unbounded, "calls_remaining").unwrap(),
+            u32::MAX
+        );
+
+        let too_large =
+            usize::try_from(u64::from(u32::MAX) + 1).expect("test platform fits u32::MAX + 1");
+        let error = budget_field_to_u32(BudgetField::Bounded(too_large), "calls_remaining")
+            .expect_err("huge bounded budget must not saturate");
+
+        assert!(error.contains("exceeds runtime u32 limit"));
+    }
 }

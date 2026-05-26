@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::per_tool::ingest_temporal_coordinate_dto::IngestTemporalCoordinateDto;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IngestEntryDto {
     pub id: String,
     pub kind: String,
