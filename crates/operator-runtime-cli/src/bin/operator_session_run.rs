@@ -206,15 +206,15 @@ fn load_scenarios(
             break;
         }
         let line_number = line_index + 1;
-        let raw = line.map_err(|err| format!("read line {line_number}: {err}"))?;
-        if raw.trim().is_empty() {
+        let json_line = line.map_err(|err| format!("read line {line_number}: {err}"))?;
+        if json_line.trim().is_empty() {
             continue;
         }
-        let row: OpenAiEvalRow = serde_json::from_str(&raw)
+        let eval_row: OpenAiEvalRow = serde_json::from_str(&json_line)
             .map_err(|err| format!("parse scenario JSON at line {line_number}: {err}"))?;
-        let row = row.into_runtime_parts(line_number)?;
-        let subject = row.subject(line_number)?;
-        let target = row.target_action();
+        let runtime_parts = eval_row.into_runtime_parts(line_number)?;
+        let subject = runtime_parts.subject(line_number)?;
+        let target = runtime_parts.target_action();
         if !mode_filter.accepts(subject.mode.as_str(), &target) {
             continue;
         }
@@ -226,7 +226,7 @@ fn load_scenarios(
         {
             continue;
         }
-        scenarios.push(RuntimeScenario::from_row(row, &subject, target)?);
+        scenarios.push(RuntimeScenario::from_row(runtime_parts, &subject, target)?);
     }
     Ok(scenarios)
 }
