@@ -267,7 +267,7 @@ fn executor_parses_stdout_jsonrpc_body_even_when_process_exits_non_zero() {
     let executor = KmpMcpStdioExecutor::new(
         KmpMcpStdioConfig::new("/bin/sh", "https://kernel.example.test")
             .with_arg("-c")
-            .with_arg("printf '%s\\n' \"$MCP_RESPONSE\"; echo boom >&2; exit 7")
+            .with_arg("cat >/dev/null; printf '%s\\n' \"$MCP_RESPONSE\"; echo boom >&2; exit 7")
             .with_env(
                 "MCP_RESPONSE",
                 r#"{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"not found from stdout"}],"isError":true}}"#,
@@ -290,7 +290,7 @@ fn executor_rejects_non_utf8_stdout_without_lossy_replacement() {
     let executor = KmpMcpStdioExecutor::new(
         KmpMcpStdioConfig::new("/bin/sh", "https://kernel.example.test")
             .with_arg("-c")
-            .with_arg("printf '\\377\\n'"),
+            .with_arg("cat >/dev/null; printf '\\377\\n'"),
     );
     let about = AboutId::parse("about:test").unwrap();
 
