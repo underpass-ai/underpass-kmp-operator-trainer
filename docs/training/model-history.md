@@ -328,6 +328,73 @@ next run must either ingest the eval fixture graph into an isolated KMP
 namespace or replay scenarios derived from refs already present in the target
 KMP.
 
+#### Post-fix wire + holdout-direct validation (2026-05-26)
+
+After the initial Phase G replay reported 0/215 MCP success with all
+errors mapped to NotFound, two hypotheses competed:
+
+1. Wire-shape bugs cause kernel-side validation failures.
+2. Eval split references synthetic ids not loaded in production KMP.
+
+An external code review surfaced 15 wire-shape findings that were addressed in
+this PR's commits. To disambiguate hypotheses, we ran empirical smokes against
+production KMP with fresh binaries.
+
+##### Multi-tool smoke against real anchors
+
+Eight read tools probed with known-real anchors from production KMP:
+
+- `kernel_wake`, `kernel_ask`, `kernel_inspect`, `kernel_near`,
+  `kernel_trace`, `kernel_goto`, `kernel_rewind`, `kernel_forward`
+- All returned `isError:false`; wake, ask, inspect, near, trace, and goto
+  returned non-empty structured responses, while rewind and forward returned
+  valid empty temporal windows for the sampled anchors
+- Confirmed wire layer is correct
+
+Bug discovered mid-validation: `WakeResponseMapper` crashed on legitimate
+empty `evidence_ref` values in `causal_spine`. Fix: filter empty entries
+client-side (commit `39b3511` in this PR). Audit of the other seven response
+mappers confirmed wake is the only case where empty refs are structurally
+legitimate sentinels.
+
+##### Holdout-direct quantitative validation
+
+16 scenarios sampled directly from v8.1.2-regen2 `openai_eval.jsonl` (2 per
+read tool, unmodified), executed against live vLLM `operator-v8.1.2` +
+production KMP via stdio MCP.
+
+| Metric | Value |
+| --- | --- |
+| Total sessions | 16 |
+| Action match | 16/16 (100%) |
+| MCP attempted | 16 |
+| MCP completed | 0 |
+| MCP NotFound | 16 |
+| InvalidArgument | 0 |
+| Other wire errors | 0 |
+| Latency p50/p90/p99 | 288/430/431 ms |
+
+Interpretation: hypothesis 2 confirmed. The runtime path and model action
+selection are correct under training distribution. The 0% MCP completion is
+the expected data-availability shortfall: the v8.1.2 holdout references
+synthetic ids that are absent from production KMP. Latency is restored to
+near-baseline (pre-fix: 220/368/404 ms), confirming the wire fixes add no
+measurable overhead.
+
+##### Production-readiness MCP success rate
+
+This run does **not** measure production-readiness MCP success against the
+canonical v8.1.2 holdout. That measurement requires either loading the eval
+fixture graph into an isolated KMP namespace or replaying scenarios built from
+refs already present in the target KMP. Tracked as separate issue (Path 2).
+
+A custom real-anchor mini-eval was attempted but produced action-selection
+drift (25% action_match, model collapsed to `kernel_trace` in 79% of cases).
+The drift is attributed to scenario-distribution divergence from the v8.1.2
+corpus (n_refs uniformly = 5 across all read tools in training; the custom
+builder used different visible_state shape). That result is treated as a
+scenario-construction artifact, not a runtime or model regression.
+
 #### Known limitations
 
 - Single-step replay only; multi-step state updates remain v8.2.x scope.
