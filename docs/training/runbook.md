@@ -90,6 +90,108 @@ mandatory frontier ceiling on the held-out episode split.
 The next interpretable training run waits for
 [`operator-realistic-corpus-v7-plan-2026-05-20.md`](operator-realistic-corpus-v7-plan-2026-05-20.md).
 
+## Field wiring: `prepared_action` vs `requested_*`
+
+This section is the canonical reference for which subject fields are
+actually plumbed end-to-end and therefore safe to use as training-time
+signals. **Do not propose `requested_*` as a fix for any operator
+inference gap until you read this.**
+
+### Short version
+
+`prepared_action` **is** runtime-wired. `requested_*` **is not**.
+
+Phrase precisely: "`requested_*` is not runtime-wired" — not "it does
+not exist". It exists in the system prompt and in one legacy script
+flag. It does not exist in the typed DTO, the typed domain, the
+mappers, the runtime use case, or any deployed corpus.
+
+### Why this gap is easy to trip on
+
+Three sources of confusion that produce repeated wasted proposals:
+
+1. The Operator system prompt mentions `requested_*` literally:
+   `If visible_state contains requested_wake, requested_ask, …` — that
+   line tells the model how it would respond if such fields were present.
+2. `scripts/operator/prepare_operator_sft_dataset.py` accepts
+   `--inject-target-request-fields`, which DOES write `requested_*` into
+   `visible_state`. This flag is intended for translation/replay smoke
+   tests only and is NOT part of the canonical SFT data path.
+3. The names sound natural — "to fix `kernel_ask`, populate
+   `requested_ask`" looks like a clean per-tool hint API.
+
+None of these survive a wiring audit (see recipe below).
+
+### End-to-end wiring contrast
+
+| Layer | `requested_*` | `prepared_action` |
+| --- | --- | --- |
+| Typed in `VisibleStateDto` (`operator-shared-contract`) | no — fields are only `known_refs`, `known_dimensions`, `active_cursor`, `budget` | n/a — `prepared_action` lives top-level on `CalibrationSubjectDto`, not inside visible_state |
+| Typed in `CalibrationSubjectDto` | no — DTO has no `requested_*` field | yes — `pub prepared_action: Option<OperatorActionDto>` |
+| Typed in `CalibrationSubject` domain | no | yes — `Option<PreparedOperatorAction>` |
+| Round-tripped by `CalibrationSubjectMapper` | no | yes — DTO↔domain both directions |
+| Emitted by runtime (`build_subject_from_request`) | no | yes — since PR #50 (`Preserve prepared_action through runtime request boundary`) |
+| Populated in deployed corpora (v8.1.2-sft-v2, v8.1.3pa, v8.1.5) | 0 rows | v8.1.3pa: write rows; v8.1.5: write + ask rows |
+| Causal evidence in eval | none measured | K3 paired probe on v8.1.5 ask: 10/10 with PA, 2/10 without PA (`runs/2026-05-28-v8.1.5-ask-pa.md`) |
+
+`prepared_action` won the design fight. It is a single top-level typed
+field that carries the full action the operator should emit (when
+upstream knows it). `requested_*` was a planned per-tool distributed
+hint API that was never typed or plumbed.
+
+### Why this matters for training decisions
+
+If a corpus row populates `requested_*` and the model learns to react to
+it, the production runtime will never send that field, and the eval lift
+will not materialize on the live endpoint. Same failure mode as
+proposing any other signal the production path does not produce.
+
+By contrast, `prepared_action` has a documented production gap (no
+upstream planner today sets it; the runtime now propagates it from
+PR #50 if a future caller supplies it), but every other layer is wired,
+so the gap is one well-scoped architectural decision rather than a
+multi-layer rebuild.
+
+### Hard rule
+
+- Do not add new `requested_*` fields to a corpus, schema, mapper, or
+  runtime path.
+- Do not propose adding them to close an inference gap. The K3-style
+  probe template from v8.1.5 plus `prepared_action` is the canonical
+  mechanism for any "give the operator a hint" experiment.
+- If a future component genuinely needs per-tool hints distributed
+  across visible_state (rather than one consolidated action), that is a
+  schema decision — file it as a typed DTO change with mappers and a
+  runtime read path, do not freelance with magic field names.
+
+### Wiring-audit recipe
+
+When you are tempted to use a field as a training signal, walk these
+five checks. If any is empty, the field is not runtime-wired and must
+not be used as a benchmark-decision signal.
+
+```bash
+# 1. Typed in any DTO?
+rg -nE "^\s*pub\s+<field>" operator/crates/operator-shared-contract/src/
+
+# 2. Typed in domain?
+rg -nE "^\s*<field>" operator/crates/operator-shared-domain/src/visible_state/
+
+# 3. Read by mappers (DTO ↔ domain)?
+rg "<field>" operator/crates/operator-synthetic-infra/src/mappers/
+
+# 4. Emitted by runtime (does it reach the policy)?
+rg "<field>" operator/crates/operator-runtime-application/
+
+# 5. Populated in the deployed corpus (sample any active openai_eval.jsonl)?
+jq '.messages[1].content | fromjson | .visible_state | has("<field>")' \
+   <corpus.jsonl> | sort | uniq -c
+```
+
+Run the recipe before claiming "the model should learn `<field>`". For
+`prepared_action` post-PR #50, all five checks return non-empty. For
+`requested_*` all five return empty in the canonical SFT pipeline.
+
 ## 0a. Synthesize a trajectory JSONL
 
 `operator-synthesize` wires the fixture-grade
