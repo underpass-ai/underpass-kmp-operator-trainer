@@ -56,6 +56,12 @@ spec:
               : "${ADAPTER_DIR:=/host-tmp/operator-qwen05-lora}"
               : "${OUTPUT_DIR:=/host-tmp/operator-qwen05-predictions}"
               : "${MODEL_ID:=Qwen/Qwen2.5-0.5B-Instruct}"
+              # Default preserves the historical 2048 token budget. Override
+              # to 4096 (or higher) for long kernel_ingest payloads by setting
+              # MAX_NEW_TOKENS in the rendered manifest's env or via :=
+              # substitution. See docs/training/runs/2026-05-28-v8.1.4-retoken.md
+              # for the rationale.
+              : "${MAX_NEW_TOKENS:=2048}"
               rm -rf "${OUTPUT_DIR}"
               python scripts/operator/predict_operator_sft.py \
                 --dataset-jsonl "${DATASET_JSONL}" \
@@ -63,7 +69,7 @@ spec:
                 --adapter "${ADAPTER_DIR}" \
                 --output "${OUTPUT_DIR}" \
                 --batch-size 8 \
-                --max-new-tokens 2048 \
+                --max-new-tokens "${MAX_NEW_TOKENS}" \
                 --temperature 0.0 \
                 --stop-after-json \
                 --force

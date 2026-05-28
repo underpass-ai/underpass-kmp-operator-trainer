@@ -402,3 +402,28 @@ scenario-construction artifact, not a runtime or model regression.
 - No Best-of-N or reranking.
 - Live replay currently uses MCP JSON-RPC stdio through `rehydration-mcp`;
   HTTP JSON-RPC can be enabled later when a kernel bridge exists.
+
+## Subsequent runs
+
+Detailed per-run records live under `runs/`. Add entries here when a run lands.
+Each linked file is self-contained: setup, hyperparameters, metrics, decision,
+caveats, and artifact paths.
+
+- `runs/2026-05-26-v8.1.2-regen2.md` — diagnostic SFT run on the regenerated
+  v8.1.2 dataset. Verified that the operator-repo data-prep script handles
+  the v2 action DTO schema.
+- `runs/2026-05-28-v8.1.4-retoken.md` — v8.1.4 retoken evaluation at
+  `--max-new-tokens 4096`. Confirmed that 9 of the 14 v8.1.4 prediction
+  failures at 2048 were `kernel_ingest` truncation. `kernel_ask` and all
+  other tools were byte-identical. Conservative exact 87.70% → 89.59%.
+  Decision: keep v8.1.3pa shipped; do not install v8.1.4.
+- `runs/2026-05-28-v8.1.5-ask-pa.md` — v8.1.5 ask-only `prepared_action`
+  experiment. `kernel_ask` exact-match jumped from 17/32 (v8.1.3pa) to 32/32
+  on the regen2-mix eval split. The K3 paired probe established that the
+  +15 is causally dependent on `prepared_action` being present in the
+  operator input at inference time (10/10 with PA, 2/10 without PA).
+  Adapter SHA `6cf81a39ba52cc643f3633d46469ccc4cb0ee9e95181da9e1985f492d1db41fa`.
+  Decision: keep v8.1.3pa shipped. Use v8.1.5 only in offline replay or
+  batch jobs that supply `prepared_action` end-to-end (now possible after
+  PR #50, merge commit `0f62319`, which preserves `prepared_action` through
+  the runtime request boundary).
