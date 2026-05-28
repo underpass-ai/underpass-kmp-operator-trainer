@@ -59,6 +59,7 @@ fn request() -> OperatorRequest {
         AllowedTools::for_mode(OperatorMode::Read),
         SessionBudget::new(1, 4096),
         AboutId::parse("about:test").unwrap(),
+        None,
     )
     .unwrap()
 }

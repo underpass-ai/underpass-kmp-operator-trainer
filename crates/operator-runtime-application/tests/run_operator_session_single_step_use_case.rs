@@ -1,8 +1,10 @@
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use operator_runtime_application::errors::mcp_executor_error::McpExecutorError;
 use operator_runtime_application::errors::operator_policy_error::OperatorPolicyError;
+use operator_runtime_application::errors::runtime_error::RuntimeError;
 use operator_runtime_application::ports::mcp_executor_port::McpExecutor;
 use operator_runtime_application::ports::operator_policy_port::OperatorPolicy;
 use operator_runtime_application::ports::session_event_sink_port::SessionEventSink;
@@ -21,6 +23,7 @@ use operator_shared_domain::contract::composite_action_contract_validator::Compo
 use operator_shared_domain::ids::about_id::AboutId;
 use operator_shared_domain::mode::allowed_tools::AllowedTools;
 use operator_shared_domain::mode::operator_mode::OperatorMode;
+use operator_shared_domain::tool_arguments::ask_arguments::AskArguments;
 use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
 use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
 use operator_shared_domain::tool_arguments::write_memory_arguments::WriteMemoryArguments;
@@ -134,8 +137,61 @@ fn request_with_budget(calls_remaining: u32) -> OperatorRequest {
         AllowedTools::for_mode(OperatorMode::Read),
         SessionBudget::new(calls_remaining, 4096),
         AboutId::parse("about:test").unwrap(),
+        None,
     )
     .unwrap()
+}
+
+fn ask_action(query: &str) -> OperatorAction {
+    OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Ask(
+        AskArguments::new(query).unwrap(),
+    )))
+}
+
+fn request_with_prepared_action(
+    mode: OperatorMode,
+    allowed_tools: AllowedTools,
+    prepared_action: Option<OperatorAction>,
+) -> OperatorRequest {
+    OperatorRequest::new(
+        OperatorSessionId::parse("session:runtime-pa").unwrap(),
+        TrajectoryGoal::parse("Inspect node one.").unwrap(),
+        VisibleState::assemble([target()], [], None, BudgetSnapshot::bounded(1, 4096)),
+        mode,
+        allowed_tools,
+        SessionBudget::new(1, 4096),
+        AboutId::parse("about:test").unwrap(),
+        prepared_action,
+    )
+    .unwrap()
+}
+
+#[derive(Debug)]
+struct CapturingOperatorPolicy {
+    captured: Arc<Mutex<Option<CalibrationSubject>>>,
+    canned: OperatorAction,
+}
+
+impl OperatorPolicy for CapturingOperatorPolicy {
+    fn predict(&self, subject: &CalibrationSubject) -> Result<OperatorAction, OperatorPolicyError> {
+        *self.captured.lock().unwrap() = Some(subject.clone());
+        Ok(self.canned.clone())
+    }
+}
+
+fn capturing_use_case(
+    canned: OperatorAction,
+    captured: Arc<Mutex<Option<CalibrationSubject>>>,
+) -> RunOperatorSessionSingleStepUseCase {
+    RunOperatorSessionSingleStepUseCase::new(
+        Arc::new(CapturingOperatorPolicy { captured, canned }),
+        Arc::new(MockMcpExecutor {
+            canned: success_observation(),
+            calls: Arc::new(AtomicUsize::new(0)),
+        }),
+        CompositeActionContractValidator::default_strict(),
+        Arc::new(NoopSessionEventSink),
+    )
 }
 
 fn use_case(
@@ -231,4 +287,72 @@ fn mcp_failure_outcome_propagates_error_code() {
         OutcomeClass::McpExecutionFailure { .. }
     ));
     assert_eq!(calls.load(Ordering::Relaxed), 1);
+}
+
+// --- Provisional prepared_action pass-through ----------------------------------
+// These tests pin the contract used by v8.1.5 ask copy probes: when the
+// OperatorRequest carries a prepared_action, the runtime forwards it into the
+// CalibrationSubject that the policy receives; when it does not, the runtime
+// preserves the historical None behavior. The runtime is NOT expected to
+// synthesize a prepared_action.
+
+#[test]
+fn subject_builder_includes_prepared_action_when_present() {
+    let pa = ask_action("What is the active constraint for the migration plan?");
+    let captured = Arc::new(Mutex::new(None));
+    let use_case = capturing_use_case(inspect_action(), Arc::clone(&captured));
+
+    let request = request_with_prepared_action(
+        OperatorMode::Read,
+        AllowedTools::for_mode(OperatorMode::Read),
+        Some(pa.clone()),
+    );
+    let _outcome = use_case.execute(&request).expect("predict succeeds");
+
+    let subject = captured.lock().unwrap();
+    let subject = subject.as_ref().expect("policy received subject");
+    let prepared = subject
+        .prepared_action()
+        .expect("subject preserves prepared_action when request carries it");
+    assert_eq!(prepared.action(), &pa);
+}
+
+#[test]
+fn subject_builder_preserves_none_when_prepared_action_absent() {
+    let captured = Arc::new(Mutex::new(None));
+    let use_case = capturing_use_case(inspect_action(), Arc::clone(&captured));
+
+    let request = request_with_prepared_action(
+        OperatorMode::Read,
+        AllowedTools::for_mode(OperatorMode::Read),
+        None,
+    );
+    let _outcome = use_case.execute(&request).expect("predict succeeds");
+
+    let subject = captured.lock().unwrap();
+    let subject = subject.as_ref().expect("policy received subject");
+    assert!(
+        subject.prepared_action().is_none(),
+        "subject preserves None when request has no prepared_action"
+    );
+}
+
+#[test]
+fn prepared_action_with_terminal_kind_is_rejected_as_subject_build_failure() {
+    // PreparedOperatorAction requires a tool_call; a Stop action must not
+    // sneak through as prepared_action. The runtime should surface this as a
+    // SubjectBuild failure rather than silently dropping it.
+    let stop = stop_action();
+    let captured = Arc::new(Mutex::new(None));
+    let use_case = capturing_use_case(inspect_action(), Arc::clone(&captured));
+
+    let request = request_with_prepared_action(
+        OperatorMode::Read,
+        AllowedTools::for_mode(OperatorMode::Read),
+        Some(stop),
+    );
+    let err = use_case
+        .execute(&request)
+        .expect_err("stop as prepared_action must error during subject build");
+    assert!(matches!(err, RuntimeError::SubjectBuild { .. }));
 }
