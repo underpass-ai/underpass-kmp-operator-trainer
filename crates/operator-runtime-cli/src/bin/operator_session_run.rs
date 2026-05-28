@@ -298,6 +298,14 @@ impl RuntimeScenario {
         let subject = CalibrationSubjectMapper::to_domain(subject_dto)
             .map_err(|err| format!("map subject for {}: {err}", row.step_id))?;
         let budget = session_budget_from_visible(subject.visible_state())?;
+        // Replay-side pass-through: if the SFT scenario carried a top-level
+        // prepared_action (as v8.1.5 corpus rows do for kernel_ask), preserve
+        // it on the OperatorRequest so the runtime can re-inject it into the
+        // subject sent to vLLM. Validation against allowed_tools happens later
+        // inside CalibrationSubject::new.
+        let prepared_action = subject
+            .prepared_action()
+            .map(|prepared| prepared.action().clone());
         let request = OperatorRequest::new(
             OperatorSessionId::parse(row.step_id.clone()).map_err(|err| err.to_string())?,
             subject.goal().clone(),
@@ -306,6 +314,7 @@ impl RuntimeScenario {
             subject.allowed_tools().clone(),
             budget,
             subject.about().clone(),
+            prepared_action,
         )
         .map_err(|err| format!("build operator request for {}: {err}", row.step_id))?;
         Ok(Self {
@@ -597,6 +606,8 @@ fn safe_filename(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use operator_shared_domain::action::operator_action::OperatorAction;
+    use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
 
     #[test]
     fn budget_field_keeps_unbounded_distinct_from_huge_bounded_values() {
@@ -611,5 +622,119 @@ mod tests {
             .expect_err("huge bounded budget must not saturate");
 
         assert!(error.contains("exceeds runtime u32 limit"));
+    }
+
+    fn scenario_subject_dto_with_prepared_action() -> CalibrationSubjectDto {
+        // Minimal valid CalibrationSubjectDto carrying a kernel_ask
+        // prepared_action. Mirrors the shape v8.1.5 corpus rows use after the
+        // Python data-prep step injects PA.
+        let raw = r#"{
+            "about": "about:replay:test:case-0001",
+            "mode": "read",
+            "task_family": "realistic.kernel_ask.replay",
+            "goal": "Bounded probe for replay PA preservation.",
+            "allowed_tools": [
+                "kernel_wake",
+                "kernel_ask",
+                "kernel_near",
+                "kernel_goto",
+                "kernel_rewind",
+                "kernel_forward",
+                "kernel_trace",
+                "kernel_inspect"
+            ],
+            "visible_state": {
+                "known_refs": [],
+                "known_dimensions": [],
+                "budget": {"calls_remaining": 1, "tokens_remaining": 4096}
+            },
+            "prepared_action": {
+                "kind": "tool_call",
+                "tool": "kernel_ask",
+                "arguments": {"query": "What is the active constraint?"}
+            }
+        }"#;
+        serde_json::from_str(raw).expect("static scenario DTO parses")
+    }
+
+    fn target_summary_for_ask(query: &str) -> TargetActionSummary {
+        let value = serde_json::json!({
+            "action": {
+                "kind": "tool_call",
+                "tool": "kernel_ask",
+                "arguments": {"query": query}
+            }
+        });
+        TargetActionSummary::from_action_value(&value)
+    }
+
+    #[test]
+    fn replay_propagates_prepared_action_from_subject_into_request() {
+        // Mirrors what `load_scenarios` does for one row whose user content
+        // already carries a top-level prepared_action (v8.1.5 corpus shape).
+        // This is the only place where the bin reads PA off the wire and
+        // hands it to the runtime; if this regresses, the v8.1.5 mechanism
+        // silently degrades to v8.1.3pa-without-PA at replay time.
+        let dto = scenario_subject_dto_with_prepared_action();
+        let row = OpenAiEvalRow {
+            step_id: "scenario:kernel_ask:replay:0001:step:0001".to_string(),
+            system_prompt: "system".to_string(),
+            messages: vec![],
+        };
+        let target = target_summary_for_ask("What is the active constraint?");
+
+        let scenario = RuntimeScenario::from_row(row, &dto, target)
+            .expect("scenario builds when PA is well-formed");
+
+        let pa = scenario
+            .request
+            .prepared_action()
+            .expect("OperatorRequest carries prepared_action from the scenario DTO");
+        match pa {
+            OperatorAction::ToolCall(call) => match call.arguments() {
+                ToolArguments::Ask(ask) => {
+                    assert_eq!(ask.query().as_str(), "What is the active constraint?");
+                }
+                other => panic!("expected ask arguments, got {other:?}"),
+            },
+            other => panic!("expected tool_call action, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn replay_preserves_none_when_scenario_has_no_prepared_action() {
+        let dto: CalibrationSubjectDto = serde_json::from_str(
+            r#"{
+                "about": "about:replay:no-pa:case-0001",
+                "mode": "read",
+                "task_family": "realistic.kernel_inspect.replay",
+                "goal": "Bounded inspect for replay-no-PA preservation.",
+                "allowed_tools": [
+                    "kernel_wake",
+                    "kernel_ask",
+                    "kernel_near",
+                    "kernel_goto",
+                    "kernel_rewind",
+                    "kernel_forward",
+                    "kernel_trace",
+                    "kernel_inspect"
+                ],
+                "visible_state": {
+                    "known_refs": [],
+                    "known_dimensions": [],
+                    "budget": {"calls_remaining": 1, "tokens_remaining": 4096}
+                }
+            }"#,
+        )
+        .expect("static scenario DTO without PA parses");
+        let row = OpenAiEvalRow {
+            step_id: "scenario:kernel_inspect:replay:0001:step:0001".to_string(),
+            system_prompt: "system".to_string(),
+            messages: vec![],
+        };
+        let target = target_summary_for_ask("ignored");
+        let scenario =
+            RuntimeScenario::from_row(row, &dto, target).expect("scenario builds without PA");
+        assert!(scenario.request.prepared_action().is_none());
     }
 }

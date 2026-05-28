@@ -1,3 +1,4 @@
+use operator_shared_domain::action::operator_action::OperatorAction;
 use operator_shared_domain::ids::about_id::AboutId;
 use operator_shared_domain::mode::allowed_tools::AllowedTools;
 use operator_shared_domain::mode::operator_mode::OperatorMode;
@@ -19,9 +20,18 @@ pub struct OperatorRequest {
     allowed_tools: AllowedTools,
     initial_budget: SessionBudget,
     about: AboutId,
+    // Provisional pass-through: when an upstream caller already knows the
+    // operator action it wants to emit (e.g. a v8.1.5 ask query computed by a
+    // future planner, or the prepared write payload reproduced by the replay
+    // CLI from a corpus row), it can supply it here. The runtime does NOT
+    // synthesize this field; it only propagates it into the CalibrationSubject
+    // so the model can copy from it. Tool-vs-allowed-tools validation lives in
+    // CalibrationSubject::new, not here.
+    prepared_action: Option<OperatorAction>,
 }
 
 impl OperatorRequest {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         session_id: OperatorSessionId,
         goal: TrajectoryGoal,
@@ -30,6 +40,7 @@ impl OperatorRequest {
         allowed_tools: AllowedTools,
         initial_budget: SessionBudget,
         about: AboutId,
+        prepared_action: Option<OperatorAction>,
     ) -> RuntimeDomainResult<Self> {
         Self::validate_allowed_tools(mode, &allowed_tools)?;
         Ok(Self {
@@ -40,6 +51,7 @@ impl OperatorRequest {
             allowed_tools,
             initial_budget,
             about,
+            prepared_action,
         })
     }
 
@@ -92,5 +104,9 @@ impl OperatorRequest {
 
     pub fn about(&self) -> &AboutId {
         &self.about
+    }
+
+    pub fn prepared_action(&self) -> Option<&OperatorAction> {
+        self.prepared_action.as_ref()
     }
 }

@@ -9,6 +9,7 @@ use operator_shared_domain::contract::action_contract_validator::ActionContractV
 use operator_shared_domain::contract::composite_action_contract_validator::CompositeActionContractValidator;
 use operator_shared_domain::value_objects::task_family::TaskFamily;
 use operator_synthetic_domain::calibration::calibration_subject::CalibrationSubject;
+use operator_synthetic_domain::calibration::prepared_operator_action::PreparedOperatorAction;
 
 use crate::errors::runtime_error::RuntimeError;
 use crate::ports::mcp_executor_port::McpExecutor;
@@ -115,6 +116,13 @@ fn build_subject_from_request(
         TaskFamily::parse("runtime.single_step").map_err(|err| RuntimeError::SubjectBuild {
             message: err.to_string(),
         })?;
+    let prepared_action = request
+        .prepared_action()
+        .map(|action| PreparedOperatorAction::new(action.clone()))
+        .transpose()
+        .map_err(|err| RuntimeError::SubjectBuild {
+            message: err.to_string(),
+        })?;
     CalibrationSubject::new(
         request.about().clone(),
         request.mode(),
@@ -122,7 +130,7 @@ fn build_subject_from_request(
         request.goal().clone(),
         request.allowed_tools().clone(),
         request.initial_visible_state().clone(),
-        None,
+        prepared_action,
     )
     .map_err(|err| RuntimeError::SubjectBuild {
         message: err.to_string(),
