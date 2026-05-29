@@ -1,5 +1,12 @@
 # Operator realistic corpus v7 plan — 2026-05-20
 
+> **Design reconciliation (2026-05-29).** Episode Themes (`incident:`/`migration:`/
+> `bug:`/`product:`/`docs:`) are valid for *trajectory realism* ONLY if refs are
+> **anonymized at prep time** (kernel plan:182-186). Domain narratives must never
+> reach model-facing state un-anonymized. The v7/v8 path shipped them
+> un-anonymized, causing the read-nav generalization cliff. See
+> [`DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`](DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md).
+
 ## Decision
 
 Do not train a release-candidate Operator model on the contract-v6 fixture

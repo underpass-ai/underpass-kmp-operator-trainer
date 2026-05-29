@@ -19,6 +19,7 @@ pub struct PredictionEvaluationOutcome {
     contract_violations: ContractViolations,
     is_exact_match: bool,
     is_tool_match: bool,
+    is_stop_decision_match: bool,
 }
 
 impl PredictionEvaluationOutcome {
@@ -35,6 +36,7 @@ impl PredictionEvaluationOutcome {
             ground_truth_tool: ground_truth.tool(),
             is_exact_match: ground_truth == prediction,
             is_tool_match: same_high_level_choice(ground_truth, prediction),
+            is_stop_decision_match: same_stop_decision(ground_truth, prediction),
             contract_violations,
         }
     }
@@ -67,6 +69,22 @@ impl PredictionEvaluationOutcome {
         self.is_tool_match
     }
 
+    /// True when both actions are `Stop` and carry the same `StopReason`,
+    /// regardless of the `answer` text or the `evidence` subset. The stop
+    /// evidence subset is under-determined by the visible state (any grounded
+    /// subset is defensible) and is not contract-checked, so exact-match on the
+    /// full `StopAction` is over-strict for measuring the stop *decision*. This
+    /// flag credits the policy choice (stop, and the reason) separately.
+    pub fn is_stop_decision_match(&self) -> bool {
+        self.is_stop_decision_match
+    }
+
+    /// True when the ground truth is a `Stop` action (denominator for the
+    /// stop-decision-match rate).
+    pub fn ground_truth_is_stop(&self) -> bool {
+        self.ground_truth_kind == OperatorActionKind::Stop
+    }
+
     pub fn is_contract_valid(&self) -> bool {
         self.contract_violations.is_empty()
     }
@@ -79,6 +97,13 @@ fn same_high_level_choice(ground_truth: &OperatorAction, prediction: &OperatorAc
         | (OperatorAction::Escalate(_), OperatorAction::Escalate(_)) => true,
         _ => false,
     }
+}
+
+fn same_stop_decision(ground_truth: &OperatorAction, prediction: &OperatorAction) -> bool {
+    matches!(
+        (ground_truth, prediction),
+        (OperatorAction::Stop(gt), OperatorAction::Stop(pr)) if gt.reason() == pr.reason()
+    )
 }
 
 #[cfg(test)]
@@ -153,6 +178,58 @@ mod tests {
         assert!(!outcome.is_tool_match());
         assert_eq!(outcome.ground_truth_kind(), OperatorActionKind::ToolCall);
         assert_eq!(outcome.prediction_kind(), OperatorActionKind::Stop);
+    }
+
+    #[test]
+    fn stop_decision_match_ignores_evidence_subset() {
+        let gt = OperatorAction::Stop(
+            StopAction::new(
+                StopReason::AnswerReady,
+                None,
+                vec![MemoryRef::parse("node:a").unwrap()],
+            )
+            .unwrap(),
+        );
+        let pred = OperatorAction::Stop(
+            StopAction::new(
+                StopReason::AnswerReady,
+                None,
+                vec![MemoryRef::parse("node:b").unwrap()],
+            )
+            .unwrap(),
+        );
+        let outcome =
+            PredictionEvaluationOutcome::evaluate(id(), &gt, &pred, ContractViolations::new());
+        assert!(!outcome.is_exact_match(), "different evidence is not exact");
+        assert!(
+            outcome.is_stop_decision_match(),
+            "same reason is a stop-decision match"
+        );
+        assert!(outcome.ground_truth_is_stop());
+    }
+
+    #[test]
+    fn stop_decision_match_requires_same_reason() {
+        let gt =
+            OperatorAction::Stop(StopAction::new(StopReason::AnswerReady, None, vec![]).unwrap());
+        let pred = OperatorAction::Stop(
+            StopAction::new(StopReason::BudgetExhausted, None, vec![]).unwrap(),
+        );
+        let outcome =
+            PredictionEvaluationOutcome::evaluate(id(), &gt, &pred, ContractViolations::new());
+        assert!(!outcome.is_stop_decision_match());
+    }
+
+    #[test]
+    fn tool_call_is_not_a_stop_decision_match() {
+        let outcome = PredictionEvaluationOutcome::evaluate(
+            id(),
+            &inspect("node:1"),
+            &inspect("node:1"),
+            ContractViolations::new(),
+        );
+        assert!(!outcome.is_stop_decision_match());
+        assert!(!outcome.ground_truth_is_stop());
     }
 
     #[test]

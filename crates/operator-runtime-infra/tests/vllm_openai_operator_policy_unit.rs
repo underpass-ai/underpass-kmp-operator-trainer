@@ -72,6 +72,49 @@ fn parse_response_rejects_non_stop_finish_reason_before_content_parse() {
 }
 
 #[test]
+fn default_system_prompt_carries_the_full_mcp_api_schema() {
+    // Directive B parity gate: the runtime must serve the model the same
+    // full-schema prompt it was trained on. A schemaless default (the old
+    // 163-char string) is what produced the v8.1.8 read-nav "cliff".
+    let policy = VllmOpenAiOperatorPolicy::for_testing();
+    let body = policy
+        .build_request_body(&test_subject_inspect())
+        .expect("request body builds");
+    let system = body["messages"][0]["content"]
+        .as_str()
+        .expect("system message is a string");
+
+    assert!(
+        system.contains("Allowed action shapes"),
+        "default system prompt must embed the MCP/API tool schema"
+    );
+    for tool in [
+        "kernel_wake",
+        "kernel_ask",
+        "kernel_near",
+        "kernel_goto",
+        "kernel_rewind",
+        "kernel_forward",
+        "kernel_trace",
+        "kernel_inspect",
+        "kernel_write_memory",
+        "kernel_ingest",
+    ] {
+        assert!(
+            system.contains(tool),
+            "default system prompt must document tool {tool}"
+        );
+    }
+    // The full-schema prompt is ~3.7k chars; the deprecated schemaless default
+    // was 163 chars. Guard against a regression to a short prompt.
+    assert!(
+        system.len() > 3000,
+        "default system prompt is too short to carry the schema: {} chars",
+        system.len()
+    );
+}
+
+#[test]
 fn empty_system_prompt_does_not_replace_default_prompt() {
     let policy = VllmOpenAiOperatorPolicy::for_testing();
     let default_body = policy

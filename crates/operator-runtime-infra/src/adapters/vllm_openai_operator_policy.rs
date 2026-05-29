@@ -19,7 +19,15 @@ use crate::adapters::vllm_operator_config::DEFAULT_MAX_TOKENS;
 use crate::adapters::vllm_operator_config::VllmOperatorConfig;
 use crate::errors::runtime_infra_error::RuntimeInfraError;
 
-const DEFAULT_SYSTEM_PROMPT: &str = "You are the Operator runtime policy. Return exactly one strict JSON OperatorAction for the provided subject. Use only allowed tools and never emit write tools in read mode.";
+// Canonical full-schema operator system prompt — the SINGLE SOURCE OF TRUTH shared
+// with the Python SFT prep pipeline (prepare_operator_sft_dataset.py FULL_SYSTEM_PROMPT
+// asserts byte-equality against this same file). The model is trained with this exact
+// prompt (the MCP/API tool schema in-context); serving it at runtime is required for
+// train/inference parity. Previously this was a 163-char schemaless string, which —
+// when a corpus eval row also lacked the schema — produced the v8.1.8 read-nav
+// "cliff". See docs/training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md.
+const DEFAULT_SYSTEM_PROMPT: &str =
+    include_str!("../../prompts/operator_system_prompt_full_v1.txt");
 
 #[derive(Debug)]
 pub struct VllmOpenAiOperatorPolicy {

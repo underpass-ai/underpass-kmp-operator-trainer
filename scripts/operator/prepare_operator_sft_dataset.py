@@ -505,8 +505,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-refs", type=int, default=32)
     parser.add_argument(
         "--anonymize-refs",
-        action="store_true",
-        help="Replace model-facing refs with stable synthetic ids per trajectory.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Replace model-facing refs with stable synthetic ids per trajectory. "
+            "ON by default: the operator must learn to use KMP from opaque refs, "
+            "never from teacher domain topics. Use --no-anonymize-refs ONLY for "
+            "de-anonymized replay/debug, never for a release-candidate SFT corpus "
+            "(a prep-time guard fails the build if domain refs survive)."
+        ),
     )
     parser.add_argument(
         "--require-visible-target-refs",
@@ -557,8 +564,36 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def assert_full_prompt_matches_runtime_asset() -> None:
+    """Directive B single-source-of-truth gate.
+
+    The runtime serves the canonical full-schema prompt from
+    `crates/operator-runtime-infra/prompts/operator_system_prompt_full_v1.txt`
+    (Rust `include_str!`). FULL_SYSTEM_PROMPT here MUST byte-equal that asset so
+    the model is trained on exactly what it is served. Fails fast on drift.
+    Skips with a warning only if the asset is absent (e.g. a partial checkout).
+    """
+    from pathlib import Path
+
+    asset = (
+        Path(__file__).resolve().parents[2]
+        / "crates/operator-runtime-infra/prompts/operator_system_prompt_full_v1.txt"
+    )
+    if not asset.exists():
+        print(f"WARNING: runtime prompt asset not found at {asset}; skipping parity check")
+        return
+    runtime_prompt = asset.read_text()
+    if runtime_prompt != FULL_SYSTEM_PROMPT:
+        raise SystemExit(
+            "FULL_SYSTEM_PROMPT drifted from the runtime asset "
+            f"({asset}). Training and serving prompts must be byte-identical "
+            "(Directive B). Reconcile the two before generating a corpus."
+        )
+
+
 def main() -> None:
     args = parse_args()
+    assert_full_prompt_matches_runtime_asset()
     if args.eval_ratio < 0 or args.eval_ratio >= 1:
         raise SystemExit("--eval-ratio must be >= 0 and < 1")
     if (
@@ -669,6 +704,10 @@ def main() -> None:
         build_pair(item, args.max_refs, args.anonymize_refs, system_prompt, prompt_profile)
         for item in selected
     ]
+    # Anonymization guard: a release-candidate SFT corpus must carry no domain
+    # topics in model-facing state. Fails fast if anonymization was disabled or
+    # a domain prefix is uncovered. See DOMAIN_TOPIC_REF_PREFIXES.
+    assert_no_domain_refs_in_pairs(pairs)
     quality_summary: dict[str, Any] = {
         "selected_after_mode_filters": selected_after_mode_filters,
         "selected_after_visibility_filters": selected_after_visibility_filters,
@@ -773,6 +812,7 @@ def main() -> None:
         "include_modes": sorted(set(args.include_mode)),
         "exclude_modes": sorted(set(args.exclude_mode)),
         "anonymize_refs": args.anonymize_refs,
+        "anonymization_guard": "passed (no domain-topic refs in model-facing rows)",
         "require_visible_target_refs": args.require_visible_target_refs,
         "require_visible_target_cursors": args.require_visible_target_cursors,
         "inject_target_request_fields": args.inject_target_request_fields,
@@ -2376,19 +2416,78 @@ def collect_about_values(item: dict[str, Any]) -> set[str]:
     return values
 
 
+# Domain-topic prefixes that leak realistic teacher content into model-facing
+# refs. They MUST be anonymized out of model-facing state (see the operator
+# model plan: refs are opaque ids; the operator "only learns to use KMP").
+# These mirror build_realistic_scenarios.py ABOUT_PREFIXES_BY_THEME. NOTE: these
+# are domain TOPIC prefixes, NOT KMP dimension kinds (agent:/task:/topic:/
+# session:/attempt:), which are structural and intentionally preserved.
+DOMAIN_TOPIC_REF_PREFIXES = (
+    "incident:",
+    "migration:",
+    "bug:",
+    "product:",
+    "docs:",
+    "about:",
+    "evidence:",
+    "question:run:",
+    "turn:run:",
+)
+
+
 def looks_like_ref(value: str) -> bool:
     return (
         value.startswith("memoryarena:run:")
         or value.startswith("longmemeval:")
         or value.startswith("memoryagentbench:")
-        or value.startswith("incident:")
-        or value.startswith("about:")
-        or value.startswith("evidence:")
-        or value.startswith("question:run:")
-        or value.startswith("turn:run:")
+        or value.startswith(DOMAIN_TOPIC_REF_PREFIXES)
         or ":subtask:" in value
         or ":task:" in value
     )
+
+
+def assert_no_domain_refs_in_pairs(pairs: list[Any]) -> int:
+    """Prep-time anonymization guard.
+
+    Fails the build if any model-facing SFT field (the user subject or the
+    assistant target) still carries a domain-topic ref prefix. A clean
+    anonymization pass leaves only opaque `ref_0001`/`about_0001` ids, so any
+    surviving domain prefix means either anonymization was disabled or
+    `looks_like_ref` does not cover a prefix that `build_realistic_scenarios`
+    emits. Either way the corpus is contaminated and must not be trained on.
+
+    Returns the number of pairs scanned. Raises ValueError listing offenders.
+    """
+    offenders: list[str] = []
+    for pair in pairs:
+        sft_row = pair[0] if isinstance(pair, (list, tuple)) else pair
+        messages = sft_row.get("messages", []) if isinstance(sft_row, dict) else []
+        # Only the model-facing turns matter (user subject + assistant target);
+        # the system prompt legitimately documents the tool schema, not refs.
+        for msg in messages:
+            if msg.get("role") not in ("user", "assistant"):
+                continue
+            content = msg.get("content", "")
+            if not isinstance(content, str):
+                continue
+            for prefix in DOMAIN_TOPIC_REF_PREFIXES:
+                if prefix in content:
+                    offenders.append(
+                        f"{sft_row.get('step_id', '<no-step_id>')}: "
+                        f"model-facing {msg.get('role')} contains domain prefix '{prefix}'"
+                    )
+                    break
+    if offenders:
+        sample = "\n  ".join(offenders[:15])
+        raise ValueError(
+            "anonymization guard failed: "
+            f"{len(offenders)} model-facing rows still carry domain-topic refs. "
+            "A release-candidate SFT corpus must be anonymized (the operator "
+            "learns to use KMP from opaque refs, never teacher domain topics). "
+            "Re-run with anonymization ON, and if a domain prefix is uncovered, "
+            "add it to DOMAIN_TOPIC_REF_PREFIXES.\n  " + sample
+        )
+    return len(pairs)
 
 
 def build_debug_audit_row(item: dict[str, Any]) -> dict[str, Any]:

@@ -1,5 +1,11 @@
 # Handoff — finish training the 0.5B Qwen operator (2026-05-20)
 
+> **Historical context only (banner 2026-05-29).** Superseded by the realistic-v7
+> plan and v7.3 closure. Use [`runbook.md`](runbook.md) and
+> [`model-history.md`](model-history.md) for current guidance, and
+> [`DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`](DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md)
+> for the current training-design truth.
+
 > Status update after PR #27:
 >
 > Do **not** use this handoff as a direct training recipe anymore. PR #27

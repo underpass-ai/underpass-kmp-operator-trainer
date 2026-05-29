@@ -1,5 +1,12 @@
 # Training Bounded Context
 
+> **Divergence note (2026-05-29):** the dataset-writer serialization is
+> structurally correct, but the v8.x corpora emit **un-anonymized literal domain
+> refs** in model-facing `visible_state`, diverging from the anonymization
+> requirement (kernel plan:182-186). Anonymization is now mandatory in
+> `prepare_operator_sft_dataset.py`. See
+> [`../../training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`](../../training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md).
+
 The `training` bounded context **prepares a training run**: it
 assembles a dataset, captures its provenance, evaluates readiness
 gates against an `EvaluationReport`, packages everything into a

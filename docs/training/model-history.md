@@ -427,3 +427,35 @@ caveats, and artifact paths.
   batch jobs that supply `prepared_action` end-to-end (now possible after
   PR #50, merge commit `0f62319`, which preserves `prepared_action` through
   the runtime request boundary).
+- **v8.1.8 Tier 4 (2026-05-29).** Trained Qwen2.5-0.5B + LoRA on the Tier-4 corpus
+  (1933 train / 394 eval; 17 min; `eval_mean_token_accuracy` 0.962). **Evaluated
+  correctly (full-schema system prompt on all rows): 92.9% exact / 98.5% structural
+  overall, base 316/317 = 99.68%, 15 rebalanced families 100%.** The first predict
+  showed an apparent read-nav "cliff" (0% on the new rows), but a diagnostic proved
+  this was a **system-prompt build bug**, not a model failure: the Tier 2/3 eval rows
+  were authored with a 356-char prompt that omits the MCP/API schema (training uses
+  the 3741-char full-schema prompt). Re-predicting the *unchanged* adapter on a
+  prompt-corrected eval (raw refs, no retrain) lifted read-nav structural validity
+  0%→100% and parse failures 51→5. So v8.1.8 is a strong model; remaining gaps are
+  small argument-value policy choices (`near` limit/dimension, `trace` page).
+  Two corpus-correctness items still apply: (1) Directive B — all rows + the runtime
+  must carry the full-schema prompt; (2) Directive A — refs must be anonymized
+  (design requirement; did NOT cause the cliff). Not a publication claim until the
+  schema-prompt fix is corpus-wide. See
+  [`DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`](DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md),
+  `operator-experiments/RESULTS_v818_tier4.md`, and the diagnostic
+  `operator-experiments/audits/DIAGNOSTIC_promptfix_20260529.md`.
+- **v8.1.9 anonymized (2026-05-29) — the clean, design-correct model.** Regenerated
+  the corpus with **reference anonymization ON** (opaque `ref_0001`/`about_0001`;
+  dimension kinds preserved) on top of the schema-fixed + well-posed eval, then
+  retrained (13 min; eval_mean_token_accuracy 0.9887). Result: **ALL-394 structural
+  validity 100%, exact 94.7%, 0 parse failures, 0 missing** (vs v8.1.8 raw: 99.2%
+  struct / 3 failures). Confirms **Directive A at zero cost** — operating on opaque
+  refs does not degrade the policy; it is cleaner. Combines Directive B (MCP/API
+  schema in context everywhere + runtime) + Directive A (anonymized refs) + well-posed
+  eval. Anonymization collapsed 127 train rows — exactly Tier-4's topic-clone
+  count-rebalance — confirming the operator learns structure, not topic. Remaining
+  exact-misses (21) are soft (stop evidence-subset) or hard-exact (long ingest), not
+  structural. This is the publication-track model. Train sha `ee79e101…`. See
+  `operator-experiments/RESULTS_v819_anon.md`; adapter
+  `operator-experiments/adapters/operator-qwen05-lora-v8.1.9-anon-20260529T170500/`.

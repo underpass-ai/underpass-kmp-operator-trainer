@@ -1,5 +1,19 @@
 # Runtime Bounded Context
 
+> **`requested_*` clarification (2026-05-29):** `requested_wake`,
+> `requested_ask`, `requested_move`, `requested_trace`, `inspection_request`,
+> and `requested_stop` are **NOT runtime-wired**. They exist only in older
+> training data and replay/test scenarios; the live runtime path uses
+> `prepared_action` or the model-predicted action. Do not treat `requested_*`
+> as a live mechanism. See the runbook's field-wiring section.
+>
+> **Prompt-parity note:** the runtime `DEFAULT_SYSTEM_PROMPT`
+> (`vllm_openai_operator_policy.rs:22`) is a 163-char generic string with no tool
+> schema, while training uses the full schema-bearing prompt. This is latent
+> (the replay harness re-injects the training prompt) but must be closed before
+> any live deployment — see
+> [`../../training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`](../../training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md).
+
 The `runtime` bounded context composes the trained Operator policy, the
 strict action contract, a KMP/MCP executor, session budget, observations and
 JSONL replay artifacts. The current implementation is an MVP single-step

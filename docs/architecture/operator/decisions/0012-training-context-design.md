@@ -1,5 +1,13 @@
 # ADR 0012 — Training context design (groundwork)
 
+> **Divergence note (2026-05-29):** this ADR specifies dataset/visible_state
+> serialization but omits the **reference anonymization** requirement
+> (kernel `kernel-tool-operator-model-plan.md:182-186`). v8.1.8 was built with
+> anonymization OFF, embedding literal domain refs into model-facing state —
+> contradicting the design. Anonymization is mandatory; the operator must learn
+> to use KMP from opaque refs. See
+> [`../../../training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`](../../../training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md).
+
 Status: accepted (2026-05-18)
 
 Companion to: pending `docs/architecture/operator/50-training-context.md`
