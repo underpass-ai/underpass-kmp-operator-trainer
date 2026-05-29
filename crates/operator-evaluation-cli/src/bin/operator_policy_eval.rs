@@ -148,6 +148,12 @@ fn print_report(report: &EvaluationReport) {
         "contract_valid_rate: {:.4}",
         report.contract_validity_rate()
     );
+    println!(
+        "stop_decision_match: {}/{}  rate {:.4}  (same stop reason; evidence subset ignored)",
+        report.stop_decision_match_count(),
+        report.stop_ground_truth_count(),
+        report.stop_decision_match_rate()
+    );
     for metric in report.per_tool() {
         let label = metric
             .tool()

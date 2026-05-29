@@ -72,6 +72,36 @@ impl EvaluationReport {
             .count()
     }
 
+    /// Number of stop ground-truths whose prediction is a stop with the same
+    /// reason (evidence subset ignored). See
+    /// `PredictionEvaluationOutcome::is_stop_decision_match`.
+    pub fn stop_decision_match_count(&self) -> usize {
+        self.outcomes
+            .iter()
+            .filter(|o| o.is_stop_decision_match())
+            .count()
+    }
+
+    /// Number of ground-truths that are stop actions (denominator for the
+    /// stop-decision-match rate).
+    pub fn stop_ground_truth_count(&self) -> usize {
+        self.outcomes
+            .iter()
+            .filter(|o| o.ground_truth_is_stop())
+            .count()
+    }
+
+    /// Stop-decision match rate: of the stop ground-truths, the fraction the
+    /// model also stopped on for the same reason. A more faithful stop metric
+    /// than exact-match, which over-penalizes a valid-but-different evidence
+    /// subset. Returns 0.0 when there are no stop ground-truths.
+    pub fn stop_decision_match_rate(&self) -> f64 {
+        rate(
+            self.stop_decision_match_count(),
+            self.stop_ground_truth_count(),
+        )
+    }
+
     pub fn exact_match_rate(&self) -> f64 {
         rate(self.exact_match_count(), self.total())
     }
@@ -144,6 +174,12 @@ mod tests {
         OperatorAction::Stop(StopAction::new(StopReason::AnswerReady, None, vec![]).unwrap())
     }
 
+    fn stop_with(reason: StopReason, evidence: &str) -> OperatorAction {
+        OperatorAction::Stop(
+            StopAction::new(reason, None, vec![MemoryRef::parse(evidence).unwrap()]).unwrap(),
+        )
+    }
+
     fn outcome(
         trajectory: &str,
         gt: &OperatorAction,
@@ -169,6 +205,31 @@ mod tests {
         assert_eq!(report.tool_match_count(), 2);
         assert_eq!(report.contract_valid_count(), 3);
         assert!((report.exact_match_rate() - 1.0 / 3.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn stop_decision_match_rate_ignores_evidence_subset() {
+        let report = EvaluationReport::from_outcomes(vec![
+            // stop gt, right reason, DIFFERENT evidence -> decision match, not exact
+            outcome(
+                "t:1",
+                &stop_with(StopReason::AnswerReady, "node:a"),
+                &stop_with(StopReason::AnswerReady, "node:b"),
+            ),
+            // stop gt, WRONG reason -> not a decision match
+            outcome(
+                "t:2",
+                &stop_with(StopReason::AnswerReady, "node:a"),
+                &stop_with(StopReason::BudgetExhausted, "node:a"),
+            ),
+            // non-stop gt -> not counted in the stop denominator
+            outcome("t:3", &inspect("node:1"), &inspect("node:1")),
+        ]);
+        assert_eq!(report.stop_ground_truth_count(), 2);
+        assert_eq!(report.stop_decision_match_count(), 1);
+        assert!((report.stop_decision_match_rate() - 0.5).abs() < f64::EPSILON);
+        // exact-match credits none of the stops (evidence differs / reason differs)
+        assert_eq!(report.exact_match_count(), 1); // only the inspect
     }
 
     #[test]

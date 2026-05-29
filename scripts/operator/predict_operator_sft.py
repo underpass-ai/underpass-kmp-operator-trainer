@@ -144,6 +144,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument(
+        "--sort-by-length",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Group rows of similar prompt length into the same batch so padding "
+            "is uniform and batch composition is independent of input order. This "
+            "makes batched temp-0 inference reproducible run-to-run (and faster). "
+            "Output is keyed by step_id, so the reordering is harmless to scoring. "
+            "For bit-exact determinism regardless of this flag, use --batch-size 1."
+        ),
+    )
     parser.add_argument("--max-new-tokens", type=int, default=350)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument(
@@ -242,6 +254,21 @@ def main() -> None:
 
     if args.limit is not None:
         rows = rows[: args.limit]
+
+    if args.sort_by_length and len(rows) > 1:
+        # Reorder rows so each batch holds prompts of similar length. With
+        # left-padding, this makes the padding within a batch uniform and the
+        # batch composition independent of the input row order, which removes the
+        # run-to-run nondeterminism of batched temp-0 inference (and reduces wasted
+        # padding compute). Predictions are keyed by step_id downstream, so the
+        # reordering does not affect scoring. Stable sort keeps ties in input order.
+        def _prompt_token_len(row: dict) -> int:
+            prompt = tokenizer.apply_chat_template(
+                row["messages"][:-1], tokenize=False, add_generation_prompt=True
+            )
+            return len(tokenizer(prompt)["input_ids"])
+
+        rows = sorted(rows, key=_prompt_token_len)
 
     predictions_path = args.output / "predictions.jsonl"
     results_path = args.output / "llm_results.jsonl"
@@ -374,6 +401,7 @@ def main() -> None:
         "predictions": predictions,
         "failures": failures,
         "batch_size": args.batch_size,
+        "sort_by_length": args.sort_by_length,
         "failure_reasons": failure_reasons,
         "max_new_tokens": args.max_new_tokens,
         "stop_after_json": args.stop_after_json,
