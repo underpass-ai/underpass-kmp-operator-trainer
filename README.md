@@ -4,6 +4,17 @@ Operator is a small specialist runtime that decides the next bounded KMP/MCP
 action from visible memory state. It is **not** a general reasoning model, a
 benchmark solver, or a replacement for KMP.
 
+## Training approach (North Star)
+
+The operator **only learns to use KMP**. It operates on **opaque, anonymized**
+refs (`ref_0001`/`about_0001`), never on teacher domain topics — domain content
+must never reach model-facing state. The model receives the MCP/tool schema
+in-context and is SFT-trained to operate from the visible structural state.
+A 2026-05-29 audit found v7/v8 training diverged by shipping un-anonymized domain
+refs; see
+[`docs/training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`](docs/training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md).
+Anonymization is now mandatory in the SFT prep pipeline.
+
 This repository hosts the Operator product: typed domain, dataset model,
 evaluation, replay, training manifests, and runtime composition. It is the
 successor of the `underpass-operator-*` crates that lived inside

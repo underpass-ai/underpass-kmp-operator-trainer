@@ -1,5 +1,9 @@
 # Operator KMP Contract P0 Plan — 2026-05-20
 
+> **Historical (banner 2026-05-29).** P0 is closed as of 2026-05-23 (10/10 tools,
+> `kind` discriminator, strict SFT prep). See [`model-history.md`](model-history.md)
+> for current status.
+
 ## Context
 
 Operator has been moved to its own repository and the new architecture is much

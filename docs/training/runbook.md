@@ -70,6 +70,45 @@ in `operator-evaluation-application` and `operator-training-application`.
   sources: a kernel-side export, or a custom binary against
   `operator-synthetic-application`.
 
+## Reference anonymization policy (MANDATORY)
+
+> Read this before generating any corpus. A 2026-05-29 forensic audit found the
+> v7/v8 training path diverged from the intended design by shipping
+> **un-anonymized domain refs**. See
+> [`DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`](DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md).
+
+The operator "only learns to use KMP" — it must operate on **opaque** refs, never
+on teacher domain topics. Model-facing refs MUST be anonymized to `ref_0001` /
+`about_0001` (kernel `kernel-tool-operator-model-plan.md:182-186`). The V6 holdout
+built this way reached 1.000 exact action accuracy. This is a **design
+requirement** (don't ship a model that memorized domain content); note the
+2026-05-29 diagnostic showed anonymization did NOT cause the v8.1.8 read-nav cliff
+(that was a system-prompt build bug — see below), so anonymization is enforced for
+correctness, not as a measured performance fix.
+
+> **Equally important — the MCP/API schema must be in the system prompt on EVERY
+> row.** The v8.1.8 read-nav "cliff" was caused by Tier 2/3 eval rows using a
+> 356-char prompt that omitted the tool schema (training uses the 3741-char
+> full-schema prompt). All SFT rows — and the runtime `DEFAULT_SYSTEM_PROMPT` —
+> must carry the canonical full-schema prompt. See
+> [`DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`](DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md).
+
+Enforced in `prepare_operator_sft_dataset.py`:
+
+- `--anonymize-refs` defaults **ON** (`--no-anonymize-refs` is for de-anonymized
+  replay/debug only — never a release-candidate corpus). Historically it defaulted
+  OFF, which was the divergence.
+- `looks_like_ref()` covers all domain-topic prefixes via `DOMAIN_TOPIC_REF_PREFIXES`
+  (`incident:`/`migration:`/`bug:`/`product:`/`docs:`/`about:`/`evidence:`/`question:run:`/`turn:run:`);
+  KMP dimension kinds (`agent:`/`task:`/`topic:`/`session:`/`attempt:`) are structural
+  and intentionally preserved.
+- A prep-time guard (`assert_no_domain_refs_in_pairs`) **fails the build** if any
+  model-facing user/assistant field still carries a domain-topic ref.
+- The corpus manifest records `anonymize_refs` and `anonymization_guard`.
+
+No model trained with anonymization OFF is publishable. v8.1.8 (and earlier v8.x)
+were trained un-anonymized and must be regenerated + retrained.
+
 ## Training data policy
 
 There are two different corpus classes:
@@ -89,6 +128,49 @@ mandatory frontier ceiling on the held-out episode split.
 
 The next interpretable training run waits for
 [`operator-realistic-corpus-v7-plan-2026-05-20.md`](operator-realistic-corpus-v7-plan-2026-05-20.md).
+
+## Artifact storage policy
+
+`/tmp/` is **staging only**. As of 2026-05-29, every artifact that has any
+post-session value lives under
+`/home/tirso/ai/developents/operator-experiments/`. The runbook examples
+below still emit to `/tmp/...` because the k8s `hostPath` volumes mount
+`/tmp` into the pods, but the moment a run completes (or a corpus, audit,
+adapter, prediction, or k8s manifest is worth keeping) it is copied into
+the archive at:
+
+```
+/home/tirso/ai/developents/operator-experiments/
+├── INDEX.md                # version table + locator
+├── builders/               # *.py corpus build scripts (one per version)
+├── corpora/                # generated SFT JSONL + manifest.json per version
+├── audits/                 # corpus diagnostic scripts + reports
+├── adapters/               # trained LoRA weight directories
+├── probes/                 # prediction outputs + paired-probe artifacts
+├── k8s-jobs/               # rendered Job YAMLs actually applied to the cluster
+└── docs/                   # standalone analysis notes
+```
+
+Rules:
+
+- Never reference `/tmp/...` paths in commit messages, PRs, manifests, or
+  closure docs as if they were durable. Quote the
+  `operator-experiments/...` path instead.
+- Run artifacts MUST be timestamped in their directory name (e.g.
+  `operator-sft-v8.1.8-tier3-20260529T003900`) and copied into the
+  archive before `/tmp/` is reaped.
+- Adapters live under `adapters/` only after a predict run has validated
+  them; raw checkpoints from a failed run are not archived.
+- Corpora carry a `manifest.json` with the train/eval SHA256 and the
+  per-row rationale for every appended row. Without the manifest the
+  corpus is not promoted to `operator-experiments/corpora/`.
+- The archive is the source of truth for `model-history.md` references
+  and for downstream training rebuilds.
+
+If `/tmp` is full or being cleaned, the missing input is always
+re-derivable from the archive (corpus + adapter + manifest are enough to
+re-run predict and re-validate). This is the single reason `/tmp` may be
+treated as ephemeral without losing reproducibility.
 
 ## Field wiring: `prepared_action` vs `requested_*`
 
@@ -520,7 +602,11 @@ return value.
   the `summary.json` + evaluation report next to the
   `TrainingManifest` TOML the build phase wrote (the
   `TomlManifestWriter` records dataset provenance + readiness
-  gates). Add a one-line entry to
+  gates). Copy the timestamped corpus dir into
+  `operator-experiments/corpora/`, the adapter into
+  `operator-experiments/adapters/`, and the predictions directory into
+  `operator-experiments/probes/` (see "Artifact storage policy" above
+  for the full layout). Add a one-line entry to
   [`model-history.md`](model-history.md) when the result is
   publication-grade.
 - **Fail**: inspect `predictions.jsonl` and
@@ -549,6 +635,19 @@ per-tool / per-mode metrics, and exits 0 or 1 based on the
 `--min-pass-rate` threshold (omit the flag to print metrics only).
 Useful for inspecting a historical run, comparing against a different
 contract version, or gating a publication candidate.
+
+It also prints `stop_decision_match` (count/rate): of the stop ground-truths, the
+fraction the model also stopped on **for the same reason**, ignoring the `evidence`
+subset and `answer` text. Exact-match over-penalizes `stop` because the evidence
+subset is under-determined by the visible state (any grounded subset is defensible)
+and is not contract-checked; `stop_decision_match` is the faithful stop-policy metric.
+
+**Eval determinism.** `predict_operator_sft.py` defaults to `--sort-by-length`,
+which groups similar-length prompts into each batch so padding is uniform and batch
+composition is independent of input order — this makes batched temp-0 inference
+reproducible run-to-run (without it, ~4% of long `kernel_ingest`/`kernel_write_memory`
+rows flip predictions between runs from batch re-composition). For bit-exact
+determinism regardless, use `--batch-size 1`.
 
 ## 4c. Or replay predictions against a live KMP with `operator-replay`
 
