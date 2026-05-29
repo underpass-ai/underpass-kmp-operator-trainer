@@ -52,6 +52,37 @@ jobs:
       - name: cargo test --workspace --doc
         run: cargo test --workspace --doc
 
+  container-image:
+    name: container-image (rootless)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install buildah (rootless)
+        run: sudo apt-get update && sudo apt-get install -y buildah uidmap
+      - name: Build operator runtime image (rootless buildah) and push to GHCR
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+          STORAGE_DRIVER: vfs
+          BUILDAH_ISOLATION: chroot
+        run: |
+          set -euo pipefail
+          IMAGE="$(echo "${IMAGE}" | tr '[:upper:]' '[:lower:]')"
+          TAG="sha-${GITHUB_SHA::7}"
+          buildah --storage-driver vfs bud --isolation chroot -t "${IMAGE}:${TAG}" -f Dockerfile .
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "PR build only — image builds, not pushed."
+            exit 0
+          fi
+          echo "${GH_TOKEN}" | buildah login --username "${GH_ACTOR}" --password-stdin ghcr.io
+          buildah --storage-driver vfs push "${IMAGE}:${TAG}"
+          buildah --storage-driver vfs tag "${IMAGE}:${TAG}" "${IMAGE}:latest"
+          buildah --storage-driver vfs push "${IMAGE}:latest"
+
   coverage:
     name: coverage (>= 80% lines)
     runs-on: ubuntu-latest
