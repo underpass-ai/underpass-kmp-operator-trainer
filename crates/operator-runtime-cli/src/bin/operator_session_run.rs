@@ -14,6 +14,7 @@ use operator_runtime_domain::session::operator_request::OperatorRequest;
 use operator_runtime_domain::session::operator_session_id::OperatorSessionId;
 use operator_runtime_domain::session::outcome_class::OutcomeClass;
 use operator_runtime_domain::session::session_outcome::SessionOutcome;
+use operator_runtime_infra::adapters::anonymizing_operator_policy::AnonymizingOperatorPolicy;
 use operator_runtime_infra::adapters::jsonl_session_event_sink::JsonlSessionEventSink;
 use operator_runtime_infra::adapters::kmp_mcp_http_executor::KmpMcpHttpExecutor;
 use operator_runtime_infra::adapters::kmp_mcp_stdio_config::KmpMcpStdioConfig;
@@ -60,6 +61,11 @@ struct Cli {
     operator_accept_invalid_certs: bool,
     #[arg(long, default_value_t = DEFAULT_MAX_TOKENS)]
     operator_max_tokens: u32,
+    /// Serve the anonymized operator (v8.1.9+): anonymize the subject's real refs
+    /// to opaque ids before the model call and de-anonymize the predicted action
+    /// back. Required when the served adapter was trained on anonymized refs.
+    #[arg(long, default_value_t = false)]
+    operator_anonymize_refs: bool,
     #[arg(long, default_value = DEFAULT_ADAPTER_SHA)]
     adapter_sha: String,
     #[arg(long)]
@@ -115,9 +121,14 @@ fn run(cli: &Cli) -> Result<(), String> {
 
     let mut stats = ReplayStats::default();
     for scenario in scenarios {
-        let policy = Arc::new(
+        let base_policy = Arc::new(
             build_operator_policy(cli)?.with_system_prompt(scenario.system_prompt.clone()),
         ) as Arc<dyn OperatorPolicy>;
+        let policy: Arc<dyn OperatorPolicy> = if cli.operator_anonymize_refs {
+            Arc::new(AnonymizingOperatorPolicy::new(base_policy))
+        } else {
+            base_policy
+        };
         let event_path = events_dir.join(format!("{}.jsonl", safe_filename(&scenario.step_id)));
         let event_sink = Arc::new(
             JsonlSessionEventSink::new(
