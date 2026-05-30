@@ -757,6 +757,8 @@ dependencies = [
  "operator-shared-domain",
  "operator-shared-infra",
  "operator-synthetic-infra",
+ "operator-training-application",
+ "operator-training-infra",
  "serde",
  "serde_json",
 ]

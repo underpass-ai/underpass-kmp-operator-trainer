@@ -19,6 +19,7 @@ use operator_runtime_application::ports::session_event_sink_port::SessionEventSi
 use operator_runtime_application::services::window_expansion_episode_compiler::WindowExpansionEpisodeCompiler;
 use operator_runtime_application::services::window_expansion_oracle::WindowExpansionOracle;
 use operator_runtime_application::use_cases::expand_session_transcript_use_case::ExpandSessionTranscriptUseCase;
+use operator_runtime_application::use_cases::generate_window_expansions_use_case::GenerateWindowExpansionsUseCase;
 use operator_runtime_application::use_cases::run_operator_session_multi_step_use_case::RunOperatorSessionMultiStepUseCase;
 use operator_runtime_domain::budget::session_budget::SessionBudget;
 use operator_runtime_domain::session::execution_step::ExecutionStep;
@@ -38,6 +39,7 @@ use operator_shared_domain::contract::composite_action_contract_validator::Compo
 use operator_shared_domain::ids::about_id::AboutId;
 use operator_shared_domain::mode::allowed_tools::AllowedTools;
 use operator_shared_domain::mode::operator_mode::OperatorMode;
+use operator_shared_domain::tool_arguments::ask_arguments::AskArguments;
 use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
 use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
 use operator_shared_domain::tool_arguments::write_memory_arguments::WriteMemoryArguments;
@@ -54,6 +56,7 @@ use operator_shared_domain::visible_state::coverage_deviation_snapshot::Coverage
 use operator_shared_domain::visible_state::navigation_signals::NavigationSignals;
 use operator_shared_domain::visible_state::visible_state::VisibleState;
 use operator_synthetic_domain::calibration::calibration_subject::CalibrationSubject;
+use operator_synthetic_domain::episode::window_expansion_episode::WindowExpansionEpisode;
 use operator_synthetic_domain::episode::window_expansion_spec::WindowExpansionSpec;
 
 // ----- shared fixtures -------------------------------------------------------
@@ -485,4 +488,143 @@ fn compiler_sizes_a_read_request_to_the_spec() {
     // The session starts from an empty visible state the policy must fill.
     assert!(compiled.initial_visible_state().known_refs().is_empty());
     assert!(compiled.initial_visible_state().active_cursor().is_none());
+}
+
+// ----- generator orchestrator ------------------------------------------------
+
+fn session_use_case(
+    actions: Vec<OperatorAction>,
+    observations: Vec<Observation>,
+) -> RunOperatorSessionMultiStepUseCase {
+    RunOperatorSessionMultiStepUseCase::new(
+        Arc::new(ScriptedOperatorPolicy {
+            actions: Mutex::new(actions.into()),
+            fallback: stop_action(),
+        }),
+        Arc::new(SeqMcpExecutor {
+            observations: Mutex::new(observations.into()),
+            fallback: response("node:9", covered_signals()),
+            calls: Arc::new(AtomicUsize::new(0)),
+        }),
+        CompositeActionContractValidator::default_strict(),
+        Arc::new(NoopSessionEventSink),
+    )
+}
+
+// `Ask` is exempt from the known-entities contract, so it is a valid first move
+// from the empty state the compiler builds (just like Rewind/Forward).
+fn ask_action() -> OperatorAction {
+    OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Ask(
+        AskArguments::new("Count workshops over the period.").unwrap(),
+    )))
+}
+
+fn episode(about: &str, max_iterations: usize) -> WindowExpansionEpisode {
+    WindowExpansionEpisode::new(
+        AboutId::parse(about).unwrap(),
+        TrajectoryGoal::parse("Count workshops across the period by widening the window.").unwrap(),
+        WindowExpansionSpec::new(
+            PositiveCount::parse(4, "window").unwrap(),
+            PositiveCount::parse(max_iterations, "iterations").unwrap(),
+        ),
+        4096,
+    )
+}
+
+#[test]
+fn generator_accepts_a_covered_episode_into_trajectories() {
+    let session = session_use_case(
+        vec![ask_action(), stop_action()],
+        vec![response("node:1", covered_signals())],
+    );
+    let generator = GenerateWindowExpansionsUseCase::new(session, task_family());
+
+    let report = generator
+        .execute(&[episode("about:p", 5)])
+        .expect("generation succeeds");
+
+    assert_eq!(report.accepted_episodes(), 1);
+    assert_eq!(report.dropped_episodes(), 0);
+    // One ask step plus the terminal stop.
+    assert_eq!(report.trajectories().len(), 2);
+    assert!(report.drop_rate().abs() < f64::EPSILON);
+}
+
+#[test]
+fn generator_drops_episodes_that_never_reach_coverage() {
+    // Empty action queue + stop fallback: every episode stops immediately with
+    // no temporal move, so the oracle reports it uncovered and it is dropped.
+    let session = session_use_case(vec![], vec![]);
+    let generator = GenerateWindowExpansionsUseCase::new(session, task_family());
+
+    let report = generator
+        .execute(&[episode("about:a", 3), episode("about:b", 3)])
+        .expect("generation succeeds");
+
+    assert_eq!(report.accepted_episodes(), 0);
+    assert_eq!(report.dropped_episodes(), 2);
+    assert!(report.trajectories().is_empty());
+    assert!((report.drop_rate() - 1.0).abs() < f64::EPSILON);
+    assert_eq!(report.drops()[0].reason(), "incomplete");
+}
+
+// Fully-covered shape but with a surfaced conflict (conflicts = 1).
+fn covered_but_conflicted_signals() -> NavigationSignals {
+    NavigationSignals::new(4, 0, false, 1, 1, 0, 1, false, false, 0, 0)
+}
+
+#[test]
+fn generator_drops_an_episode_that_surfaces_a_conflict() {
+    let session = session_use_case(
+        vec![ask_action(), stop_action()],
+        vec![response("node:1", covered_but_conflicted_signals())],
+    );
+    let generator = GenerateWindowExpansionsUseCase::new(session, task_family());
+
+    let report = generator
+        .execute(&[episode("about:c", 5)])
+        .expect("generation succeeds");
+
+    // Coverage is complete, but the conflict blocks acceptance.
+    assert_eq!(report.accepted_episodes(), 0);
+    assert_eq!(report.dropped_episodes(), 1);
+    assert_eq!(report.drops()[0].reason(), "conflict_blocking");
+}
+
+#[derive(Debug)]
+struct FailingMcpExecutor;
+
+impl McpExecutor for FailingMcpExecutor {
+    fn execute(
+        &self,
+        _action: &OperatorAction,
+        _about: &AboutId,
+    ) -> Result<Observation, McpExecutorError> {
+        Err(McpExecutorError::Transport {
+            message: "kernel unreachable".to_string(),
+        })
+    }
+}
+
+#[test]
+fn generator_propagates_an_executor_failure() {
+    let session = RunOperatorSessionMultiStepUseCase::new(
+        Arc::new(ScriptedOperatorPolicy {
+            actions: Mutex::new(vec![ask_action()].into()),
+            fallback: stop_action(),
+        }),
+        Arc::new(FailingMcpExecutor),
+        CompositeActionContractValidator::default_strict(),
+        Arc::new(NoopSessionEventSink),
+    );
+    let generator = GenerateWindowExpansionsUseCase::new(session, task_family());
+
+    let error = generator
+        .execute(&[episode("about:e", 3)])
+        .expect_err("executor failure propagates");
+
+    assert!(matches!(
+        error,
+        operator_runtime_application::errors::generate_window_expansions_error::GenerateWindowExpansionsError::Session { index: 0, .. }
+    ));
 }

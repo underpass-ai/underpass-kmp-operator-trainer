@@ -7,4 +7,5 @@ pub mod episode_step_plan;
 pub mod episode_theme;
 pub mod stratum_key;
 pub mod synthetic_episode_spec;
+pub mod window_expansion_episode;
 pub mod window_expansion_spec;
