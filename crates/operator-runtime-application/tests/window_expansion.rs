@@ -628,3 +628,42 @@ fn generator_propagates_an_executor_failure() {
         operator_runtime_application::errors::generate_window_expansions_error::GenerateWindowExpansionsError::Session { index: 0, .. }
     ));
 }
+
+fn gold_episode(about: &str, expected: &[&str]) -> WindowExpansionEpisode {
+    episode(about, 5).with_expected_refs(expected.iter().map(|r| memory_ref(r)).collect())
+}
+
+#[test]
+fn generator_accepts_when_the_gold_period_set_is_retrieved() {
+    let session = session_use_case(
+        vec![ask_action(), stop_action()],
+        vec![response("node:1", covered_signals())],
+    );
+    let generator = GenerateWindowExpansionsUseCase::new(session, task_family());
+
+    let report = generator
+        .execute(&[gold_episode("about:g", &["node:1"])])
+        .expect("generation succeeds");
+
+    assert_eq!(report.accepted_episodes(), 1);
+    assert_eq!(report.dropped_episodes(), 0);
+}
+
+#[test]
+fn generator_drops_when_a_gold_ref_is_not_retrieved() {
+    let session = session_use_case(
+        vec![ask_action(), stop_action()],
+        vec![response("node:1", covered_signals())],
+    );
+    let generator = GenerateWindowExpansionsUseCase::new(session, task_family());
+
+    // node:2 is in the gold set but the session only ever retrieves node:1, so
+    // the gold gate rejects it even though the signals read as covered.
+    let report = generator
+        .execute(&[gold_episode("about:g", &["node:1", "node:2"])])
+        .expect("generation succeeds");
+
+    assert_eq!(report.accepted_episodes(), 0);
+    assert_eq!(report.dropped_episodes(), 1);
+    assert_eq!(report.drops()[0].reason(), "missing_gold_refs");
+}

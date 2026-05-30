@@ -74,12 +74,22 @@ impl GenerateWindowExpansionsUseCase {
             })?;
 
             let outcome = WindowExpansionOracle::verify(&transcript);
-            let conflict_blocking = transcript
-                .final_visible_state()
-                .coverage_deviation()
-                .conflict_blocking();
+            let final_state = transcript.final_visible_state();
+            let conflict_blocking = final_state.coverage_deviation().conflict_blocking();
+            // Gold is authoritative when present: keep the trajectory only if
+            // every expected period entry was actually retrieved. With no gold,
+            // fall back to the kernel's in-band coverage signal.
+            let gold_covered = episode
+                .expected_refs()
+                .iter()
+                .all(|memory_ref| final_state.knows_ref(memory_ref));
+            let covered = if episode.has_gold() {
+                gold_covered
+            } else {
+                outcome.is_covered()
+            };
 
-            if outcome.is_covered() && !conflict_blocking {
+            if covered && !conflict_blocking {
                 let episode_trajectories = ExpandSessionTranscriptUseCase::expand(
                     &request,
                     &transcript,
@@ -96,6 +106,7 @@ impl GenerateWindowExpansionsUseCase {
                     episode.about().as_str().to_string(),
                     outcome,
                     conflict_blocking,
+                    gold_covered,
                 ));
             }
         }

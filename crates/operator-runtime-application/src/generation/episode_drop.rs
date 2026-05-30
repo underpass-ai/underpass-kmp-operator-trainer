@@ -8,14 +8,21 @@ pub struct EpisodeDrop {
     about: String,
     outcome: WindowCoverageOutcome,
     conflict_blocking: bool,
+    gold_covered: bool,
 }
 
 impl EpisodeDrop {
-    pub fn new(about: String, outcome: WindowCoverageOutcome, conflict_blocking: bool) -> Self {
+    pub fn new(
+        about: String,
+        outcome: WindowCoverageOutcome,
+        conflict_blocking: bool,
+        gold_covered: bool,
+    ) -> Self {
         Self {
             about,
             outcome,
             conflict_blocking,
+            gold_covered,
         }
     }
 
@@ -31,12 +38,22 @@ impl EpisodeDrop {
         self.conflict_blocking
     }
 
+    /// Whether the episode's gold coverage set (if any) was fully retrieved.
+    /// Always true for episodes with no gold.
+    pub fn gold_covered(&self) -> bool {
+        self.gold_covered
+    }
+
     /// Why the episode was dropped: a surfaced conflict takes precedence (it
     /// would force an Escalate terminal, which a count-over-period corpus
-    /// excludes), otherwise the coverage shortfall the oracle reported.
+    /// excludes); then a gold-coverage miss (the window did not retrieve every
+    /// expected period entry); otherwise the coverage shortfall the oracle
+    /// reported from the kernel's signals.
     pub fn reason(&self) -> &'static str {
         if self.conflict_blocking {
             "conflict_blocking"
+        } else if !self.gold_covered {
+            "missing_gold_refs"
         } else {
             self.outcome.as_str()
         }
@@ -53,6 +70,7 @@ mod tests {
             "about:p".to_string(),
             WindowCoverageOutcome::Incomplete { remaining: 3 },
             false,
+            true,
         );
         assert_eq!(drop.about(), "about:p");
         assert_eq!(
@@ -60,12 +78,31 @@ mod tests {
             WindowCoverageOutcome::Incomplete { remaining: 3 }
         );
         assert!(!drop.conflict_blocking());
+        assert!(drop.gold_covered());
         assert_eq!(drop.reason(), "incomplete");
     }
 
     #[test]
+    fn a_gold_coverage_miss_reports_missing_gold_refs() {
+        // Signals said covered, but the gold period set was not fully retrieved.
+        let drop = EpisodeDrop::new(
+            "about:p".to_string(),
+            WindowCoverageOutcome::Complete,
+            false,
+            false,
+        );
+        assert!(!drop.gold_covered());
+        assert_eq!(drop.reason(), "missing_gold_refs");
+    }
+
+    #[test]
     fn a_surfaced_conflict_takes_precedence_in_the_reason() {
-        let drop = EpisodeDrop::new("about:p".to_string(), WindowCoverageOutcome::Complete, true);
+        let drop = EpisodeDrop::new(
+            "about:p".to_string(),
+            WindowCoverageOutcome::Complete,
+            true,
+            true,
+        );
         assert!(drop.conflict_blocking());
         assert_eq!(drop.reason(), "conflict_blocking");
     }
