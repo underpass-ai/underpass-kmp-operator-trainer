@@ -18,3 +18,4 @@ pub mod teacher_calibration_category_metric_dto;
 pub mod teacher_calibration_prediction_outcome_dto;
 pub mod teacher_calibration_report_dto;
 pub mod teacher_calibration_run_metadata_dto;
+pub mod window_expansion_episode_dto;

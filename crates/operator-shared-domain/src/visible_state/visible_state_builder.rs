@@ -60,6 +60,7 @@ impl VisibleStateBuilder {
             self.known_dimensions,
             self.active_cursor,
             self.budget,
+            crate::visible_state::coverage_deviation_snapshot::CoverageDeviationSnapshot::unknown(),
         )
     }
 }

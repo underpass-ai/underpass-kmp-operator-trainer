@@ -118,6 +118,8 @@ fn success_observation() -> Observation {
             vec![],
         )),
         observed_refs: vec![target()],
+        signals:
+            operator_shared_domain::visible_state::navigation_signals::NavigationSignals::empty(),
     }
 }
 

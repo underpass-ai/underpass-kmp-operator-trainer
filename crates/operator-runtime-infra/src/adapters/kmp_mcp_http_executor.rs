@@ -112,7 +112,7 @@ impl KmpMcpHttpExecutor {
             .structured_content()
             .map_err(|message| McpExecutorError::Protocol { message })?;
         let outcome = map_structured_content(tool, &structured).map_err(map_kmp_error)?;
-        Ok(tool_response(outcome))
+        Ok(tool_response(outcome, &structured))
     }
 
     fn call_read_tool(
@@ -267,11 +267,16 @@ fn tool_error_message(
         .unwrap_or_else(|| "MCP tool returned isError=true".to_string())
 }
 
-fn tool_response(outcome: ToolOutcome) -> Observation {
+fn tool_response(outcome: ToolOutcome, structured: &Value) -> Observation {
     let observed_refs = observed_refs_for(&outcome);
+    let signals = crate::adapters::mcp_navigation_signals::navigation_signals_from_structured(
+        structured,
+        &observed_refs,
+    );
     Observation::ToolResponse {
         outcome,
         observed_refs,
+        signals,
     }
 }
 
