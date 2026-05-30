@@ -12,6 +12,7 @@ pub enum EpisodeTheme {
     ProductDecision,
     MemoryTask,
     SmartWritingSession,
+    TemporalWindowExpansion,
 }
 
 impl EpisodeTheme {
@@ -23,6 +24,7 @@ impl EpisodeTheme {
             "product_decision" => Ok(Self::ProductDecision),
             "memory_task" => Ok(Self::MemoryTask),
             "smart_writing_session" => Ok(Self::SmartWritingSession),
+            "temporal_window_expansion" => Ok(Self::TemporalWindowExpansion),
             other => Err(DomainError::UnsupportedValue {
                 context: "episode_theme",
                 value: other.to_string(),
@@ -39,6 +41,7 @@ impl EpisodeTheme {
             Self::ProductDecision => "product_decision",
             Self::MemoryTask => "memory_task",
             Self::SmartWritingSession => "smart_writing_session",
+            Self::TemporalWindowExpansion => "temporal_window_expansion",
         }
     }
 }
@@ -59,5 +62,12 @@ mod tests {
     #[test]
     fn rejects_unknown_theme() {
         assert!(EpisodeTheme::parse("marketing").is_err());
+    }
+
+    #[test]
+    fn round_trips_temporal_window_expansion() {
+        let theme = EpisodeTheme::parse("temporal_window_expansion").unwrap();
+        assert_eq!(theme, EpisodeTheme::TemporalWindowExpansion);
+        assert_eq!(theme.as_str(), "temporal_window_expansion");
     }
 }

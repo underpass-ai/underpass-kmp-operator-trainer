@@ -7,5 +7,6 @@ pub mod kmp_mcp_stdio_executor;
 mod mcp_navigation_signals;
 pub mod ref_anonymization;
 pub mod stderr_session_event_sink;
+pub mod teacher_backed_operator_policy;
 pub mod vllm_openai_operator_policy;
 pub mod vllm_operator_config;

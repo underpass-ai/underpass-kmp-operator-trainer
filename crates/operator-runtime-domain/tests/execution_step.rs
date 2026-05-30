@@ -67,14 +67,16 @@ fn request() -> OperatorRequest {
 }
 
 #[test]
-fn execution_step_carries_action_and_observation() {
+fn execution_step_carries_action_observation_and_perceived_state() {
     let action = inspect_action();
     let observation = inspect_observation();
+    let perceived = VisibleState::assemble([target()], [], None, BudgetSnapshot::bounded(2, 4096));
 
-    let step = ExecutionStep::new(action.clone(), observation.clone());
+    let step = ExecutionStep::new(action.clone(), observation.clone(), perceived.clone());
 
     assert_eq!(step.action(), &action);
     assert_eq!(step.observation(), &observation);
+    assert_eq!(step.perceived_state(), &perceived);
 }
 
 #[test]

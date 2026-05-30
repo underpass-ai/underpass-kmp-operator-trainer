@@ -140,7 +140,10 @@ impl RunOperatorSessionMultiStepUseCase {
                 deviation = deviation.observing(signals, new_refs);
             }
             let coverage_deviation = deviation.snapshot();
-            steps.push(ExecutionStep::new(action, observation));
+            // `state` is still the state the policy perceived for this step
+            // (it is only advanced on the next line), so record it on the step
+            // as the decision context before folding the observation in.
+            steps.push(ExecutionStep::new(action, observation, state.clone()));
             state = state.observing(observed, budget_snapshot(budget), coverage_deviation);
         }
     }

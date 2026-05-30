@@ -781,6 +781,7 @@ dependencies = [
  "operator-shared-contract",
  "operator-shared-domain",
  "operator-shared-infra",
+ "operator-synthetic-application",
  "operator-synthetic-domain",
  "operator-synthetic-infra",
  "reqwest",
