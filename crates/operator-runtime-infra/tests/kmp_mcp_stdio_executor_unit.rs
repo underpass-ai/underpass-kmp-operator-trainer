@@ -61,6 +61,7 @@ fn executor_maps_successful_stdio_tool_response() {
         Observation::ToolResponse {
             outcome,
             observed_refs,
+            ..
         } => {
             assert_eq!(outcome.tool().as_str(), "kernel_inspect");
             assert_eq!(

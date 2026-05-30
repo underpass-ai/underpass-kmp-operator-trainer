@@ -5,4 +5,5 @@ pub mod operator_request;
 pub mod operator_session_id;
 pub mod outcome_class;
 pub mod session_outcome;
+pub mod session_transcript;
 pub mod terminal_reason;

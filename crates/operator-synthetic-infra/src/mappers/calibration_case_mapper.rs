@@ -116,6 +116,7 @@ mod tests {
                         calls_remaining: Some(3),
                         tokens_remaining: Some(1024),
                     },
+                    coverage_deviation: None,
                 },
                 prepared_action: None,
             },

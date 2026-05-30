@@ -1,1 +1,2 @@
+pub mod run_operator_session_multi_step_use_case;
 pub mod run_operator_session_single_step_use_case;

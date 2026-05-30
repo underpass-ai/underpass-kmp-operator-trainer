@@ -564,6 +564,7 @@ fn observation_json(observation: Option<&Observation>) -> Value {
         Some(Observation::ToolResponse {
             outcome,
             observed_refs,
+            ..
         }) => json!({
             "class": "tool_response",
             "tool": outcome.tool().as_str(),

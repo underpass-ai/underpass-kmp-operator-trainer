@@ -1,12 +1,14 @@
 use std::collections::BTreeSet;
 
 use operator_shared_contract::budget_snapshot_dto::BudgetSnapshotDto;
+use operator_shared_contract::coverage_deviation_snapshot_dto::CoverageDeviationSnapshotDto;
 use operator_shared_contract::visible_state_dto::VisibleStateDto;
 use operator_shared_domain::cursor::cursor::Cursor;
 use operator_shared_domain::value_objects::dimension_ref::DimensionRef;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
 use operator_shared_domain::visible_state::budget_field::BudgetField;
 use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
+use operator_shared_domain::visible_state::coverage_deviation_snapshot::CoverageDeviationSnapshot;
 use operator_shared_domain::visible_state::visible_state::VisibleState;
 
 use crate::mappers::cursor_mapper::CursorMapper;
@@ -34,7 +36,8 @@ impl VisibleStateMapper {
             known_dimensions,
             active_cursor,
             budget_to_domain(dto.budget),
-        ))
+        )
+        .with_coverage_deviation(coverage_deviation_to_domain(dto.coverage_deviation)))
     }
 
     pub fn to_dto(domain: &VisibleState) -> VisibleStateDto {
@@ -51,7 +54,35 @@ impl VisibleStateMapper {
                 .collect(),
             active_cursor: domain.active_cursor().map(CursorMapper::to_dto),
             budget: budget_to_dto(domain.budget()),
+            coverage_deviation: coverage_deviation_to_dto(domain.coverage_deviation()),
         }
+    }
+}
+
+fn coverage_deviation_to_domain(
+    dto: Option<CoverageDeviationSnapshotDto>,
+) -> CoverageDeviationSnapshot {
+    match dto {
+        Some(dto) => CoverageDeviationSnapshot::new(
+            dto.deviation_milli,
+            dto.saturated,
+            dto.conflict_blocking,
+        ),
+        None => CoverageDeviationSnapshot::unknown(),
+    }
+}
+
+fn coverage_deviation_to_dto(
+    domain: CoverageDeviationSnapshot,
+) -> Option<CoverageDeviationSnapshotDto> {
+    if domain == CoverageDeviationSnapshot::unknown() {
+        None
+    } else {
+        Some(CoverageDeviationSnapshotDto {
+            deviation_milli: domain.deviation_milli(),
+            saturated: domain.saturated(),
+            conflict_blocking: domain.conflict_blocking(),
+        })
     }
 }
 

@@ -4,6 +4,7 @@ pub mod kmp_mcp_http_executor;
 mod kmp_mcp_request_arguments;
 pub mod kmp_mcp_stdio_config;
 pub mod kmp_mcp_stdio_executor;
+mod mcp_navigation_signals;
 pub mod ref_anonymization;
 pub mod stderr_session_event_sink;
 pub mod vllm_openai_operator_policy;
