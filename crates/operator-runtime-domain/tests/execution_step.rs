@@ -72,11 +72,18 @@ fn execution_step_carries_action_observation_and_perceived_state() {
     let observation = inspect_observation();
     let perceived = VisibleState::assemble([target()], [], None, BudgetSnapshot::bounded(2, 4096));
 
-    let step = ExecutionStep::new(action.clone(), observation.clone(), perceived.clone());
+    let about = AboutId::parse("about:test").unwrap();
+    let step = ExecutionStep::new(
+        action.clone(),
+        observation.clone(),
+        perceived.clone(),
+        about.clone(),
+    );
 
     assert_eq!(step.action(), &action);
     assert_eq!(step.observation(), &observation);
     assert_eq!(step.perceived_state(), &perceived);
+    assert_eq!(step.about(), &about);
 }
 
 #[test]

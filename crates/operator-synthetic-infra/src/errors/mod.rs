@@ -1,3 +1,4 @@
 pub mod calibration_case_mapping_error;
+pub mod cross_about_episode_source_error;
 pub mod scenario_mapping_error;
 pub mod window_expansion_episode_source_error;

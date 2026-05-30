@@ -30,6 +30,7 @@ use operator_runtime_domain::session::operator_request::OperatorRequest;
 use operator_runtime_domain::session::outcome_class::OutcomeClass;
 use operator_runtime_domain::session::session_transcript::SessionTranscript;
 use operator_shared_domain::action::operator_action::OperatorAction;
+use operator_shared_domain::ids::about_id::AboutId;
 use operator_shared_domain::ids::step_id::StepId;
 use operator_shared_domain::ids::training_trajectory_id::TrainingTrajectoryId;
 use operator_shared_domain::trajectory::training_trajectory::TrainingTrajectory;
@@ -67,6 +68,7 @@ impl ExpandSessionTranscriptUseCase {
                 task_family,
                 step.perceived_state(),
                 step.action(),
+                step.about(),
             )?);
             index += 1;
         }
@@ -82,6 +84,7 @@ impl ExpandSessionTranscriptUseCase {
                 task_family,
                 transcript.final_visible_state(),
                 transcript.terminal_action(),
+                transcript.terminal_about(),
             )?);
         }
 
@@ -89,6 +92,7 @@ impl ExpandSessionTranscriptUseCase {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_trajectory(
     session: &str,
     index: usize,
@@ -96,6 +100,7 @@ fn build_trajectory(
     task_family: &TaskFamily,
     visible_state: &VisibleState,
     action: &OperatorAction,
+    about: &AboutId,
 ) -> Result<TrainingTrajectory, ExpandSessionTranscriptError> {
     let trajectory_id =
         TrainingTrajectoryId::parse(format!("{session}:{index:04}")).map_err(|err| {
@@ -111,7 +116,7 @@ fn build_trajectory(
     TrainingTrajectory::new(
         trajectory_id,
         step_id,
-        request.about().clone(),
+        about.clone(),
         request.mode(),
         task_family.clone(),
         request.goal().clone(),

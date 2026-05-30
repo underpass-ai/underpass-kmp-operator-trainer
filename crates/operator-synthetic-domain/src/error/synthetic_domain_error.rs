@@ -53,6 +53,12 @@ pub enum SyntheticDomainError {
     #[error("prepared calibration tool '{tool}' is not allowed in mode '{mode}'")]
     PreparedActionToolOutsideMode { mode: String, tool: String },
 
+    #[error("cross-about episode must contain at least one target about")]
+    EmptyCrossAboutTargets,
+
+    #[error("cross-about target about '{about}' must carry at least one gold entry")]
+    CrossAboutTargetMissingGold { about: String },
+
     #[error(transparent)]
     Shared(#[from] DomainError),
 }

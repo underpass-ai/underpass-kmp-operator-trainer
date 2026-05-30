@@ -28,6 +28,7 @@ use operator_shared_domain::mode::allowed_tools::AllowedTools;
 use operator_shared_domain::mode::operator_mode::OperatorMode;
 use operator_shared_domain::tool_arguments::inspect_arguments::InspectArguments;
 use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
+use operator_shared_domain::tool_arguments::wake_arguments::WakeArguments;
 use operator_shared_domain::tool_arguments::write_memory_arguments::WriteMemoryArguments;
 use operator_shared_domain::tool_outcomes::inspect_outcome::InspectOutcome;
 use operator_shared_domain::tool_outcomes::tool_outcome::ToolOutcome;
@@ -337,4 +338,175 @@ fn tool_error_is_recorded_and_fed_back_not_terminal() {
     assert_eq!(calls.load(Ordering::Relaxed), 2);
     // The first recorded step carries the tool error observation.
     assert!(transcript.steps()[0].observation().is_tool_error());
+}
+
+fn wake_action(about: &str) -> OperatorAction {
+    OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Wake(WakeArguments::new(
+        AboutId::parse(about).unwrap(),
+    ))))
+}
+
+/// Executor that records the `about` it was asked to scope each call to, so a
+/// test can assert the loop scopes reads to the about a `kernel_wake` switched
+/// into.
+#[derive(Debug)]
+struct RecordingExecutor {
+    observations: Mutex<VecDeque<Observation>>,
+    abouts: Arc<Mutex<Vec<AboutId>>>,
+    fallback: Observation,
+}
+
+impl McpExecutor for RecordingExecutor {
+    fn execute(
+        &self,
+        _action: &OperatorAction,
+        about: &AboutId,
+    ) -> Result<Observation, McpExecutorError> {
+        self.abouts.lock().unwrap().push(about.clone());
+        let mut queue = self.observations.lock().unwrap();
+        Ok(queue.pop_front().unwrap_or_else(|| self.fallback.clone()))
+    }
+}
+
+#[test]
+fn wakes_into_a_second_about_and_scopes_following_reads_to_it() {
+    let entry_about = AboutId::parse("about:eu").unwrap();
+    let us_about = AboutId::parse("about:us").unwrap();
+    let request = OperatorRequest::new(
+        OperatorSessionId::parse("session:xabout").unwrap(),
+        TrajectoryGoal::parse("Count workshops across EU and US.").unwrap(),
+        VisibleState::assemble(
+            [memory_ref("node:eu1")],
+            [],
+            None,
+            BudgetSnapshot::bounded(5, 4096),
+        ),
+        OperatorMode::Read,
+        AllowedTools::for_mode(OperatorMode::Read),
+        SessionBudget::new(5, 4096),
+        entry_about.clone(),
+        None,
+    )
+    .unwrap();
+
+    let abouts = Arc::new(Mutex::new(Vec::new()));
+    let use_case = RunOperatorSessionMultiStepUseCase::new(
+        Arc::new(ScriptedOperatorPolicy::new(
+            vec![
+                // EU: read a known ref, surfacing eu2.
+                inspect_action("node:eu1"),
+                // Switch to US; its observation surfaces us1.
+                wake_action("about:us"),
+                // US: read us1 (now known), surfacing us2.
+                inspect_action("node:us1"),
+                stop_action(),
+            ],
+            stop_action(),
+        )),
+        Arc::new(RecordingExecutor {
+            observations: Mutex::new(
+                vec![
+                    success_observation("node:eu2"),
+                    success_observation("node:us1"),
+                    success_observation("node:us2"),
+                ]
+                .into(),
+            ),
+            abouts: abouts.clone(),
+            fallback: success_observation("node:z"),
+        }),
+        CompositeActionContractValidator::default_strict(),
+        Arc::new(NoopSessionEventSink),
+    );
+
+    let transcript = use_case
+        .execute(&request)
+        .expect("cross-about session succeeds");
+
+    // The wake to a *different* about did not trip the about-equality invariant.
+    assert!(matches!(
+        transcript.outcome_class(),
+        OutcomeClass::Completed
+    ));
+    assert_eq!(transcript.step_count(), 3);
+
+    // Each step is attributed to the about current when it was chosen: the
+    // inspect and the wake under the entry about (the wake is recorded
+    // pre-switch), the post-wake inspect under the about the wake switched to.
+    assert_eq!(transcript.steps()[0].about(), &entry_about);
+    assert_eq!(transcript.steps()[1].about(), &entry_about);
+    assert_eq!(transcript.steps()[2].about(), &us_about);
+    assert_eq!(transcript.terminal_about(), &us_about);
+
+    // The executor scoped the post-wake read to the about the wake switched to.
+    assert_eq!(
+        abouts.lock().unwrap().as_slice(),
+        &[entry_about.clone(), entry_about.clone(), us_about.clone()]
+    );
+
+    // Refs from both abouts accumulated into one cross-about operand set.
+    let final_state = transcript.final_visible_state();
+    assert!(final_state.knows_ref(&memory_ref("node:eu1")));
+    assert!(final_state.knows_ref(&memory_ref("node:eu2")));
+    assert!(final_state.knows_ref(&memory_ref("node:us1")));
+    assert!(final_state.knows_ref(&memory_ref("node:us2")));
+}
+
+#[test]
+fn a_wake_that_errors_does_not_switch_the_about() {
+    let entry_about = AboutId::parse("about:eu").unwrap();
+    let request = OperatorRequest::new(
+        OperatorSessionId::parse("session:xabout-err").unwrap(),
+        TrajectoryGoal::parse("Count workshops across EU and US.").unwrap(),
+        VisibleState::assemble(
+            [memory_ref("node:eu1")],
+            [],
+            None,
+            BudgetSnapshot::bounded(5, 4096),
+        ),
+        OperatorMode::Read,
+        AllowedTools::for_mode(OperatorMode::Read),
+        SessionBudget::new(5, 4096),
+        entry_about.clone(),
+        None,
+    )
+    .unwrap();
+
+    let abouts = Arc::new(Mutex::new(Vec::new()));
+    let use_case = RunOperatorSessionMultiStepUseCase::new(
+        Arc::new(ScriptedOperatorPolicy::new(
+            vec![
+                // Wake fails (tool error): the about must NOT advance.
+                wake_action("about:us"),
+                // This inspect must still be scoped to the entry about.
+                inspect_action("node:eu1"),
+                stop_action(),
+            ],
+            stop_action(),
+        )),
+        Arc::new(RecordingExecutor {
+            observations: Mutex::new(
+                vec![error_observation(), success_observation("node:eu2")].into(),
+            ),
+            abouts: abouts.clone(),
+            fallback: success_observation("node:z"),
+        }),
+        CompositeActionContractValidator::default_strict(),
+        Arc::new(NoopSessionEventSink),
+    );
+
+    let transcript = use_case
+        .execute(&request)
+        .expect("cross-about session with a failed wake succeeds");
+
+    assert!(matches!(
+        transcript.outcome_class(),
+        OutcomeClass::Completed
+    ));
+    // The failed wake left the about unchanged, so both reads stayed in EU.
+    assert_eq!(
+        abouts.lock().unwrap().as_slice(),
+        &[entry_about.clone(), entry_about.clone()]
+    );
+    assert_eq!(transcript.terminal_about(), &entry_about);
 }

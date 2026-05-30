@@ -1,5 +1,6 @@
 pub mod composite_corpus_event_sink;
 pub mod jsonl_calibration_episode_source;
+pub mod jsonl_cross_about_episode_source;
 pub mod jsonl_scenario_source;
 pub mod jsonl_streaming_sink;
 pub mod jsonl_window_expansion_episode_source;

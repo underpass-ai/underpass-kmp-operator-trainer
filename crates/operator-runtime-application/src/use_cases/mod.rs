@@ -1,4 +1,5 @@
 pub mod expand_session_transcript_use_case;
+pub mod generate_cross_about_expansions_use_case;
 pub mod generate_window_expansions_use_case;
 pub mod run_operator_session_multi_step_use_case;
 pub mod run_operator_session_single_step_use_case;

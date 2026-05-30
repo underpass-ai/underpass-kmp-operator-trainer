@@ -9,6 +9,8 @@ use operator_runtime_domain::session::session_transcript::SessionTranscript;
 use operator_shared_domain::action::operator_action::OperatorAction;
 use operator_shared_domain::contract::action_contract_validator::ActionContractValidator;
 use operator_shared_domain::contract::composite_action_contract_validator::CompositeActionContractValidator;
+use operator_shared_domain::ids::about_id::AboutId;
+use operator_shared_domain::tool_arguments::tool_arguments::ToolArguments;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
 use operator_shared_domain::value_objects::task_family::TaskFamily;
 use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
@@ -68,11 +70,23 @@ impl RunOperatorSessionMultiStepUseCase {
         let mut budget = request.initial_budget();
         let mut steps: Vec<ExecutionStep> = Vec::new();
         let mut deviation = ContextCoverageDeviation::initial();
+        // The about the session is currently scoped to. A `kernel_wake` switches
+        // it to the about it names (see below), so a single session can span
+        // several abouts; in a single-about session it stays the request's
+        // about for every step.
+        let mut current_about = request.about().clone();
 
         loop {
-            let subject = build_subject(request, &state)?;
+            let subject = build_subject(request, &state, &current_about)?;
             let action = self.operator_policy.predict(&subject)?;
             self.event_sink.on_action_predicted(&action);
+
+            // A `kernel_wake` is the only action that may name an about other
+            // than the current one: it switches the session to that about. It is
+            // validated against the about it names (so the about-equality
+            // invariant holds — it equals itself), and once it succeeds that
+            // about becomes current for the following reads.
+            let wake_target = wake_target_about(&action).cloned();
 
             // A tool call with no remaining budget ends the session as
             // budget-exhausted. This is checked before contract validation so it
@@ -86,12 +100,14 @@ impl RunOperatorSessionMultiStepUseCase {
                     state,
                     budget,
                     started_at.elapsed(),
+                    current_about,
                 ));
             }
 
+            let action_about = wake_target.as_ref().unwrap_or(&current_about);
             if let Err(violations) =
                 self.validator
-                    .validate(&action, request.about(), request.mode(), &state)
+                    .validate(&action, action_about, request.mode(), &state)
             {
                 return Ok(SessionTranscript::contract_violation(
                     request.session_id().clone(),
@@ -101,6 +117,7 @@ impl RunOperatorSessionMultiStepUseCase {
                     state,
                     budget,
                     started_at.elapsed(),
+                    current_about,
                 ));
             }
 
@@ -112,6 +129,7 @@ impl RunOperatorSessionMultiStepUseCase {
                     state,
                     budget,
                     started_at.elapsed(),
+                    current_about,
                 ));
             }
 
@@ -123,11 +141,14 @@ impl RunOperatorSessionMultiStepUseCase {
                     state,
                     budget,
                     started_at.elapsed(),
+                    current_about,
                 ));
             }
 
-            // The remaining variant is a tool call with budget available.
-            let observation = self.mcp_executor.execute(&action, request.about())?;
+            // The remaining variant is a tool call with budget available. The
+            // current about scopes the navigation namespace; `kernel_wake`
+            // ignores it and uses the about it names instead.
+            let observation = self.mcp_executor.execute(&action, &current_about)?;
             self.event_sink.on_observation(&observation);
             budget = budget.try_consume_call()?;
             let observed = observed_refs(&observation);
@@ -140,11 +161,28 @@ impl RunOperatorSessionMultiStepUseCase {
                 deviation = deviation.observing(signals, new_refs);
             }
             let coverage_deviation = deviation.snapshot();
+            // A `kernel_wake` that actually returned (not a tool error) advances
+            // the current about for the next step; every other tool, and a wake
+            // that errored, keeps it. The step is recorded under the about that
+            // was current when the policy chose it (pre-switch), matching the
+            // perceived state it reasoned over.
+            let next_about = match &wake_target {
+                Some(target) if matches!(observation, Observation::ToolResponse { .. }) => {
+                    target.clone()
+                }
+                _ => current_about.clone(),
+            };
             // `state` is still the state the policy perceived for this step
             // (it is only advanced on the next line), so record it on the step
             // as the decision context before folding the observation in.
-            steps.push(ExecutionStep::new(action, observation, state.clone()));
+            steps.push(ExecutionStep::new(
+                action,
+                observation,
+                state.clone(),
+                current_about.clone(),
+            ));
             state = state.observing(observed, budget_snapshot(budget), coverage_deviation);
+            current_about = next_about;
         }
     }
 }
@@ -152,6 +190,7 @@ impl RunOperatorSessionMultiStepUseCase {
 fn build_subject(
     request: &OperatorRequest,
     state: &VisibleState,
+    current_about: &AboutId,
 ) -> Result<CalibrationSubject, RuntimeError> {
     let task_family =
         TaskFamily::parse("runtime.multi_step").map_err(|err| RuntimeError::SubjectBuild {
@@ -159,9 +198,10 @@ fn build_subject(
         })?;
     // `prepared_action` is a single-step copy mechanism; the multi-step loop
     // predicts every step from the evolving visible state, so it is never
-    // forwarded into the subject.
+    // forwarded into the subject. The subject's about is the *current* about so
+    // the teacher/policy reasons over the about the session is presently in.
     CalibrationSubject::new(
-        request.about().clone(),
+        current_about.clone(),
         request.mode(),
         task_family,
         request.goal().clone(),
@@ -172,6 +212,18 @@ fn build_subject(
     .map_err(|err| RuntimeError::SubjectBuild {
         message: err.to_string(),
     })
+}
+
+/// The about a `kernel_wake` switches the session to, or `None` for any other
+/// action. Only `kernel_wake` may name an about other than the current one.
+fn wake_target_about(action: &OperatorAction) -> Option<&AboutId> {
+    let OperatorAction::ToolCall(call) = action else {
+        return None;
+    };
+    match call.arguments() {
+        ToolArguments::Wake(args) => Some(args.about()),
+        _ => None,
+    }
 }
 
 fn observed_refs(observation: &Observation) -> Vec<MemoryRef> {

@@ -366,6 +366,7 @@ fn surfaces_a_trajectory_error_for_a_terminal_action_outside_the_mode() {
         VisibleState::assemble([], [], None, BudgetSnapshot::bounded(1, 4096)),
         SessionBudget::new(1, 4096),
         Duration::from_millis(1),
+        AboutId::parse("about:test").unwrap(),
     );
 
     let error = ExpandSessionTranscriptUseCase::expand(&request(5), &transcript, &task_family())
@@ -387,6 +388,7 @@ fn transcript_with(steps: Vec<ExecutionStep>, final_state: VisibleState) -> Sess
         final_state,
         SessionBudget::new(1, 4096),
         Duration::from_millis(5),
+        AboutId::parse("about:test").unwrap(),
     )
 }
 
@@ -400,6 +402,7 @@ fn step_with(observation: Observation) -> ExecutionStep {
             None,
             BudgetSnapshot::bounded(1, 4096),
         ),
+        AboutId::parse("about:test").unwrap(),
     )
 }
 
