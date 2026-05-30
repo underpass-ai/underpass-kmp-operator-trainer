@@ -51,13 +51,15 @@ Tool policy:
   tied to the goal.
 - Use `kernel_inspect` when a specific visible reference already contains the
   needed evidence.
-- Use `kernel_near` when a visible anchor needs local expansion.
+- Use `kernel_near` to gather the temporal neighborhood around an anchor entry,
+  and to expand a period: grow `before_entries` / `after_entries` to widen the
+  window until the period is covered.
 - Use `kernel_goto` when the goal asks to jump to a visible ref or cursor.
 - Use `kernel_trace` when the goal asks to trace why/how one memory point led
   to another.
-- Use `kernel_rewind` or `kernel_forward` to open a temporal window. They take
-  an explicit `cursor_anchor` timestamp, so they do not require an active cursor
-  already in the subject; an explicit anchor is enough to start widening.
+- Use `kernel_rewind` or `kernel_forward` to page through entries before/after a
+  cursor (they advance by page via `next_cursor`); for covering a period around
+  an element, prefer `kernel_near` with a growing window.
 - Use `stop` when the goal is already satisfied or no useful tool call remains.
 - Use `escalate` when the decision requires reasoning beyond bounded memory
   operation.
@@ -78,18 +80,20 @@ Context-coverage signal:
 
 Window-expansion policy (count, sum, list, or otherwise reason over a period):
 
-- A period goal is not answered until the whole period is covered. Open the
-  window with `kernel_rewind` (toward the period start) and `kernel_forward`
-  (toward the end), passing `cursor_key`, an explicit `cursor_anchor` timestamp,
-  and a `window` size.
+- A period goal is not answered until the whole period is covered around the
+  relevant element. Anchor on a visible entry of the period with `kernel_near`
+  and widen its temporal window: grow `before_entries` to reach back toward the
+  period's start and `after_entries` to reach forward toward its end.
+- The anchor is `near.anchor`, taken from a visible ref; if none of the period
+  is visible yet, surface one first (e.g. `kernel_ask`) and anchor on it.
 - If `deviation_milli` is still high after a move, widen the window — increase
-  `window` — and move again. This takes more than one tool call by design; do
-  not stop after a single move while the deviation is still falling.
-- Stop with `answer_ready` once `deviation_milli` is low or `saturated` is true.
+  `before_entries` and/or `after_entries` — and call `kernel_near` again on the
+  same anchor. This takes more than one tool call by design; do not stop after a
+  single move while the deviation is still falling.
+- Stop with `answer_ready` once `deviation_milli` is low or `saturated` is true:
+  the period is covered (each dimension's `returned` equals its `present`).
 - If `conflict_blocking` is true, escalate with `beyond_capability` instead of
   stopping.
-- When the goal pins an exact `window=N`, honor it for that move; otherwise grow
-  the window across moves until coverage is reached.
 
 Canonical action shapes:
 
@@ -102,7 +106,7 @@ Canonical action shapes:
 ```
 
 ```json
-{"kind":"tool_call","tool":"kernel_near","arguments":{"anchor":"about:id:node:anchor","dimensions":["agent:writer"],"limit":4}}
+{"kind":"tool_call","tool":"kernel_near","arguments":{"anchor":"about:id:node:anchor","dimensions":["agent:writer"],"before_entries":4,"after_entries":4}}
 ```
 
 ```json

@@ -45,6 +45,14 @@ pub fn near(args: &NearArguments, about: &AboutId) -> Value {
     if let Some(limit) = args.limit() {
         body["limit"] = json!({ "entries": limit.as_usize() });
     }
+    // The kernel's Near is driven by the temporal window (before/after entries),
+    // which is the lever for window expansion. Send it when set.
+    if args.before_entries() != 0 || args.after_entries() != 0 {
+        body["window"] = json!({
+            "before_entries": args.before_entries(),
+            "after_entries": args.after_entries(),
+        });
+    }
     body
 }
 

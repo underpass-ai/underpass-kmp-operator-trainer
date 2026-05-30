@@ -9,6 +9,13 @@ pub struct NearArguments {
     anchor: MemoryRef,
     dimensions: Vec<DimensionRef>,
     limit: Option<PositiveCount>,
+    // The temporal window around the anchor: how many entries to include before
+    // and after it. This is the kernel's `kernel_near` window knob and the lever
+    // for window expansion — growing `before_entries` reaches back toward a
+    // period's start, growing `after_entries` reaches forward toward its end.
+    // Both default to 0 (anchor-only).
+    before_entries: u32,
+    after_entries: u32,
 }
 
 impl NearArguments {
@@ -26,7 +33,19 @@ impl NearArguments {
             anchor,
             dimensions,
             limit,
+            before_entries: 0,
+            after_entries: 0,
         })
+    }
+
+    /// Set the temporal window (entries before/after the anchor). Window
+    /// expansion widens this until the period's evidence around the anchor is
+    /// covered.
+    #[must_use]
+    pub fn with_window(mut self, before_entries: u32, after_entries: u32) -> Self {
+        self.before_entries = before_entries;
+        self.after_entries = after_entries;
+        self
     }
 
     pub fn anchor(&self) -> &MemoryRef {
@@ -39,6 +58,14 @@ impl NearArguments {
 
     pub fn limit(&self) -> Option<PositiveCount> {
         self.limit
+    }
+
+    pub fn before_entries(&self) -> u32 {
+        self.before_entries
+    }
+
+    pub fn after_entries(&self) -> u32 {
+        self.after_entries
     }
 }
 
@@ -79,5 +106,18 @@ mod tests {
         let dim = DimensionRef::parse("temporal").unwrap();
         let args = NearArguments::new(anchor, vec![dim], None).unwrap();
         assert!(args.limit().is_none());
+    }
+
+    #[test]
+    fn window_defaults_to_zero_and_is_set_by_with_window() {
+        let anchor = MemoryRef::parse("node:1").unwrap();
+        let dim = DimensionRef::parse("temporal").unwrap();
+        let args = NearArguments::new(anchor, vec![dim], None).unwrap();
+        assert_eq!(args.before_entries(), 0);
+        assert_eq!(args.after_entries(), 0);
+
+        let widened = args.with_window(4, 6);
+        assert_eq!(widened.before_entries(), 4);
+        assert_eq!(widened.after_entries(), 6);
     }
 }

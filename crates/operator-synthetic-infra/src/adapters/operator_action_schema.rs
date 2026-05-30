@@ -135,6 +135,8 @@ fn near_arguments() -> Value {
         "anchor": string(),
         "dimensions": string_array(),
         "limit": nullable_integer(),
+        "before_entries": nullable_integer(),
+        "after_entries": nullable_integer(),
     }))
 }
 

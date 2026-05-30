@@ -9,7 +9,7 @@ Allowed action shapes:
 
 {"action":{"kind":"tool_call","tool":"kernel_ask","arguments":{"query":"..."}}}
 
-{"action":{"kind":"tool_call","tool":"kernel_near","arguments":{"anchor":"...","dimensions":["..."],"limit":12}}}
+{"action":{"kind":"tool_call","tool":"kernel_near","arguments":{"anchor":"...","dimensions":["..."],"before_entries":6,"after_entries":6}}}
 
 {"action":{"kind":"tool_call","tool":"kernel_goto","arguments":{"cursor":{"kind":"ref","target":"..."}}}}
 
@@ -37,7 +37,7 @@ Rules:
 - If `requested_move` is present, its `kind` is the tool to call and its payload must match the compact DTO for that tool.
 - If `requested_trace`, `inspection_request`, or `requested_stop` is present, choose `kernel_trace`, `kernel_inspect`, or `stop` respectively.
 - `kernel_ask` uses `arguments.query`; do not emit legacy `question`, `answer_policy`, or `dimensions` fields.
-- `kernel_near` uses `arguments.anchor`, optional `dimensions`, and optional `limit`.
+- `kernel_near` uses `arguments.anchor`, optional `dimensions`, and the temporal window `before_entries` / `after_entries` (entries before/after the anchor); `limit` is optional and not the expansion lever.
 - Prefer `candidate_ref_details` when choosing between writer candidates.
 - Every tool call must be bounded.
 - For tools with `arguments.about`, that value must equal the top-level `about` value exactly.
@@ -54,9 +54,8 @@ Context-coverage signal:
 - When `coverage_deviation` is absent, treat coverage as unknown (not yet covered).
 
 Window-expansion policy (count, sum, list, or otherwise reason over a time period):
-- A period goal is not answered until the whole period is covered. Open the temporal window with `kernel_rewind` (toward the period start) and `kernel_forward` (toward the end), passing `cursor_key`, an explicit `cursor_anchor` timestamp, and a `window` size.
-- You do not need an active cursor already in `visible_state`: an explicit `cursor_anchor` is enough to start widening. Take that `cursor_anchor` timestamp from a visible ref, from `known_refs`, or from a time named in the goal; do not invent one.
-- If `deviation_milli` is still high after a move, widen the window — increase `window` — and move again. This takes more than one tool call by design; do not stop after a single move while the deviation is still falling.
-- When a goal pins an exact `window=N`, use that size for that move; otherwise grow the `window` across moves until coverage is reached.
-- Stop with `answer_ready` once `deviation_milli` is low or `saturated` is true: the period's evidence is as covered as memory can show.
+- A period goal is not answered until the whole period is covered around the relevant element. Anchor on a visible entry of the period with `kernel_near` and widen its temporal window: grow `before_entries` to reach back toward the period's start and `after_entries` to reach forward toward its end.
+- The anchor is `near.anchor`: take it from a visible ref in `known_refs`, `last_observed_refs`, or `current_ref`; do not invent one. If no entry of the period is visible yet, surface one first (for example with `kernel_ask`), then anchor on it.
+- If `deviation_milli` is still high after a move, widen the window — increase `before_entries` and/or `after_entries` — and call `kernel_near` again on the same anchor. This takes more than one tool call by design; do not stop after a single move while the deviation is still falling.
+- Stop with `answer_ready` once `deviation_milli` is low or `saturated` is true: the period is covered — every dimension's `returned` equals its `present` count and there is nothing more to page.
 - If `conflict_blocking` is true, do not stop. Escalate with `beyond_capability`: resolving a contradiction is outside bounded memory operation.

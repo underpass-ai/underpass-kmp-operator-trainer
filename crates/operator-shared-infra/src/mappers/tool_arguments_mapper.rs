@@ -67,9 +67,12 @@ impl ToolArgumentsMapper {
                     Some(value) => Some(PositiveCount::parse(value, "kernel_near.limit")?),
                     None => None,
                 };
-                Ok(ToolArguments::Near(NearArguments::new(
-                    anchor, dimensions, limit,
-                )?))
+                Ok(ToolArguments::Near(
+                    NearArguments::new(anchor, dimensions, limit)?.with_window(
+                        near.before_entries.unwrap_or(0),
+                        near.after_entries.unwrap_or(0),
+                    ),
+                ))
             }
             KernelTool::Goto => {
                 let goto: GotoArgumentsDto = decode(&dto.arguments, "kernel_goto")?;
@@ -163,6 +166,8 @@ impl ToolArgumentsMapper {
                         .map(|d| d.as_str().to_string())
                         .collect(),
                     limit: n.limit().map(operator_shared_domain::value_objects::positive_count::PositiveCount::as_usize),
+                    before_entries: (n.before_entries() != 0).then_some(n.before_entries()),
+                    after_entries: (n.after_entries() != 0).then_some(n.after_entries()),
                 })
                 .map_err(|e| serde_err("kernel_near", &e))?,
             ),
