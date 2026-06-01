@@ -296,6 +296,16 @@ FORBIDDEN_MODEL_VISIBLE_STRING_PREFIXES = (
     "writer_read_context_",
 )
 
+# Request-hint keys project the target action into the model-facing
+# visible_state (see inject_target_request_fields). They are a deliberate
+# translation/replay-smoke aid, NOT legitimate decision-time context: a benchmark
+# model that sees them copies the answer instead of deciding. The clean check
+# forbids them by default and only allows them when injection was explicit (the
+# item carries REQUEST_HINTS_MARKER).
+FORBIDDEN_REQUEST_HINT_KEYS = {"inspection_request"}
+FORBIDDEN_REQUEST_HINT_KEY_PREFIXES = ("requested_", "prepared_")
+REQUEST_HINTS_MARKER = "request_hints_injected"
+
 CAP_TOOL_STOP = "tool:stop"
 CAP_TOOL_ESCALATE = "tool:escalate"
 CAP_TRACE_PAGE_CONTINUE = "trace.page:continue"
@@ -2923,6 +2933,9 @@ def assert_model_facing_visible_state_clean(item: dict[str, Any]) -> None:
     if not isinstance(state, dict):
         return
 
+    # Request hints are forbidden unless this item came through explicit
+    # injection (translation/replay smokes), which stamps REQUEST_HINTS_MARKER.
+    allow_request_hints = bool(item.get(REQUEST_HINTS_MARKER))
     findings: list[str] = []
 
     def walk(value: Any, path: str) -> None:
@@ -2930,6 +2943,8 @@ def assert_model_facing_visible_state_clean(item: dict[str, Any]) -> None:
             for key, child in value.items():
                 child_path = f"{path}.{key}"
                 if key in {"sources", "writer"}:
+                    findings.append(child_path)
+                elif not allow_request_hints and is_forbidden_request_hint_key(key):
                     findings.append(child_path)
                 walk(child, child_path)
             return
@@ -2956,8 +2971,19 @@ def is_forbidden_model_visible_string(value: str) -> bool:
     )
 
 
+def is_forbidden_request_hint_key(key: str) -> bool:
+    return key in FORBIDDEN_REQUEST_HINT_KEYS or key.startswith(
+        FORBIDDEN_REQUEST_HINT_KEY_PREFIXES
+    )
+
+
 def inject_target_request_fields(item: dict[str, Any]) -> dict[str, Any]:
     cloned = json.loads(json.dumps(item))
+    # Mark the item so the clean check allows the request hints this injects.
+    # The marker is a top-level item field, never part of the model-facing
+    # user_payload (to_sft_row selects only task_family/mode/about/goal/
+    # allowed_tools/visible_state), so it cannot itself leak.
+    cloned[REQUEST_HINTS_MARKER] = True
     state = cloned.setdefault("visible_state", {})
     if not isinstance(state, dict):
         return cloned
