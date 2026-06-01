@@ -17,4 +17,9 @@ pub struct VisibleStateDto {
     /// corpora predating the signal (treated as "unknown" / maximal deviation).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coverage_deviation: Option<CoverageDeviationSnapshotDto>,
+    /// Candidate sessions (abouts) the operator should cover for a cross-about
+    /// goal — what retrieval surfaced. Empty/absent for single-about sessions
+    /// (skip-if-empty keeps single-about wire snapshots unchanged).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidate_abouts: Vec<String>,
 }

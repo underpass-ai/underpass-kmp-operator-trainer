@@ -4,6 +4,7 @@ use operator_shared_contract::budget_snapshot_dto::BudgetSnapshotDto;
 use operator_shared_contract::coverage_deviation_snapshot_dto::CoverageDeviationSnapshotDto;
 use operator_shared_contract::visible_state_dto::VisibleStateDto;
 use operator_shared_domain::cursor::cursor::Cursor;
+use operator_shared_domain::ids::about_id::AboutId;
 use operator_shared_domain::value_objects::dimension_ref::DimensionRef;
 use operator_shared_domain::value_objects::memory_ref::MemoryRef;
 use operator_shared_domain::visible_state::budget_field::BudgetField;
@@ -31,13 +32,18 @@ impl VisibleStateMapper {
             Some(cursor_dto) => Some(CursorMapper::to_domain(cursor_dto)?),
             None => None,
         };
+        let mut candidate_abouts = Vec::with_capacity(dto.candidate_abouts.len());
+        for raw in &dto.candidate_abouts {
+            candidate_abouts.push(AboutId::parse(raw.clone())?);
+        }
         Ok(VisibleState::assemble(
             known_refs,
             known_dimensions,
             active_cursor,
             budget_to_domain(dto.budget),
         )
-        .with_coverage_deviation(coverage_deviation_to_domain(dto.coverage_deviation)))
+        .with_coverage_deviation(coverage_deviation_to_domain(dto.coverage_deviation))
+        .with_candidate_abouts(candidate_abouts))
     }
 
     pub fn to_dto(domain: &VisibleState) -> VisibleStateDto {
@@ -55,6 +61,11 @@ impl VisibleStateMapper {
             active_cursor: domain.active_cursor().map(CursorMapper::to_dto),
             budget: budget_to_dto(domain.budget()),
             coverage_deviation: coverage_deviation_to_dto(domain.coverage_deviation()),
+            candidate_abouts: domain
+                .candidate_abouts()
+                .iter()
+                .map(|a| a.as_str().to_string())
+                .collect(),
         }
     }
 }
@@ -107,5 +118,36 @@ fn budget_to_dto(domain: BudgetSnapshot) -> BudgetSnapshotDto {
             BudgetField::Unbounded => None,
             BudgetField::Bounded(value) => Some(value),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn candidate_abouts_round_trip_through_dto() {
+        let state = VisibleState::assemble([], [], None, BudgetSnapshot::bounded(5, 4096))
+            .with_candidate_abouts(vec![
+                AboutId::parse("ctrl-v01").unwrap(),
+                AboutId::parse("ctrl-v05").unwrap(),
+            ]);
+        let dto = VisibleStateMapper::to_dto(&state);
+        assert_eq!(dto.candidate_abouts, vec!["ctrl-v01", "ctrl-v05"]);
+
+        let back = VisibleStateMapper::to_domain(&dto).expect("round-trips");
+        assert_eq!(back.candidate_abouts().len(), 2);
+        assert_eq!(back.candidate_abouts()[0].as_str(), "ctrl-v01");
+        assert_eq!(back.candidate_abouts()[1].as_str(), "ctrl-v05");
+    }
+
+    #[test]
+    fn empty_candidate_abouts_is_omitted_from_the_wire() {
+        let state = VisibleState::assemble([], [], None, BudgetSnapshot::bounded(1, 4096));
+        let dto = VisibleStateMapper::to_dto(&state);
+        assert!(dto.candidate_abouts.is_empty());
+        // skip-if-empty keeps single-about wire snapshots unchanged.
+        let json = serde_json::to_string(&dto).expect("serializes");
+        assert!(!json.contains("candidate_abouts"), "must not appear: {json}");
     }
 }

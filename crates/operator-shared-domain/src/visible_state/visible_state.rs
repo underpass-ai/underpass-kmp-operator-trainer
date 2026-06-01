@@ -5,6 +5,7 @@
 use std::collections::BTreeSet;
 
 use crate::cursor::cursor::Cursor;
+use crate::ids::about_id::AboutId;
 use crate::value_objects::dimension_ref::DimensionRef;
 use crate::value_objects::memory_ref::MemoryRef;
 use crate::visible_state::budget_snapshot::BudgetSnapshot;
@@ -17,6 +18,11 @@ pub struct VisibleState {
     active_cursor: Option<Cursor>,
     budget: BudgetSnapshot,
     coverage_deviation: CoverageDeviationSnapshot,
+    // Candidate sessions (abouts) the operator should cover for a cross-about
+    // goal — what retrieval surfaced. Defaults empty; set via
+    // `with_candidate_abouts`. Preserved across `observing` so it stays in the
+    // operator's context for the whole session.
+    candidate_abouts: Vec<AboutId>,
 }
 
 impl VisibleState {
@@ -33,6 +39,7 @@ impl VisibleState {
             active_cursor,
             budget,
             coverage_deviation,
+            candidate_abouts: Vec::new(),
         }
     }
 
@@ -86,6 +93,21 @@ impl VisibleState {
         self.coverage_deviation
     }
 
+    /// The candidate sessions (abouts) the operator should cover, as surfaced by
+    /// retrieval. Empty for single-about sessions.
+    pub fn candidate_abouts(&self) -> &[AboutId] {
+        &self.candidate_abouts
+    }
+
+    /// Seed the candidate sessions the operator must cover for a cross-about
+    /// goal. Used by the cross-about compiler so the entry state carries the
+    /// session set the operator should wake.
+    #[must_use]
+    pub fn with_candidate_abouts(mut self, candidate_abouts: Vec<AboutId>) -> Self {
+        self.candidate_abouts = candidate_abouts;
+        self
+    }
+
     /// Override the coverage-deviation snapshot. Used by the wire mapper to
     /// thread a deserialized deviation into an assembled state.
     #[must_use]
@@ -118,6 +140,7 @@ impl VisibleState {
             active_cursor: self.active_cursor.clone(),
             budget,
             coverage_deviation,
+            candidate_abouts: self.candidate_abouts.clone(),
         }
     }
 }

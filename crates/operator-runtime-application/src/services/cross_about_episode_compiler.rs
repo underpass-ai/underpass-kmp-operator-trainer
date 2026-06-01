@@ -16,6 +16,7 @@ use operator_runtime_domain::budget::session_budget::SessionBudget;
 use operator_runtime_domain::error::runtime_domain_result::RuntimeDomainResult;
 use operator_runtime_domain::session::operator_request::OperatorRequest;
 use operator_runtime_domain::session::operator_session_id::OperatorSessionId;
+use operator_shared_domain::ids::about_id::AboutId;
 use operator_shared_domain::mode::allowed_tools::AllowedTools;
 use operator_shared_domain::mode::operator_mode::OperatorMode;
 use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
@@ -31,7 +32,17 @@ impl CrossAboutEpisodeCompiler {
         episode: &CrossAboutEpisode,
     ) -> RuntimeDomainResult<OperatorRequest> {
         let budget = SessionBudget::new(required_calls(episode), episode.token_budget());
-        let initial_state = VisibleState::assemble([], [], None, budget_snapshot(budget));
+        // Seed the candidate sessions retrieval surfaced — the abouts the
+        // operator must cover — so the entry state carries the session set
+        // (anonymized consistently downstream), making cross-about enumeration
+        // learnable rather than a guess.
+        let candidate_abouts: Vec<AboutId> = episode
+            .targets()
+            .iter()
+            .map(|target| target.about().clone())
+            .collect();
+        let initial_state = VisibleState::assemble([], [], None, budget_snapshot(budget))
+            .with_candidate_abouts(candidate_abouts);
         OperatorRequest::new(
             session_id,
             episode.goal().clone(),

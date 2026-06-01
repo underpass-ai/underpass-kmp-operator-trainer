@@ -2414,7 +2414,7 @@ def collect_about_values(item: dict[str, Any]) -> set[str]:
             for child_key, child in value.items():
                 if child_key == "about" and isinstance(child, str) and child:
                     values.add(child)
-                elif child_key == "abouts" and isinstance(child, list):
+                elif child_key in ("abouts", "candidate_abouts") and isinstance(child, list):
                     values.update(item for item in child if isinstance(item, str) and item)
                 walk(child, child_key)
             return
