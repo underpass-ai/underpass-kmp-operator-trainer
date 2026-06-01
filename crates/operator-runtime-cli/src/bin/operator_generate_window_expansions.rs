@@ -2,12 +2,16 @@
 //! with a teacher policy against a live (or replay-backed) KMP endpoint.
 //!
 //! For each authored episode the generator compiles a read session, lets the
-//! teacher demonstrate the expansion (`kernel_rewind`/`kernel_forward` widening
-//! until coverage), verifies coverage from the kernel's in-band signals, and
+//! teacher demonstrate the expansion (a bounded `kernel_wake`
+//! (`budget.max_entries`) followed by `kernel_near`/`kernel_forward`/
+//! `kernel_rewind` widening until the period is covered), verifies coverage from
+//! the gold period set (or the kernel's in-band signals when no gold), and
 //! expands the accepted transcripts into `{prompt, completion}` SFT rows. The
 //! window-expansion decision and the stop policy stay the teacher's job; the
-//! oracle only accepts or drops. A drop-rate gate fails the run if too many
-//! episodes stopped short of coverage.
+//! oracle only accepts or drops, and a real-expansion gate drops any session
+//! that never saw a non-zero `proof.frontier_size` (a trivial unbounded wake).
+//! A drop-rate gate fails the run if too many episodes stopped short of
+//! coverage.
 //!
 //! The teacher and the KMP executor are wired from flags, so the same binary
 //! runs against a live mTLS-fronted kernel (via the `rehydration-mcp` stdio
@@ -32,6 +36,7 @@ use operator_synthetic_infra::adapters::jsonl_window_expansion_episode_source::J
 use operator_synthetic_infra::adapters::openai_compatible_teacher_policy::OpenAiCompatibleTeacherPolicy;
 use operator_training_application::ports::dataset_writer::DatasetWriter;
 use operator_training_infra::adapters::jsonl_sft_dataset_writer::JsonlSftDatasetWriter;
+use operator_training_infra::adapters::jsonl_trajectory_dataset_writer::JsonlTrajectoryDatasetWriter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum KmpMcpTransport {
@@ -114,6 +119,25 @@ fn run(cli: &Cli) -> Result<(), String> {
         .execute(&episodes)
         .map_err(|err| err.to_string())?;
 
+    // Report and per-episode drops first, so a fully-dropped run is diagnosable
+    // (which gate rejected each episode) instead of failing on an opaque
+    // empty-dataset writer error downstream.
+    eprintln!(
+        "episodes={} accepted={} dropped={} drop_rate={:.3} trajectories={}",
+        report.total_episodes(),
+        report.accepted_episodes(),
+        report.dropped_episodes(),
+        report.drop_rate(),
+        report.trajectories().len(),
+    );
+    for drop in report.drops() {
+        eprintln!("  dropped about={} reason={}", drop.about(), drop.reason());
+    }
+
+    if report.trajectories().is_empty() {
+        return Err("no trajectories produced; every episode was dropped (see reasons above)".into());
+    }
+
     std::fs::create_dir_all(&cli.output_dir)
         .map_err(|err| format!("create output dir {}: {err}", cli.output_dir.display()))?;
     let dataset_path = cli.output_dir.join("window_expansions.sft.jsonl");
@@ -121,18 +145,14 @@ fn run(cli: &Cli) -> Result<(), String> {
         .write(report.trajectories())
         .map_err(|err| err.to_string())?;
 
-    eprintln!(
-        "episodes={} accepted={} dropped={} drop_rate={:.3} trajectories={} output={}",
-        report.total_episodes(),
-        report.accepted_episodes(),
-        report.dropped_episodes(),
-        report.drop_rate(),
-        report.trajectories().len(),
-        dataset_path.display(),
-    );
-    for drop in report.drops() {
-        eprintln!("  dropped about={} reason={}", drop.about(), drop.reason());
-    }
+    // Rich trajectory file (about/goal/mode/task_family/allowed_tools/
+    // visible_state/target_action) — the schema prepare_operator_sft_dataset.py
+    // --trajectories consumes to build the {system,user,assistant} chat dataset.
+    let trajectory_path = cli.output_dir.join("window_expansions_trajectories.jsonl");
+    JsonlTrajectoryDatasetWriter::new(&trajectory_path)
+        .write(report.trajectories())
+        .map_err(|err| err.to_string())?;
+    eprintln!("output={} trajectories_file={}", dataset_path.display(), trajectory_path.display());
 
     if report.drop_rate() > cli.max_drop_rate {
         return Err(format!(

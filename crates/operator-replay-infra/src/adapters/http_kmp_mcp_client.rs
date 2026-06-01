@@ -192,7 +192,13 @@ fn into_kmp_client_error(tool: KernelTool, err: &MappingError) -> KmpClientError
 // impedance gaps are documented in the module header.
 
 fn wake_request_arguments(args: &WakeArguments) -> Value {
-    json!({ "about": args.about().as_str() })
+    let mut body = json!({ "about": args.about().as_str() });
+    // Opt-in entry window: ask the kernel to cap wake's evidence to N and report
+    // the rest via proof.frontier_size, so the operator can near-expand the tail.
+    if let Some(window) = args.window() {
+        body["budget"] = json!({ "max_entries": window.as_usize() });
+    }
+    body
 }
 
 fn ask_request_arguments(args: &AskArguments) -> Value {

@@ -848,10 +848,13 @@ def model_facing_user_payload(
 
 def validate_tool_arguments(tool: str, arguments: dict[str, Any]) -> str | None:
     if tool == "kernel_wake":
-        key_error = exact_keys(arguments, {"about"}, set(), "action.arguments")
+        key_error = exact_keys(arguments, {"about"}, {"max_entries"}, "action.arguments")
         if key_error is not None:
             return key_error
-        return require_non_empty_string(arguments, "about", "action.arguments")
+        error = require_non_empty_string(arguments, "about", "action.arguments")
+        if error is not None:
+            return error
+        return validate_optional_positive_int(arguments, "max_entries", "action.arguments")
 
     if tool == "kernel_ask":
         key_error = exact_keys(arguments, {"query"}, set(), "action.arguments")
@@ -863,7 +866,7 @@ def validate_tool_arguments(tool: str, arguments: dict[str, Any]) -> str | None:
         key_error = exact_keys(
             arguments,
             {"anchor"},
-            {"dimensions", "limit"},
+            {"dimensions", "limit", "before_entries", "after_entries"},
             "action.arguments",
         )
         if key_error is not None:
@@ -875,7 +878,13 @@ def validate_tool_arguments(tool: str, arguments: dict[str, Any]) -> str | None:
             error = validate_string_array(arguments["dimensions"], "action.arguments.dimensions")
             if error is not None:
                 return error
-        return validate_optional_positive_int(arguments, "limit", "action.arguments")
+        error = validate_optional_positive_int(arguments, "limit", "action.arguments")
+        if error is not None:
+            return error
+        error = validate_optional_positive_int(arguments, "before_entries", "action.arguments")
+        if error is not None:
+            return error
+        return validate_optional_positive_int(arguments, "after_entries", "action.arguments")
 
     if tool == "kernel_goto":
         key_error = exact_keys(arguments, {"cursor"}, set(), "action.arguments")
@@ -1657,12 +1666,21 @@ def validate_string_map(value: Any, context: str) -> str | None:
 
 
 def is_bounded_tool_call(tool: str, arguments: dict[str, Any]) -> bool:
-    if tool in {"kernel_wake", "kernel_ask", "kernel_goto", "kernel_inspect"}:
+    if tool in {"kernel_ask", "kernel_goto", "kernel_inspect"}:
         return validate_tool_arguments(tool, arguments) is None
+    if tool == "kernel_wake":
+        # max_entries is the bounded working-window cap; keep it within a sane
+        # ceiling so a wake cannot request an unbounded surface.
+        return (
+            validate_tool_arguments(tool, arguments) is None
+            and optional_limit(arguments, ("max_entries",), 1024)
+        )
     if tool == "kernel_near":
         return (
             validate_tool_arguments(tool, arguments) is None
             and optional_limit(arguments, ("limit",), 64)
+            and optional_limit(arguments, ("before_entries",), 256)
+            and optional_limit(arguments, ("after_entries",), 256)
             and optional_string_array_limit(arguments, ("dimensions",), 64)
         )
     if tool in {"kernel_rewind", "kernel_forward"}:

@@ -33,6 +33,8 @@ Allowed action shapes:
 
 {"action":{"kind":"tool_call","tool":"kernel_wake","arguments":{"about":"..."}}}
 
+{"action":{"kind":"tool_call","tool":"kernel_wake","arguments":{"about":"...","max_entries":8}}}
+
 {"action":{"kind":"tool_call","tool":"kernel_ask","arguments":{"query":"..."}}}
 
 {"action":{"kind":"tool_call","tool":"kernel_ask","arguments":{"query":"..."}}}
@@ -40,6 +42,8 @@ Allowed action shapes:
 {"action":{"kind":"tool_call","tool":"kernel_ask","arguments":{"query":"..."}}}
 
 {"action":{"kind":"tool_call","tool":"kernel_near","arguments":{"anchor":"...","dimensions":["..."],"limit":12}}}
+
+{"action":{"kind":"tool_call","tool":"kernel_near","arguments":{"anchor":"...","after_entries":24}}}
 
 {"action":{"kind":"tool_call","tool":"kernel_goto","arguments":{"cursor":{"kind":"ref","target":"..."}}}}
 
@@ -67,7 +71,8 @@ Rules:
 - If `requested_move` is present, its `kind` is the tool to call and its payload must match the compact DTO for that tool.
 - If `requested_trace`, `inspection_request`, or `requested_stop` is present, choose `kernel_trace`, `kernel_inspect`, or `stop` respectively.
 - `kernel_ask` uses `arguments.query`; do not emit legacy `question`, `answer_policy`, or `dimensions` fields.
-- `kernel_near` uses `arguments.anchor`, optional `dimensions`, and optional `limit`.
+- `kernel_near` uses `arguments.anchor`, optional `dimensions`, optional `limit`, and optional `before_entries`/`after_entries` (the temporal window that widens coverage; temporal reads are not capped by `max_entries`).
+- `kernel_wake` accepts an optional `arguments.max_entries` cap on how many entries it surfaces; the entries beyond it become a coverage frontier. When `visible_state.coverage_deviation.deviation_milli` stays high after a wake (the period is not fully surfaced), widen coverage with `kernel_near` (`after_entries`/`before_entries`, anchored on a visible ref) and repeat until it falls to ~0, then `stop` with `answer_ready`.
 - Prefer `candidate_ref_details` when choosing between writer candidates.
 - Every tool call must be bounded.
 - For tools with `arguments.about`, that value must equal the top-level `about` value exactly.

@@ -48,9 +48,14 @@ impl ToolArgumentsMapper {
             }
             KernelTool::Wake => {
                 let wake: WakeArgumentsDto = decode(&dto.arguments, "kernel_wake")?;
-                Ok(ToolArguments::Wake(WakeArguments::new(AboutId::parse(
-                    wake.about,
-                )?)))
+                let mut args = WakeArguments::new(AboutId::parse(wake.about)?);
+                if let Some(max_entries) = wake.max_entries {
+                    args = args.with_window(PositiveCount::parse(
+                        max_entries as usize,
+                        "kernel_wake.max_entries",
+                    )?);
+                }
+                Ok(ToolArguments::Wake(args))
             }
             KernelTool::Ask => {
                 let ask: AskArgumentsDto = decode(&dto.arguments, "kernel_ask")?;
@@ -146,6 +151,9 @@ impl ToolArgumentsMapper {
                 KernelTool::Wake,
                 serde_json::to_value(WakeArgumentsDto {
                     about: w.about().as_str().to_string(),
+                    max_entries: w
+                        .window()
+                        .map(|count| u32::try_from(count.as_usize()).unwrap_or(u32::MAX)),
                 })
                 .map_err(|e| serde_err("kernel_wake", &e))?,
             ),

@@ -46,8 +46,22 @@ impl WakeResponseMapper {
                 surfaced_refs.push(memory_ref);
             }
         }
-        Ok(WakeOutcome::new(summary, surfaced_refs))
+        let frontier_size = proof_frontier_size(structured);
+        Ok(WakeOutcome::new(summary, surfaced_refs).with_frontier_size(frontier_size))
     }
+}
+
+/// The unsurfaced tail size the kernel reports in `proof.frontier_size`.
+/// Non-zero only when wake ran with an opt-in entry window (the withheld sources
+/// become `proof.missing`, whose count is the frontier). Absent/zero = the
+/// packet surfaced the complete about.
+fn proof_frontier_size(structured: &Value) -> usize {
+    let raw = structured
+        .get("proof")
+        .and_then(|proof| proof.get("frontier_size"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    usize::try_from(raw).unwrap_or(usize::MAX)
 }
 
 fn collect_causal_spine_refs(structured: &Value) -> Result<Vec<MemoryRef>, MappingError> {
@@ -214,6 +228,36 @@ mod tests {
         assert_eq!(outcome.surfaced_refs().len(), 2);
         assert!(refs.contains(&"wkshop-01"));
         assert!(refs.contains(&"decoy-eu-1"));
+    }
+
+    #[test]
+    fn reads_proof_frontier_size_as_the_unsurfaced_tail() {
+        // An opt-in windowed wake: proof.frontier_size carries the withheld tail
+        // the operator must near-expand to reach.
+        let value: Value = serde_json::json!({
+            "summary": "Objective: count\nStatus: ACTIVE",
+            "wake": {"causal_spine": []},
+            "proof": {
+                "evidence": [
+                    {"id": "d:wkshop-01", "source": "wkshop-01", "supports": ["wkshop-01"], "text": "#1"}
+                ],
+                "frontier_size": 7
+            }
+        });
+
+        let outcome = WakeResponseMapper::to_outcome(&value).expect("maps");
+        assert_eq!(outcome.frontier_size(), 7, "the withheld tail is surfaced");
+    }
+
+    #[test]
+    fn frontier_size_defaults_to_zero_when_absent() {
+        let value: Value = serde_json::json!({
+            "summary": "Objective: x\nStatus: ACTIVE",
+            "wake": {"causal_spine": []}
+        });
+
+        let outcome = WakeResponseMapper::to_outcome(&value).expect("maps");
+        assert_eq!(outcome.frontier_size(), 0, "unbounded wake has no frontier");
     }
 
     #[test]

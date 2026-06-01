@@ -78,6 +78,7 @@ mod tests {
             WindowCoverageOutcome::Incomplete { remaining: 1 },
             false,
             true,
+            true,
         )];
         let report = GenerationReport::new(Vec::new(), drops, 3);
         assert_eq!(report.accepted_episodes(), 3);

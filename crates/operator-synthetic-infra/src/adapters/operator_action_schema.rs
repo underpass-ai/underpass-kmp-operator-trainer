@@ -121,6 +121,7 @@ fn vllm_escalate_action() -> Value {
 fn wake_arguments() -> Value {
     object(json!({
         "about": string(),
+        "max_entries": nullable_integer(),
     }))
 }
 

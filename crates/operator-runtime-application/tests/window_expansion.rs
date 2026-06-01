@@ -536,9 +536,14 @@ fn episode(about: &str, max_iterations: usize) -> WindowExpansionEpisode {
 
 #[test]
 fn generator_accepts_a_covered_episode_into_trajectories() {
+    // A bounded wake leaves a tail (frontier>0); the operator expands once and
+    // the final move reads fully covered, so the episode is accepted.
     let session = session_use_case(
-        vec![ask_action(), stop_action()],
-        vec![response("node:1", covered_signals())],
+        vec![ask_action(), inspect_action("node:1"), stop_action()],
+        vec![
+            response("node:1", signals(1, false, 3)),
+            response("node:2", covered_signals()),
+        ],
     );
     let generator = GenerateWindowExpansionsUseCase::new(session, task_family());
 
@@ -548,15 +553,16 @@ fn generator_accepts_a_covered_episode_into_trajectories() {
 
     assert_eq!(report.accepted_episodes(), 1);
     assert_eq!(report.dropped_episodes(), 0);
-    // One ask step plus the terminal stop.
-    assert_eq!(report.trajectories().len(), 2);
+    // Two read steps plus the terminal stop.
+    assert_eq!(report.trajectories().len(), 3);
     assert!(report.drop_rate().abs() < f64::EPSILON);
 }
 
 #[test]
 fn generator_drops_episodes_that_never_reach_coverage() {
     // Empty action queue + stop fallback: every episode stops immediately with
-    // no temporal move, so the oracle reports it uncovered and it is dropped.
+    // no read at all, so it never opens a bounded window and never sees a
+    // frontier — the expansion gate drops it.
     let session = session_use_case(vec![], vec![]);
     let generator = GenerateWindowExpansionsUseCase::new(session, task_family());
 
@@ -568,7 +574,28 @@ fn generator_drops_episodes_that_never_reach_coverage() {
     assert_eq!(report.dropped_episodes(), 2);
     assert!(report.trajectories().is_empty());
     assert!((report.drop_rate() - 1.0).abs() < f64::EPSILON);
-    assert_eq!(report.drops()[0].reason(), "incomplete");
+    assert_eq!(report.drops()[0].reason(), "no_expansion_demonstrated");
+}
+
+#[test]
+fn generator_drops_a_trivial_unbounded_wake_even_when_gold_is_covered() {
+    // The wake was never bounded: a single covered observation (frontier 0)
+    // surfaces the gold entry outright. Coverage holds but no expansion was
+    // demonstrated, so the gate drops it rather than teaching "just wake".
+    let session = session_use_case(
+        vec![ask_action(), stop_action()],
+        vec![response("node:1", covered_signals())],
+    );
+    let generator = GenerateWindowExpansionsUseCase::new(session, task_family());
+
+    let report = generator
+        .execute(&[gold_episode("about:t", &["node:1"])])
+        .expect("generation succeeds");
+
+    assert_eq!(report.accepted_episodes(), 0);
+    assert_eq!(report.dropped_episodes(), 1);
+    assert!(report.trajectories().is_empty());
+    assert_eq!(report.drops()[0].reason(), "no_expansion_demonstrated");
 }
 
 // Fully-covered shape but with a surfaced conflict (conflicts = 1).
@@ -638,14 +665,20 @@ fn gold_episode(about: &str, expected: &[&str]) -> WindowExpansionEpisode {
 
 #[test]
 fn generator_accepts_when_the_gold_period_set_is_retrieved() {
+    // The bounded wake surfaces node:1 and reports a tail (frontier>0); only
+    // after expanding does the gold entry node:2 come into view. Both the
+    // expansion gate (frontier seen) and the gold gate (node:2 retrieved) pass.
     let session = session_use_case(
-        vec![ask_action(), stop_action()],
-        vec![response("node:1", covered_signals())],
+        vec![ask_action(), inspect_action("node:1"), stop_action()],
+        vec![
+            response("node:1", signals(1, false, 3)),
+            response("node:2", covered_signals()),
+        ],
     );
     let generator = GenerateWindowExpansionsUseCase::new(session, task_family());
 
     let report = generator
-        .execute(&[gold_episode("about:g", &["node:1"])])
+        .execute(&[gold_episode("about:g", &["node:2"])])
         .expect("generation succeeds");
 
     assert_eq!(report.accepted_episodes(), 1);

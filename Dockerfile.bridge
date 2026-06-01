@@ -20,7 +20,8 @@ RUN cargo build --locked --release \
     -p operator-runtime-cli \
     --bin operator_session_run \
     --bin operator_generate_window_expansions \
-    --bin operator_generate_cross_about_expansions
+    --bin operator_generate_cross_about_expansions \
+    --bin operator_window_freerun
 
 # rehydration-mcp from the vendored kernel source. The kernel build needs protoc
 # and the kernel's own vendor/ dir (it patches async-nats to ./vendor/async-nats).
@@ -41,6 +42,7 @@ RUN apt-get update \
 COPY --from=operator-builder /workspace/target/release/operator_session_run /usr/local/bin/operator-session-run
 COPY --from=operator-builder /workspace/target/release/operator_generate_window_expansions /usr/local/bin/operator-generate-window-expansions
 COPY --from=operator-builder /workspace/target/release/operator_generate_cross_about_expansions /usr/local/bin/operator-generate-cross-about-expansions
+COPY --from=operator-builder /workspace/target/release/operator_window_freerun /usr/local/bin/operator-window-freerun
 COPY --from=mcp-builder /kernel/target/release/rehydration-mcp /usr/local/bin/rehydration-mcp
 
 # Rootless runtime: never run as root.

@@ -36,6 +36,14 @@ pub struct VllmOpenAiOperatorPolicy {
     client: Client,
     max_tokens: u32,
     system_prompt: String,
+    /// When set, rewrite the subject into the model-facing shape the Python SFT
+    /// prep pipeline produces (`prepare_operator_sft_dataset.py`): force this
+    /// `task_family` and add the derived `visible_state.operator_state`. Needed
+    /// to serve a model TRAINED on prepared subjects through the live multi-step
+    /// loop (whose raw subject carries `runtime.multi_step` and no
+    /// `operator_state`); `None` passes scenario subjects (already prepared)
+    /// through untouched.
+    model_facing_task_family: Option<String>,
 }
 
 impl VllmOpenAiOperatorPolicy {
@@ -77,7 +85,17 @@ impl VllmOpenAiOperatorPolicy {
             client,
             max_tokens,
             system_prompt: DEFAULT_SYSTEM_PROMPT.to_string(),
+            model_facing_task_family: None,
         }
+    }
+
+    /// Serve a model trained on prepared subjects through the live loop: force
+    /// `task_family` and synthesize `visible_state.operator_state` so the served
+    /// subject byte-matches the SFT training format (train/serve parity).
+    #[must_use]
+    pub fn with_model_facing_task_family(mut self, task_family: impl Into<String>) -> Self {
+        self.model_facing_task_family = Some(task_family.into());
+        self
     }
 
     pub fn for_testing() -> Self {
@@ -102,7 +120,7 @@ impl VllmOpenAiOperatorPolicy {
         &self,
         subject: &CalibrationSubject,
     ) -> Result<Value, OperatorPolicyError> {
-        let user_prompt = Self::user_prompt(subject)?;
+        let user_prompt = self.user_prompt(subject)?;
         Ok(json!({
             "model": self.model_id,
             "messages": [
@@ -146,17 +164,59 @@ impl VllmOpenAiOperatorPolicy {
         format!("{trimmed}/chat/completions")
     }
 
-    fn user_prompt(subject: &CalibrationSubject) -> Result<String, OperatorPolicyError> {
+    fn user_prompt(&self, subject: &CalibrationSubject) -> Result<String, OperatorPolicyError> {
         let subject_dto = CalibrationSubjectMapper::to_dto(subject);
-        let value =
+        let mut value =
             serde_json::to_value(&subject_dto).map_err(|err| OperatorPolicyError::Protocol {
                 message: format!("serialize calibration subject: {err}"),
             })?;
+        if let Some(task_family) = &self.model_facing_task_family {
+            apply_model_facing_subject(&mut value, task_family);
+        }
         serde_json::to_string(&sort_json_value(value)).map_err(|err| {
             OperatorPolicyError::Protocol {
                 message: format!("serialize calibration subject: {err}"),
             }
         })
+    }
+}
+
+/// Rewrite a raw serving subject into the SFT-prepared model-facing shape: force
+/// `task_family` and synthesize `visible_state.operator_state` exactly as
+/// `prepare_operator_sft_dataset.py::add_operator_state_features` does for a
+/// trajectory whose visible state carries no `last_tool`/`last_observed_refs`
+/// (so `navigation_phase` is `start`, `last_tool` is `none`, and the only live
+/// field is `known_ref_count`).
+fn apply_model_facing_subject(value: &mut Value, task_family: &str) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    object.insert(
+        "task_family".to_string(),
+        Value::String(task_family.to_string()),
+    );
+    if let Some(state) = object
+        .get_mut("visible_state")
+        .and_then(Value::as_object_mut)
+        && !state.contains_key("operator_state")
+    {
+        let known_ref_count = state
+            .get("known_refs")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
+        state.insert(
+            "operator_state".to_string(),
+            json!({
+                "candidate_detail_count": 0,
+                "candidate_ref_count": 0,
+                "has_candidate_details": false,
+                "has_observed_refs": false,
+                "known_ref_count": known_ref_count,
+                "last_observed_ref_count": 0,
+                "last_tool": "none",
+                "navigation_phase": "start",
+            }),
+        );
     }
 }
 

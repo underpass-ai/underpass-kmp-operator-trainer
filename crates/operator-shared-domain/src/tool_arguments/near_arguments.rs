@@ -1,4 +1,3 @@
-use crate::error::domain_error::DomainError;
 use crate::error::domain_result::DomainResult;
 use crate::value_objects::dimension_ref::DimensionRef;
 use crate::value_objects::memory_ref::MemoryRef;
@@ -19,16 +18,16 @@ pub struct NearArguments {
 }
 
 impl NearArguments {
+    /// `dimensions` is optional (matching the documented `kernel_near` contract
+    /// and the kernel itself): an empty list means "all temporal dimensions" —
+    /// the natural scope for a single-timeline about, and what the kernel reads
+    /// when no dimension selection is sent. A non-empty list scopes the near to
+    /// those dimensions.
     pub fn new(
         anchor: MemoryRef,
         dimensions: Vec<DimensionRef>,
         limit: Option<PositiveCount>,
     ) -> DomainResult<Self> {
-        if dimensions.is_empty() {
-            return Err(DomainError::EmptyValue {
-                context: "near_arguments.dimensions",
-            });
-        }
         Ok(Self {
             anchor,
             dimensions,
@@ -89,15 +88,13 @@ mod tests {
     }
 
     #[test]
-    fn refuses_empty_dimensions() {
+    fn allows_empty_dimensions_as_an_all_dimension_near() {
+        // Empty dimensions means "all temporal dimensions" — the kernel reads
+        // every dimension when no selection is sent, and the documented
+        // kernel_near contract lists dimensions as optional.
         let anchor = MemoryRef::parse("node:1").unwrap();
-        let err = NearArguments::new(anchor, vec![], None).unwrap_err();
-        assert!(matches!(
-            err,
-            DomainError::EmptyValue {
-                context: "near_arguments.dimensions"
-            }
-        ));
+        let args = NearArguments::new(anchor, vec![], None).unwrap();
+        assert!(args.dimensions().is_empty());
     }
 
     #[test]
