@@ -1,0 +1,51 @@
+# Operator runtime image WITH the rehydration-mcp KMP bridge bundled.
+#
+# The generator's stdio executor reaches the kernel by spawning `rehydration-mcp`
+# as a subprocess (it sets REHYDRATION_KERNEL_GRPC_ENDPOINT and speaks JSON-RPC
+# over stdin/stdout), so that binary must live on PATH in this image. It is built
+# from the kernel source vendored at vendor/rehydration-kernel — a buildah Job
+# hostPath-mounts both repos from the single node and copies them into the build
+# context, so no GitHub token or push is needed.
+#
+# Ships three operator binaries (session runner + window-expansion generator +
+# cross-about generator) and rehydration-mcp. Rootless: the final stage runs as a
+# non-root system user. A Job selects the binary via its `command`.
+
+FROM rust:1.90.0-bookworm AS operator-builder
+WORKDIR /workspace
+COPY Cargo.toml Cargo.lock ./
+COPY api ./api
+COPY crates ./crates
+RUN cargo build --locked --release \
+    -p operator-runtime-cli \
+    --bin operator_session_run \
+    --bin operator_generate_window_expansions \
+    --bin operator_generate_cross_about_expansions
+
+# rehydration-mcp from the vendored kernel source. The kernel build needs protoc
+# and the kernel's own vendor/ dir (it patches async-nats to ./vendor/async-nats).
+FROM rust:1.90.0-bookworm AS mcp-builder
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /kernel
+COPY vendor/rehydration-kernel/ ./
+RUN cargo build --locked --release -p rehydration-mcp
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser
+
+COPY --from=operator-builder /workspace/target/release/operator_session_run /usr/local/bin/operator-session-run
+COPY --from=operator-builder /workspace/target/release/operator_generate_window_expansions /usr/local/bin/operator-generate-window-expansions
+COPY --from=operator-builder /workspace/target/release/operator_generate_cross_about_expansions /usr/local/bin/operator-generate-cross-about-expansions
+COPY --from=mcp-builder /kernel/target/release/rehydration-mcp /usr/local/bin/rehydration-mcp
+
+# Rootless runtime: never run as root.
+USER appuser
+
+# Default to the session runner; generation Jobs override `command`. The
+# generators' stdio executor spawns /usr/local/bin/rehydration-mcp.
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/operator-session-run"]
