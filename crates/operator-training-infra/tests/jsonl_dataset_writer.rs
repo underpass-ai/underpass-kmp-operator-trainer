@@ -7,6 +7,8 @@ use std::io::Write as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use operator_shared_domain::action::operator_action::OperatorAction;
+use operator_shared_domain::action::stop_action::StopAction;
+use operator_shared_domain::action::stop_reason::StopReason;
 use operator_shared_domain::action::tool_call_action::ToolCallAction;
 use operator_shared_domain::ids::about_id::AboutId;
 use operator_shared_domain::ids::step_id::StepId;
@@ -22,6 +24,7 @@ use operator_shared_domain::visible_state::budget_snapshot::BudgetSnapshot;
 use operator_shared_domain::visible_state::visible_state::VisibleState;
 use operator_training_application::ports::dataset_writer::DatasetWriter;
 use operator_training_infra::adapters::jsonl_sft_dataset_writer::JsonlSftDatasetWriter;
+use operator_training_infra::adapters::jsonl_trajectory_dataset_writer::JsonlTrajectoryDatasetWriter;
 
 static SEQ: AtomicU64 = AtomicU64::new(1);
 
@@ -57,6 +60,112 @@ fn inspect_trajectory(traj: &str, family: &str, target_ref: &str) -> TrainingTra
         action,
     )
     .unwrap()
+}
+
+fn stop_trajectory(traj: &str, answer: &str, evidence_ref: &str) -> TrainingTrajectory {
+    let evidence = MemoryRef::parse(evidence_ref).unwrap();
+    let visible = VisibleState::assemble(
+        [evidence.clone()],
+        std::iter::empty(),
+        None,
+        BudgetSnapshot::unbounded(),
+    );
+    let action = OperatorAction::Stop(
+        StopAction::new(
+            StopReason::AnswerReady,
+            Some(answer.to_string()),
+            vec![evidence],
+        )
+        .unwrap(),
+    );
+    TrainingTrajectory::new(
+        TrainingTrajectoryId::parse(traj).unwrap(),
+        StepId::parse("step:stop").unwrap(),
+        AboutId::parse("about:1").unwrap(),
+        OperatorMode::Read,
+        TaskFamily::parse("runtime.cross_about_count").unwrap(),
+        operator_shared_domain::value_objects::trajectory_goal::TrajectoryGoal::parse(
+            "Count workshops across the venues in the period.",
+        )
+        .unwrap(),
+        AllowedTools::for_mode(OperatorMode::Read),
+        visible,
+        action,
+    )
+    .unwrap()
+}
+
+#[test]
+fn training_user_context_does_not_leak_the_target_answer() {
+    // The answer (the count derivation) is the training TARGET — it must live
+    // only in target_action (the assistant message), never in the user-facing
+    // context the model conditions on. This guards against context leakage that
+    // would let the student copy the answer instead of learning the policy.
+    const SENTINEL: &str = "SENTINEL-LEAK-CHECK-42-WORKSHOPS";
+    let path = tmp_path("no-leak");
+    JsonlTrajectoryDatasetWriter::new(&path)
+        .write(&[stop_trajectory("traj:stop", SENTINEL, "node:1")])
+        .expect("write");
+    let body = fs::read_to_string(&path).expect("readable");
+    let row: serde_json::Value = serde_json::from_str(body.lines().next().unwrap()).unwrap();
+
+    // The answer is present where it belongs: the assistant-bound target action.
+    assert_eq!(row["target_action"]["answer"], SENTINEL);
+
+    // Reconstruct exactly the user-facing payload the SFT-prep pipeline builds
+    // (task_family/mode/about/goal/allowed_tools/visible_state — never
+    // target_action) and assert the answer does not leak into it.
+    let user_payload = serde_json::json!({
+        "task_family": row["task_family"],
+        "mode": row["mode"],
+        "about": row["about"],
+        "goal": row["goal"],
+        "allowed_tools": row["allowed_tools"],
+        "visible_state": row["visible_state"],
+    });
+    let user_str = serde_json::to_string(&user_payload).unwrap();
+    assert!(
+        !user_str.contains(SENTINEL),
+        "target answer leaked into the model-facing user context: {user_str}"
+    );
+    // No stray action/answer fields smuggled inside the visible_state.
+    assert!(row["visible_state"].get("target_action").is_none());
+    assert!(row["visible_state"].get("answer").is_none());
+    assert!(row["visible_state"].get("requested_stop").is_none());
+}
+
+#[test]
+fn trajectory_writer_emits_rich_schema_with_about_goal_and_target_action() {
+    // The rich trajectory writer carries the fields the Python SFT-prep pipeline
+    // needs (about/goal/mode/task_family/allowed_tools/target_action), unlike the
+    // thin {prompt,completion} SFT writer.
+    let path = tmp_path("trajectory");
+    let writer = JsonlTrajectoryDatasetWriter::new(&path);
+    let trajectories = vec![
+        inspect_trajectory("traj:1", "runtime.cross_about_count", "node:1"),
+        inspect_trajectory("traj:2", "runtime.cross_about_count", "node:2"),
+    ];
+
+    let outcome = writer.write(&trajectories).expect("write");
+
+    let body = fs::read_to_string(&path).expect("dataset readable");
+    let lines: Vec<&str> = body.lines().collect();
+    assert_eq!(lines.len(), 2);
+    for line in &lines {
+        let row: serde_json::Value = serde_json::from_str(line).expect("valid json line");
+        assert_eq!(row["about"], "about:1");
+        assert!(row["goal"].as_str().unwrap().contains("dataset writer fixture"));
+        assert_eq!(row["mode"], "read");
+        assert_eq!(row["task_family"], "runtime.cross_about_count");
+        assert!(row["allowed_tools"].is_array());
+        assert!(row["visible_state"].is_object());
+        assert_eq!(row["target_action"]["tool"], "kernel_inspect");
+        // None of the thin-writer keys leak in.
+        assert!(row.get("prompt").is_none());
+        assert!(row.get("completion").is_none());
+    }
+    assert!(outcome.content_hash().as_str().starts_with("sha256:"));
+    assert_eq!(outcome.trajectory_count().as_usize(), 2);
 }
 
 #[test]

@@ -32,6 +32,7 @@ use operator_synthetic_infra::adapters::jsonl_cross_about_episode_source::JsonlC
 use operator_synthetic_infra::adapters::openai_compatible_teacher_policy::OpenAiCompatibleTeacherPolicy;
 use operator_training_application::ports::dataset_writer::DatasetWriter;
 use operator_training_infra::adapters::jsonl_sft_dataset_writer::JsonlSftDatasetWriter;
+use operator_training_infra::adapters::jsonl_trajectory_dataset_writer::JsonlTrajectoryDatasetWriter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum KmpMcpTransport {
@@ -116,6 +117,14 @@ fn run(cli: &Cli) -> Result<(), String> {
         .map_err(|err| format!("create output dir {}: {err}", cli.output_dir.display()))?;
     let dataset_path = cli.output_dir.join("cross_about_expansions.sft.jsonl");
     JsonlSftDatasetWriter::new(&dataset_path)
+        .write(report.trajectories())
+        .map_err(|err| err.to_string())?;
+
+    // Rich trajectory file (about/goal/mode/task_family/allowed_tools/
+    // visible_state/target_action) — the schema prepare_operator_sft_dataset.py
+    // --trajectories consumes to build the {system,user,assistant} chat dataset.
+    let trajectory_path = cli.output_dir.join("cross_about_trajectories.jsonl");
+    JsonlTrajectoryDatasetWriter::new(&trajectory_path)
         .write(report.trajectories())
         .map_err(|err| err.to_string())?;
 
