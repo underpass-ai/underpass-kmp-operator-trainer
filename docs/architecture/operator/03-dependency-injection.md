@@ -26,7 +26,7 @@ impl<V: ActionContractValidator> ValidateTrajectoryUseCase<V> {
 ```rust
 // in cli crate (composition root)
 fn main() -> std::process::ExitCode {
-    let validator = CompositeActionContractValidator::default_for_shared_context();
+    let validator = CompositeActionContractValidator::default_strict();
     let use_case = ValidateTrajectoryUseCase::new(validator);
     match use_case.execute(input) {
         Ok(_) => std::process::ExitCode::SUCCESS,

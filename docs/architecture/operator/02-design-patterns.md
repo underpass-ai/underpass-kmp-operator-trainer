@@ -9,10 +9,11 @@ A small immutable type that represents a concept by value, validates in its
 named constructor and exposes only read-only accessors.
 
 - `operator-shared-domain::value_objects::NonEmptyString`
+- `operator-shared-domain::value_objects::TaskFamily`
 - `operator-shared-domain::ids::*` — `StepId`, `AboutId`,
-  `TrainingTrajectoryId`, `TaskFamily`, …
+  `TrainingTrajectoryId`, …
 - `operator-shared-domain::cursor::Cursor` and its sub-types
-- `operator-shared-domain::budget::*`
+- `operator-shared-domain::visible_state::{BudgetSnapshot, BudgetField}`
 
 ## Aggregate Root
 
@@ -27,7 +28,7 @@ aggregate.
 A named constructor on a value object or aggregate that enforces all
 invariants. There is no `pub` field constructor; types are built through
 factories such as `TrainingTrajectory::new(...)`,
-`AllowedTools::for_mode(...)`, `Cursor::around(...)`.
+`AllowedTools::for_mode(...)`, `AroundCursor::new(...)`.
 
 ## Specification
 

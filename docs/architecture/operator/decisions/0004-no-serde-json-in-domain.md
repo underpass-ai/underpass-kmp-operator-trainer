@@ -10,10 +10,12 @@ inspectors. Domain logic relied on JSON shape.
 
 ## Decision
 
-`serde_json` is only allowed in:
+`serde_json` is forbidden in every `*-domain` and `*-application` crate. It is
+permitted everywhere else, including:
 
 - `operator-shared-contract` (DTO definitions),
-- `operator-shared-infra` (mappers, adapters and JSONL I/O),
+- every `*-infra` crate (mappers, adapters and JSONL I/O),
+- every `*-cli` composition-root crate (translating wire payloads),
 - `operator-architecture-tests` (introspection only).
 
 Domain code accepts and returns domain types. Application code accepts and

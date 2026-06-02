@@ -1,5 +1,7 @@
 # ADR 0001 — Operator lives in its own repository
 
+> **Historical (superseded).** Point-in-time record; code paths/links below were refactored after this was written.
+
 Status: accepted (2026-05-18)
 Supersedes: in-kernel `underpass-operator-*` crates inside `rehydration-kernel`
 

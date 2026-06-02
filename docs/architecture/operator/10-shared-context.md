@@ -146,7 +146,10 @@ Located in `operator-shared-domain/src/specifications/`:
 Located in `operator-shared-domain/src/contract/`:
 
 - `contract_violation.rs` — `ContractViolation { code, field, message }`.
-- `action_contract_validator.rs` — trait + default composite that wires the
+- `contract_violation_code.rs` — `ContractViolationCode` enum.
+- `contract_violations.rs` — collection of `ContractViolation`s.
+- `action_contract_validator.rs` — the `ActionContractValidator` trait.
+- `composite_action_contract_validator.rs` — default composite that wires the
   specifications above.
 
 ### Errors

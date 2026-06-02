@@ -11,6 +11,7 @@ system or network APIs.
 | --- | --- | --- |
 | `OperatorActionMapper` | `operator_action_mapper.rs` | DTO ↔ `OperatorAction` |
 | `ToolArgumentsMapper` | `tool_arguments_mapper.rs` | DTO ↔ `ToolArguments` |
+| `IngestArgumentsMapper` | `ingest_arguments_mapper.rs` | DTO ↔ `IngestArguments` |
 | `CursorMapper` | `cursor_mapper.rs` | DTO ↔ `Cursor` |
 | `VisibleStateMapper` | `visible_state_mapper.rs` | DTO ↔ `VisibleState` |
 | `TrainingTrajectoryMapper` | `training_trajectory_mapper.rs` | DTO ↔ `TrainingTrajectory` |

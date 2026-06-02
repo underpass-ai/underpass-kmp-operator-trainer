@@ -5,7 +5,7 @@ LoRA SFT) and validating it before declaring a release candidate.
 This runbook assumes the holdout dataset has already been produced
 upstream (synthetic generation or external benchmark adapter — the
 fixture-grade `operator-synthesize` CLI exists for contract gates;
-benchmark adapters are kernel-side and stay there per ADR 0001).
+benchmark adapters are kernel-side and stay there per ADR 0012).
 
 The pipeline has five stages: **prepare → train → predict → score →
 gate**. The first three are Python (industry-standard SFT/LoRA tools
@@ -208,7 +208,7 @@ None of these survive a wiring audit (see recipe below).
 
 | Layer | `requested_*` | `prepared_action` |
 | --- | --- | --- |
-| Typed in `VisibleStateDto` (`operator-shared-contract`) | no — fields are only `known_refs`, `known_dimensions`, `active_cursor`, `budget` | n/a — `prepared_action` lives top-level on `CalibrationSubjectDto`, not inside visible_state |
+| Typed in `VisibleStateDto` (`operator-shared-contract`) | no — fields are only `known_refs`, `known_dimensions`, `active_cursor`, `budget`, `coverage_deviation`, `candidate_abouts` | n/a — `prepared_action` lives top-level on `CalibrationSubjectDto`, not inside visible_state |
 | Typed in `CalibrationSubjectDto` | no — DTO has no `requested_*` field | yes — `pub prepared_action: Option<OperatorActionDto>` |
 | Typed in `CalibrationSubject` domain | no | yes — `Option<PreparedOperatorAction>` |
 | Round-tripped by `CalibrationSubjectMapper` | no | yes — DTO↔domain both directions |

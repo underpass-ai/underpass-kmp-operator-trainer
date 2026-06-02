@@ -9,11 +9,14 @@ depends on `serde` and `serde_json` only.
 | --- | --- | --- |
 | `OperatorActionDto` | `operator_action_dto.rs` | tagged union `{"kind": "tool_call"|"stop"|"escalate", ...}` |
 | `ToolCallActionDto` | `tool_call_action_dto.rs` | `{"tool": "kernel_near"|..., "arguments": ToolArgumentsDto}` |
-| `StopActionDto` | `stop_action_dto.rs` | `{"reason": "...", "answer": optional}` |
+| `StopActionDto` | `stop_action_dto.rs` | `{"reason": "...", "answer": optional, "evidence": [..] (alias "final_refs")}` |
 | `EscalateActionDto` | `escalate_action_dto.rs` | `{"reason": "...", "target_model": "..."}` |
-| `ToolArgumentsDto` | `tool_arguments_dto.rs` | tagged by tool name; matches `KernelTool` strings |
+| `ToolArgumentsDto` | `tool_arguments_dto.rs` | `{"tool": "kernel_wake"|..., "arguments": {...}}`; `arguments` is permissive `serde_json::Value` (strict shape enforced by `ToolArgumentsMapper`) |
 | `CursorDto` | `cursor_dto.rs` | tagged union `{"kind": "ref"|"around"|"temporal"|"trace", ...}` |
 | `VisibleStateDto` | `visible_state_dto.rs` | structured snapshot, no `serde_json::Value` field |
+| `BudgetSnapshotDto` | `budget_snapshot_dto.rs` | `{"calls_remaining": optional, "tokens_remaining": optional}` |
+| `CoverageDeviationSnapshotDto` | `coverage_deviation_snapshot_dto.rs` | `{"deviation_milli": u16, "saturated": bool, "conflict_blocking": bool}` |
+| per-tool argument DTOs | `per_tool/*` | one DTO per tool payload (`wake_arguments_dto.rs` … `ingest_arguments_dto.rs`, `write_memory_arguments_dto.rs`) |
 | `TrainingTrajectoryDto` | `training_trajectory_dto.rs` | full row shape for JSONL trajectories |
 
 `TrainingTrajectoryDto.goal` is required. Old JSONL rows without `goal` are

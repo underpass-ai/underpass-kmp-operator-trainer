@@ -46,6 +46,6 @@ Negative:
 ## Enforcement
 
 `operator-architecture-tests::one_file_one_class` scans the source tree and
-fails when a file declares more than one `pub struct|enum|trait` outside an
-explicit allowlist (the allowlist is a constant in the test crate, and
-entries must justify the exception with a comment).
+fails when a file declares more than one `pub struct|enum|trait`. There is no
+exception list; paired discriminators, DTO children and envelope variants must
+live in their own files.

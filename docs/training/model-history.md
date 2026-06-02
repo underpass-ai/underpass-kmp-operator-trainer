@@ -409,9 +409,6 @@ Detailed per-run records live under `runs/`. Add entries here when a run lands.
 Each linked file is self-contained: setup, hyperparameters, metrics, decision,
 caveats, and artifact paths.
 
-- `runs/2026-05-26-v8.1.2-regen2.md` — diagnostic SFT run on the regenerated
-  v8.1.2 dataset. Verified that the operator-repo data-prep script handles
-  the v2 action DTO schema.
 - `runs/2026-05-28-v8.1.4-retoken.md` — v8.1.4 retoken evaluation at
   `--max-new-tokens 4096`. Confirmed that 9 of the 14 v8.1.4 prediction
   failures at 2048 were `kernel_ingest` truncation. `kernel_ask` and all
@@ -443,8 +440,8 @@ caveats, and artifact paths.
   (design requirement; did NOT cause the cliff). Not a publication claim until the
   schema-prompt fix is corpus-wide. See
   [`DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`](DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md),
-  `operator-experiments/RESULTS_v818_tier4.md`, and the diagnostic
-  `operator-experiments/audits/DIAGNOSTIC_promptfix_20260529.md`.
+  `../operator-experiments/RESULTS_v818_tier4.md`, and the diagnostic
+  `../operator-experiments/audits/DIAGNOSTIC_promptfix_20260529.md` (sibling repo).
 - **v8.1.9 anonymized (2026-05-29) — the clean, design-correct model.** Regenerated
   the corpus with **reference anonymization ON** (opaque `ref_0001`/`about_0001`;
   dimension kinds preserved) on top of the schema-fixed + well-posed eval, then
@@ -457,5 +454,6 @@ caveats, and artifact paths.
   count-rebalance — confirming the operator learns structure, not topic. Remaining
   exact-misses (21) are soft (stop evidence-subset) or hard-exact (long ingest), not
   structural. This is the publication-track model. Train sha `ee79e101…`. See
-  `operator-experiments/RESULTS_v819_anon.md`; adapter
-  `operator-experiments/adapters/operator-qwen05-lora-v8.1.9-anon-20260529T170500/`.
+  `../operator-experiments/RESULTS_v819_anon.md`; adapter
+  `../operator-experiments/adapters/operator-qwen05-lora-v8.1.9-anon-20260529T170500/`
+  (sibling repo).

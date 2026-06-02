@@ -18,13 +18,15 @@ a local GPU. For multi-node or remote-cluster runs, replace the
   `predictions.jsonl` + `summary.json` + `failures.jsonl` to
   `${OUTPUT_DIR}`.
 
-Both jobs read overridable env vars (`DATASET_DIR`, `OUTPUT_DIR`,
-`MODEL_ID`, etc.) with defaults that match the runbook walkthrough.
+Both jobs read overridable env vars with defaults that match the
+runbook walkthrough. The **train** job reads `DATASET_DIR`,
+`OUTPUT_DIR`, `MODEL_ID`; the **predict** job reads `DATASET_JSONL`,
+`ADAPTER_DIR`, `OUTPUT_DIR`, `MODEL_ID`, `MAX_NEW_TOKENS`.
 
 What's intentionally **not** here:
 
 - The dataset-specific variants the kernel keeps in
-  `rehydration-kernel/k8s/kernel-operator-qwen05-*` (96 files,
+  `rehydration-kernel/k8s/kernel-operator-qwen05-*` (45 files,
   per-benchmark and per-cut). Those are kernel/benchmark concerns;
   operator stays generic.
 - Production Helm charts or ArgoCD `Application` manifests. Add them
@@ -50,8 +52,8 @@ End-to-end example, assuming a holdout already at
 `/tmp/operator-sft/openai_{train,eval}.jsonl`:
 
 ```bash
-# 1. Train. Suspends until completion (typically 20-40 min on 1×A100
-#    for a few-hundred-trajectory dataset).
+# 1. Train. Suspends until completion (typically 20-40 min on the
+#    4-GPU DDP config for a few-hundred-trajectory dataset).
 kubectl apply -f k8s/qwen05-lora-train.yaml
 kubectl wait --for=condition=complete --timeout=2h \
   job/operator-qwen05-lora-train
@@ -77,17 +79,20 @@ cat /tmp/operator-qwen05-predictions/summary.json
 The defaults aim at a small-dataset baseline. Common knobs:
 
 - **Train epochs / batch size**: edit `args.*` in
-  `qwen05-lora-train.yaml`. Defaults: `epochs=3`, `batch_size=2`,
-  `grad_accum=8` (effective batch 16), `max_length=2048`, `fp16`.
+  `qwen05-lora-train.yaml`. Manifest args: `epochs=3`, `batch_size=4`,
+  `grad_accum=1`, `max_length=2048`, `bf16` (across 4 DDP ranks →
+  effective batch 16).
 - **Base model**: set `MODEL_ID` to any HuggingFace model whose
   tokenizer + LoRA target modules are compatible. The Python script
   takes `--lora-target-modules` if you need to deviate from the
   Qwen-friendly default
   (`q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj`).
-- **GPU count / multi-GPU**: increase `resources.limits.nvidia.com/gpu`
-  and re-run with `torchrun` (the Python script accepts
-  `--device-map none` for DDP). See the kernel's
-  `*-4gpu-*-job.yaml` variants for a working multi-GPU baseline.
+- **GPU count / multi-GPU**: the train template already runs 4-GPU
+  DDP (`torchrun --nproc_per_node=4`, `--device-map none`, `gpu: "4"`).
+  To scale down to a single GPU, set `--nproc_per_node=1` and lower
+  `resources.{limits,requests}.nvidia.com/gpu` to `1`; to scale up,
+  raise both together. See the kernel's `*-4gpu-*-job.yaml` variants
+  for additional multi-GPU baselines.
 - **Skipping training**: pass `--validate-only` to the trainer for a
   schema-only dry-run that does not require a GPU.
 
