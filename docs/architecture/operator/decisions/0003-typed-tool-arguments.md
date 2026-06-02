@@ -13,12 +13,14 @@ mistakes such as calling `Wake` with a temporal cursor.
 
 ## Decision
 
-`ToolCallAction` is **not** a struct with a `tool: KernelTool` field and a
-`Value` arguments field. It is an enum whose variant **is** the tool, and
-each variant holds a typed arguments value object:
+The discriminated union over tools is **not** a struct with a
+`tool: KernelTool` field and a `Value` arguments field. It is the
+`ToolArguments` enum whose variant **is** the tool, and each variant holds a
+typed arguments value object:
 
 ```rust
-pub enum ToolCallAction {
+pub enum ToolArguments {
+    Ingest(IngestArguments),
     Wake(WakeArguments),
     Ask(AskArguments),
     Near(NearArguments),
@@ -31,10 +33,12 @@ pub enum ToolCallAction {
 }
 ```
 
-`ToolCallAction::tool() -> KernelTool` returns the tool identifier for the
-current variant. The opposite mapping (`KernelTool` → expected variant) is
+`ToolCallAction` is a thin struct wrapping `arguments: ToolArguments`.
+`ToolArguments::tool() -> KernelTool` (re-exposed as
+`ToolCallAction::tool()`) returns the tool identifier for the current
+variant. The opposite mapping (`KernelTool` → expected variant) is
 intentionally not provided, because the only way to construct a
-`ToolCallAction` is by giving its arguments.
+`ToolArguments` is by giving its arguments.
 
 Cursors are not strings:
 
@@ -62,5 +66,6 @@ pub enum Cursor {
 ## Enforcement
 
 `operator-architecture-tests::no_string_tool_or_cursor` greps for the
-patterns `tool: &str` and `cursor_key: &str` in any `.rs` file outside
-`*-infra/src/mappers/` and fails if found.
+patterns `tool: &str` and `cursor_key: &str` in every `.rs` source file
+across all operator crates — with no path exclusion, so the ban is
+repo-wide, including `*-infra/src/mappers/` — and fails if found.

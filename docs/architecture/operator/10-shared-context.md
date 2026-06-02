@@ -145,8 +145,7 @@ Located in `operator-shared-domain/src/specifications/`:
 
 Located in `operator-shared-domain/src/contract/`:
 
-- `contract_violation.rs` — `ContractViolation { code, field, expected,
-  actual }`.
+- `contract_violation.rs` — `ContractViolation { code, field, message }`.
 - `action_contract_validator.rs` — trait + default composite that wires the
   specifications above.
 

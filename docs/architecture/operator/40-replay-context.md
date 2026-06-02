@@ -96,7 +96,7 @@ schema validator becomes useful, it lands as a follow-up PR.
 - `adapters/http_kmp_mcp_client.rs` — `HttpKmpMcpClient`. Real MCP
   JSON-RPC 2.0 client over HTTP (`reqwest::blocking`). The trait impl
   has one method per variant of `KernelTool` in
-  `operator-shared-domain` (9 today); the tool's canonical wire name
+  `operator-shared-domain` (10 today); the tool's canonical wire name
   comes from `KernelTool::as_str()` — there is no string literal for
   the tool name anywhere in this crate. Each method builds a
   `tools/call` envelope, POSTs to the configured endpoint, deserialises
@@ -144,7 +144,7 @@ scenarios against `InMemoryKmpMcpClient`:
 1. Every-tool happy path — 10 successful tool calls, 100% success
    rate.
 2. Stop + Escalate → `NoToolCall` and a 0% rate by convention.
-3. Always-failing client — 9 `ToolCallFailed` entries, the originally
+3. Always-failing client — 10 `ToolCallFailed` entries, the originally
    predicted tool preserved per execution.
 4. Mixed run — Inspect + Ask succeed, Stop is recorded; totals add up.
 

@@ -12,18 +12,28 @@ could compile a gRPC client with `tonic-build`.
 
 Looking at the kernel surface in detail invalidated that decision:
 
-- The kernel exposes a gRPC API
-  (`ContextQueryService`, `ContextCommandService`) whose operations are
-  kernel-shaped (`GetContext`, `GetContextPath`, `UpdateContext`, …) —
-  **not** operator-shaped.
+- The kernel exposes both kernel-shaped gRPC services
+  (`ContextQueryService`, `ContextCommandService` with `GetContext`,
+  `GetContextPath`, `UpdateContext`, …) **and** an operator-shaped one,
+  `KernelMemoryService`, whose RPCs map one-to-one onto the operator
+  tools (`Wake`, `Ask`, `Goto`, `Near`, `Rewind`, `Forward`, `Trace`,
+  `Inspect`, `Ingest`). The latter has existed since kernel commit
+  `41e5545` (2026-05-04), predating this ADR — so a tonic-build gRPC
+  client *could* in principle be operator-shaped. The choice below is
+  therefore not "gRPC can't express the tools"; it is about build cost
+  and surface ownership.
 - The Operator product is built around tools named `kernel_wake`,
-  `kernel_ask`, `kernel_near`, `kernel_inspect`, etc. The translation
-  from those tools to gRPC RPCs lives inside the kernel crate
-  `rehydration-mcp`, behind a JSON-RPC envelope (Model Context
-  Protocol).
-- Re-implementing the operator-shaped translation in `operator-replay-infra`
-  would duplicate `rehydration-mcp`'s logic and bypass the spirit of
-  the `no_kernel_deps` architectural rule.
+  `kernel_ask`, `kernel_near`, `kernel_inspect`, etc. The kernel already
+  serves these tools over MCP JSON-RPC (Model Context Protocol) via the
+  kernel crate `rehydration-mcp`, and the MCP payloads carry the richer
+  structured shape (`result.structuredContent` / per-tool outcomes) the
+  operator consumes. That is the surface the kernel team maintains as
+  the operator contract.
+- Compiling a `KernelMemoryService` gRPC client would pull `tonic-build`
+  + `prost` and a vendored `*.proto` into `operator-replay-infra`,
+  and would track a transport the kernel team does not advertise as the
+  operator-facing surface. MCP keeps the build light and lets the kernel
+  team own the operator-shaped surface.
 
 The previous Operator implementation lived in the kernel workspace and
 imported `rehydration-mcp` directly. The new repository forbids that
@@ -98,8 +108,11 @@ Negative:
 ## Alternatives considered
 
 - **Stick with gRPC and vendor `*.proto`** (ADR 0010 §1 as written).
-  Rejected because the gRPC surface is not operator-shaped; we would
-  have to re-implement `rehydration-mcp` inside `operator-replay-infra`.
+  The kernel's `KernelMemoryService` is operator-shaped, so this is
+  technically viable. Rejected on cost/ownership grounds: it pulls
+  `tonic-build` + `prost` + a vendored proto into the infra crate, gives
+  thinner payloads than MCP's structured content, and tracks a transport
+  the kernel team does not advertise as the operator-facing surface.
 - **Re-implement MCP translation in operator-replay-infra without
   importing rehydration-mcp**. Rejected for the same reason — duplicates
   the kernel's translation logic with no upside.

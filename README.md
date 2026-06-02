@@ -20,9 +20,14 @@ evaluation, replay, training manifests, and runtime composition. It is the
 successor of the `underpass-operator-*` crates that lived inside
 `rehydration-kernel/` and were stopped on 2026-05-18 (see postmortem there).
 
-The current implementation status is **shared bounded context, in progress**.
-Synthetic generation, evaluation, replay, training and benchmark adapters are
-intentionally not part of this first pass.
+All six bounded contexts are implemented: `shared`, plus `synthetic`,
+`evaluation`, `replay`, `runtime` and `training`, each with its own
+`domain`/`application`/`infra`/`cli` layers (see
+[`docs/architecture/operator/01-bounded-contexts.md`](docs/architecture/operator/01-bounded-contexts.md)).
+Benchmark adapters (LongMemEval, MemoryArena, …) are intentionally **not** part
+of this repository — they belong to the kernel (`rehydration-kernel`), which
+emits `TrainingTrajectory`-shaped artifacts that Operator consumes through
+`TrajectorySource` adapters.
 
 ## Repository shape
 
@@ -32,6 +37,11 @@ crates/
   operator-shared-domain        Value objects, entities, aggregates, domain errors
   operator-shared-application   Use cases and ports (hexagonal driving side)
   operator-shared-infra         Adapters and mappers (driven side)
+  operator-synthetic-*          Canonical trajectory generation (domain/application/infra/cli)
+  operator-evaluation-*         Prediction scoring, contract validation, coverage (… /cli)
+  operator-replay-*             Predicted actions vs real MCP (… /cli)
+  operator-runtime-*            LLM + Operator + KMP/MCP composition (… /cli)
+  operator-training-*           Manifests, readiness gates, metrics (… /cli)
   operator-architecture-tests   Test-only crate that enforces architectural rules
 
 docs/architecture/operator/

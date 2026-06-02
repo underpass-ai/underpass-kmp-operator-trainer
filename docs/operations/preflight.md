@@ -21,9 +21,7 @@ The preflight verifies, where applicable:
 - mTLS certs are present and valid;
 - live Helm releases and Kubernetes pods match expected configuration;
 - vLLM endpoints list the expected model ids;
-- KMP/MCP smoke calls work against a known real anchor;
-- vLLM profiles render without deprecated flags such as
-  `--guided-decoding-backend=xgrammar`.
+- KMP/MCP smoke calls work against a known real anchor.
 
 If any check fails, stop and fix the reported issue before running E2E replay or
 cluster operations. E2E artifacts must use timestamped output directories and
