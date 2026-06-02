@@ -1,5 +1,7 @@
 pub mod calibration_case_dto;
 pub mod calibration_subject_dto;
+pub mod cross_about_episode_dto;
+pub mod cross_about_target_dto;
 pub mod drop_entry_dto;
 pub mod openai_chat_completion_error_dto;
 pub mod openai_chat_completion_error_envelope_dto;

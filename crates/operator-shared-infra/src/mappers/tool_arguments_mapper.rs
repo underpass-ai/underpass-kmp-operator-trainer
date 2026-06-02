@@ -48,9 +48,14 @@ impl ToolArgumentsMapper {
             }
             KernelTool::Wake => {
                 let wake: WakeArgumentsDto = decode(&dto.arguments, "kernel_wake")?;
-                Ok(ToolArguments::Wake(WakeArguments::new(AboutId::parse(
-                    wake.about,
-                )?)))
+                let mut args = WakeArguments::new(AboutId::parse(wake.about)?);
+                if let Some(max_entries) = wake.max_entries {
+                    args = args.with_window(PositiveCount::parse(
+                        max_entries as usize,
+                        "kernel_wake.max_entries",
+                    )?);
+                }
+                Ok(ToolArguments::Wake(args))
             }
             KernelTool::Ask => {
                 let ask: AskArgumentsDto = decode(&dto.arguments, "kernel_ask")?;
@@ -67,9 +72,12 @@ impl ToolArgumentsMapper {
                     Some(value) => Some(PositiveCount::parse(value, "kernel_near.limit")?),
                     None => None,
                 };
-                Ok(ToolArguments::Near(NearArguments::new(
-                    anchor, dimensions, limit,
-                )?))
+                Ok(ToolArguments::Near(
+                    NearArguments::new(anchor, dimensions, limit)?.with_window(
+                        near.before_entries.unwrap_or(0),
+                        near.after_entries.unwrap_or(0),
+                    ),
+                ))
             }
             KernelTool::Goto => {
                 let goto: GotoArgumentsDto = decode(&dto.arguments, "kernel_goto")?;
@@ -143,6 +151,9 @@ impl ToolArgumentsMapper {
                 KernelTool::Wake,
                 serde_json::to_value(WakeArgumentsDto {
                     about: w.about().as_str().to_string(),
+                    max_entries: w
+                        .window()
+                        .map(|count| u32::try_from(count.as_usize()).unwrap_or(u32::MAX)),
                 })
                 .map_err(|e| serde_err("kernel_wake", &e))?,
             ),
@@ -163,6 +174,8 @@ impl ToolArgumentsMapper {
                         .map(|d| d.as_str().to_string())
                         .collect(),
                     limit: n.limit().map(operator_shared_domain::value_objects::positive_count::PositiveCount::as_usize),
+                    before_entries: (n.before_entries() != 0).then_some(n.before_entries()),
+                    after_entries: (n.after_entries() != 0).then_some(n.after_entries()),
                 })
                 .map_err(|e| serde_err("kernel_near", &e))?,
             ),

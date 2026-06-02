@@ -1,21 +1,23 @@
-//! Outcome of a window-expansion generation run: the accepted SFT
-//! trajectories plus an audit of every dropped episode.
+//! Outcome of a cross-about count generation run: the accepted SFT trajectories
+//! plus an audit of every dropped episode. Mirrors
+//! [`crate::generation::generation_report::GenerationReport`] with cross-about
+//! drops.
 
 use operator_shared_domain::trajectory::training_trajectory::TrainingTrajectory;
 
-use crate::generation::episode_drop::EpisodeDrop;
+use crate::generation::cross_about_drop::CrossAboutDrop;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GenerationReport {
+pub struct CrossAboutGenerationReport {
     trajectories: Vec<TrainingTrajectory>,
-    drops: Vec<EpisodeDrop>,
+    drops: Vec<CrossAboutDrop>,
     accepted_episodes: usize,
 }
 
-impl GenerationReport {
+impl CrossAboutGenerationReport {
     pub fn new(
         trajectories: Vec<TrainingTrajectory>,
-        drops: Vec<EpisodeDrop>,
+        drops: Vec<CrossAboutDrop>,
         accepted_episodes: usize,
     ) -> Self {
         Self {
@@ -25,13 +27,11 @@ impl GenerationReport {
         }
     }
 
-    /// All trajectories from accepted episodes (one per non-error step plus the
-    /// terminal stop), flattened across the run.
     pub fn trajectories(&self) -> &[TrainingTrajectory] {
         &self.trajectories
     }
 
-    pub fn drops(&self) -> &[EpisodeDrop] {
+    pub fn drops(&self) -> &[CrossAboutDrop] {
         &self.drops
     }
 
@@ -59,8 +59,6 @@ impl GenerationReport {
         }
     }
 
-    /// Consumes the report, yielding the accepted trajectories for the dataset
-    /// writer.
     pub fn into_trajectories(self) -> Vec<TrainingTrajectory> {
         self.trajectories
     }
@@ -69,30 +67,20 @@ impl GenerationReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use operator_runtime_domain::session::window_coverage_outcome::WindowCoverageOutcome;
+    use operator_runtime_domain::session::cross_about_coverage_outcome::CrossAboutCoverageOutcome;
 
     #[test]
     fn aggregates_counts_and_drop_rate() {
-        let drops = vec![EpisodeDrop::new(
-            "about:a".to_string(),
-            WindowCoverageOutcome::Incomplete { remaining: 1 },
-            false,
-            true,
+        let drops = vec![CrossAboutDrop::new(
+            "about:eu".to_string(),
+            CrossAboutCoverageOutcome::Complete,
             true,
         )];
-        let report = GenerationReport::new(Vec::new(), drops, 3);
+        let report = CrossAboutGenerationReport::new(Vec::new(), drops, 3);
         assert_eq!(report.accepted_episodes(), 3);
         assert_eq!(report.dropped_episodes(), 1);
         assert_eq!(report.total_episodes(), 4);
         assert!((report.drop_rate() - 0.25).abs() < f64::EPSILON);
-        assert!(report.trajectories().is_empty());
         assert!(report.into_trajectories().is_empty());
-    }
-
-    #[test]
-    fn drop_rate_is_zero_for_an_empty_run() {
-        let report = GenerationReport::new(Vec::new(), Vec::new(), 0);
-        assert!(report.drop_rate().abs() < f64::EPSILON);
-        assert_eq!(report.total_episodes(), 0);
     }
 }

@@ -1,5 +1,6 @@
 pub mod calibration_case_mapper;
 pub mod calibration_subject_mapper;
+pub mod cross_about_episode_mapper;
 pub mod realistic_corpus_report_mapper;
 pub mod scenario_mapper;
 pub mod teacher_calibration_report_mapper;

@@ -112,6 +112,18 @@ fn near_round_trips() {
 }
 
 #[test]
+fn near_with_window_round_trips() {
+    let anchor = MemoryRef::parse("node:42").unwrap();
+    let dim = DimensionRef::parse("temporal").unwrap();
+    let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Near(
+        NearArguments::new(anchor, vec![dim], None)
+            .unwrap()
+            .with_window(4, 6),
+    )));
+    round_trip(&read_mode_trajectory(action, "read.near.window"));
+}
+
+#[test]
 fn goto_ref_round_trips() {
     let target = MemoryRef::parse("node:42").unwrap();
     let action = OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Goto(

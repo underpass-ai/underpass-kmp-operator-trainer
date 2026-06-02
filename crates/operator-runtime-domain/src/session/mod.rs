@@ -1,3 +1,4 @@
+pub mod cross_about_coverage_outcome;
 pub mod execution_step;
 pub mod observation;
 pub mod observation_error_code;

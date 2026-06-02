@@ -127,6 +127,7 @@ mod tests {
                         tokens_remaining: Some(1024),
                     },
                     coverage_deviation: None,
+                    candidate_abouts: vec![],
                 },
                 prepared_action: None,
             },

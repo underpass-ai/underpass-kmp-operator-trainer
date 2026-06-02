@@ -1,15 +1,17 @@
-//! Parameters of a temporal window-expansion episode.
+//! Parameters of a window-expansion episode.
 //!
 //! A window-expansion episode asks the operator to answer a count-over-period
-//! style question by progressively widening a KMP temporal window
-//! (`kernel_rewind` / `kernel_forward`) across several calls until the period's
-//! evidence is fully covered. This value object only *parameterizes* the
-//! scenario — the initial window size and how many expansion steps the loop is
-//! allowed to take. It deliberately holds **no** expansion schedule: deciding
-//! how far to widen each step, and when coverage is complete, stays the
-//! policy's job so it remains learnable. The deterministic verification of
-//! whether coverage was actually reached lives in the window-expansion oracle,
-//! never here.
+//! style question that does not fit one bounded read: it opens a bounded wake
+//! window (`budget.max_entries`, so the kernel surfaces only the first N entries
+//! and reports the rest via `proof.frontier_size`) and then widens coverage with
+//! `kernel_near` / `kernel_forward` / `kernel_rewind` across several calls until
+//! the period's evidence is fully covered. This value object only
+//! *parameterizes* the scenario — the bounded wake window and how many expansion
+//! steps the loop is allowed to take. It deliberately holds **no** expansion
+//! schedule: deciding how far to widen each step, and when coverage is complete,
+//! stays the policy's job so it remains learnable. The deterministic
+//! verification of whether coverage was actually reached lives in the
+//! window-expansion oracle, never here.
 
 use operator_shared_domain::value_objects::positive_count::PositiveCount;
 
@@ -27,8 +29,10 @@ impl WindowExpansionSpec {
         }
     }
 
-    /// Entries to include on the first temporal move before the policy starts
-    /// widening (the seed `before_entries` / `after_entries`).
+    /// Size of the bounded wake window the scenario imposes: the operator's
+    /// first read wakes with `budget.max_entries = initial_window`, so the
+    /// kernel surfaces only this many entries and reports the rest as
+    /// `proof.frontier_size`, creating the tail the policy must expand into.
     pub fn initial_window(&self) -> PositiveCount {
         self.initial_window
     }

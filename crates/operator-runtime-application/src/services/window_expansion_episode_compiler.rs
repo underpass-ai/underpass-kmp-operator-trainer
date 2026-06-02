@@ -1,20 +1,21 @@
 //! Compile a window-expansion episode into a runtime [`OperatorRequest`].
 //!
 //! This is the synthetic-to-runtime bridge for the generator: it turns a
-//! [`WindowExpansionSpec`] (how big the initial window is and how many
-//! expansion steps are allowed) plus a session's `about` and `goal` into the
-//! request the multi-step loop drives. It encodes the fixed envelope of a
-//! window-expansion session — it is a **read** session over the canonical read
-//! tools, and its call budget is sized to the spec so the policy gets exactly
-//! `max_iterations` expansion calls plus one terminal decision.
+//! [`WindowExpansionSpec`] (the bounded wake window size and how many expansion
+//! steps are allowed) plus a session's `about` and `goal` into the request the
+//! multi-step loop drives. It encodes the fixed envelope of a window-expansion
+//! session — it is a **read** session over the canonical read tools, and its
+//! call budget is sized to the spec so the policy gets exactly `max_iterations`
+//! expansion calls plus one terminal decision.
 //!
 //! The session starts from an empty visible state: the operator knows no refs,
-//! dimensions, or cursor yet and must establish an anchor and then widen the
-//! window itself. The period and the "widen until covered" instruction are
-//! carried in the `goal`, not the envelope, so the expansion schedule stays
-//! the policy's job. The visible budget snapshot is derived from the same
-//! session budget so the first subject the policy sees reports the real
-//! remaining calls.
+//! dimensions, or cursor yet and must open a bounded wake window
+//! (`budget.max_entries`) and then widen coverage with `kernel_near` /
+//! `kernel_forward` / `kernel_rewind` itself. The period, the bounded-window
+//! size, and the "widen until covered" instruction are carried in the `goal`,
+//! not the envelope, so the expansion schedule stays the policy's job. The
+//! visible budget snapshot is derived from the same session budget so the first
+//! subject the policy sees reports the real remaining calls.
 
 use operator_runtime_domain::budget::session_budget::SessionBudget;
 use operator_runtime_domain::error::runtime_domain_result::RuntimeDomainResult;

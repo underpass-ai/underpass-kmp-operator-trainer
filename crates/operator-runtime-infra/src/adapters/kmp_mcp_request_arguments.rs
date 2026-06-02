@@ -26,7 +26,13 @@ pub enum McpRequestArgumentsError {
 }
 
 pub fn wake(args: &WakeArguments) -> Value {
-    json!({ "about": args.about().as_str() })
+    let mut body = json!({ "about": args.about().as_str() });
+    // Opt-in entry window: ask the kernel to cap wake's evidence to N and report
+    // the rest via proof.frontier_size, so the operator can near-expand the tail.
+    if let Some(window) = args.window() {
+        body["budget"] = json!({ "max_entries": window.as_usize() });
+    }
+    body
 }
 
 pub fn ask(args: &AskArguments, about: &AboutId) -> Value {
@@ -40,10 +46,23 @@ pub fn near(args: &NearArguments, about: &AboutId) -> Value {
     let mut body = json!({
         "about": about.as_str(),
         "around": { "ref": args.anchor().as_str() },
-        "dimensions": dimensions(args.dimensions()),
     });
+    // An empty dimension list means "all temporal dimensions": omit the selection
+    // so the kernel reads every dimension, rather than sending an empty `only`
+    // filter that would scope the read to nothing.
+    if !args.dimensions().is_empty() {
+        body["dimensions"] = dimensions(args.dimensions());
+    }
     if let Some(limit) = args.limit() {
         body["limit"] = json!({ "entries": limit.as_usize() });
+    }
+    // The kernel's Near is driven by the temporal window (before/after entries),
+    // which is the lever for window expansion. Send it when set.
+    if args.before_entries() != 0 || args.after_entries() != 0 {
+        body["window"] = json!({
+            "before_entries": args.before_entries(),
+            "after_entries": args.after_entries(),
+        });
     }
     body
 }

@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use operator_shared_domain::action::operator_action::OperatorAction;
 use operator_shared_domain::contract::contract_violations::ContractViolations;
+use operator_shared_domain::ids::about_id::AboutId;
 use operator_shared_domain::visible_state::visible_state::VisibleState;
 
 use crate::budget::session_budget::SessionBudget;
@@ -29,6 +30,7 @@ pub struct SessionTranscript {
     final_visible_state: VisibleState,
     final_budget: SessionBudget,
     elapsed_ms: u64,
+    terminal_about: AboutId,
 }
 
 impl SessionTranscript {
@@ -40,6 +42,7 @@ impl SessionTranscript {
         final_visible_state: VisibleState,
         final_budget: SessionBudget,
         elapsed: Duration,
+        terminal_about: AboutId,
     ) -> Self {
         Self::new(
             session_id,
@@ -49,6 +52,7 @@ impl SessionTranscript {
             final_visible_state,
             final_budget,
             elapsed,
+            terminal_about,
         )
     }
 
@@ -61,6 +65,7 @@ impl SessionTranscript {
         final_visible_state: VisibleState,
         final_budget: SessionBudget,
         elapsed: Duration,
+        terminal_about: AboutId,
     ) -> Self {
         Self::new(
             session_id,
@@ -70,6 +75,7 @@ impl SessionTranscript {
             final_visible_state,
             final_budget,
             elapsed,
+            terminal_about,
         )
     }
 
@@ -81,6 +87,7 @@ impl SessionTranscript {
         final_visible_state: VisibleState,
         final_budget: SessionBudget,
         elapsed: Duration,
+        terminal_about: AboutId,
     ) -> Self {
         Self::new(
             session_id,
@@ -90,6 +97,7 @@ impl SessionTranscript {
             final_visible_state,
             final_budget,
             elapsed,
+            terminal_about,
         )
     }
 
@@ -103,6 +111,7 @@ impl SessionTranscript {
         final_visible_state: VisibleState,
         final_budget: SessionBudget,
         elapsed: Duration,
+        terminal_about: AboutId,
     ) -> Self {
         Self::new(
             session_id,
@@ -112,6 +121,7 @@ impl SessionTranscript {
             final_visible_state,
             final_budget,
             elapsed,
+            terminal_about,
         )
     }
 
@@ -124,6 +134,7 @@ impl SessionTranscript {
         final_visible_state: VisibleState,
         final_budget: SessionBudget,
         elapsed: Duration,
+        terminal_about: AboutId,
     ) -> Self {
         Self {
             session_id,
@@ -133,6 +144,7 @@ impl SessionTranscript {
             final_visible_state,
             final_budget,
             elapsed_ms: elapsed.as_millis().try_into().unwrap_or(u64::MAX),
+            terminal_about,
         }
     }
 
@@ -166,5 +178,12 @@ impl SessionTranscript {
 
     pub fn elapsed_ms(&self) -> u64 {
         self.elapsed_ms
+    }
+
+    /// The about current at the terminal decision — for a cross-about session,
+    /// the about the last `kernel_wake` switched to. Lets the terminal SFT row
+    /// be attributed to the about the stop/escalate was reasoning over.
+    pub fn terminal_about(&self) -> &AboutId {
+        &self.terminal_about
     }
 }

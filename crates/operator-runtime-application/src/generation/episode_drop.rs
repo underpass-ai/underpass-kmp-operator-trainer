@@ -9,6 +9,7 @@ pub struct EpisodeDrop {
     outcome: WindowCoverageOutcome,
     conflict_blocking: bool,
     gold_covered: bool,
+    expanded: bool,
 }
 
 impl EpisodeDrop {
@@ -17,12 +18,14 @@ impl EpisodeDrop {
         outcome: WindowCoverageOutcome,
         conflict_blocking: bool,
         gold_covered: bool,
+        expanded: bool,
     ) -> Self {
         Self {
             about,
             outcome,
             conflict_blocking,
             gold_covered,
+            expanded,
         }
     }
 
@@ -44,16 +47,28 @@ impl EpisodeDrop {
         self.gold_covered
     }
 
+    /// Whether the session demonstrated real window-expansion: at some step the
+    /// kernel reported a non-zero `proof.frontier_size`, i.e. the wake actually
+    /// ran bounded and left a tail to expand into. A trivial unbounded wake (the
+    /// whole about surfaced at once) never sees a frontier, so it teaches no
+    /// expansion and is dropped even when the gold set is incidentally covered.
+    pub fn expanded(&self) -> bool {
+        self.expanded
+    }
+
     /// Why the episode was dropped: a surfaced conflict takes precedence (it
     /// would force an Escalate terminal, which a count-over-period corpus
     /// excludes); then a gold-coverage miss (the window did not retrieve every
-    /// expected period entry); otherwise the coverage shortfall the oracle
-    /// reported from the kernel's signals.
+    /// expected period entry); then a no-expansion session (the wake was not
+    /// bounded so nothing was ever near-expanded); otherwise the coverage
+    /// shortfall the oracle reported from the kernel's signals.
     pub fn reason(&self) -> &'static str {
         if self.conflict_blocking {
             "conflict_blocking"
         } else if !self.gold_covered {
             "missing_gold_refs"
+        } else if !self.expanded {
+            "no_expansion_demonstrated"
         } else {
             self.outcome.as_str()
         }
@@ -71,6 +86,7 @@ mod tests {
             WindowCoverageOutcome::Incomplete { remaining: 3 },
             false,
             true,
+            true,
         );
         assert_eq!(drop.about(), "about:p");
         assert_eq!(
@@ -79,6 +95,7 @@ mod tests {
         );
         assert!(!drop.conflict_blocking());
         assert!(drop.gold_covered());
+        assert!(drop.expanded());
         assert_eq!(drop.reason(), "incomplete");
     }
 
@@ -90,6 +107,7 @@ mod tests {
             WindowCoverageOutcome::Complete,
             false,
             false,
+            true,
         );
         assert!(!drop.gold_covered());
         assert_eq!(drop.reason(), "missing_gold_refs");
@@ -102,8 +120,25 @@ mod tests {
             WindowCoverageOutcome::Complete,
             true,
             true,
+            true,
         );
         assert!(drop.conflict_blocking());
         assert_eq!(drop.reason(), "conflict_blocking");
+    }
+
+    #[test]
+    fn a_covered_but_unexpanded_session_reports_no_expansion() {
+        // Gold incidentally covered by a trivial unbounded wake — no frontier was
+        // ever seen, so the session demonstrates no expansion and is dropped.
+        let drop = EpisodeDrop::new(
+            "about:p".to_string(),
+            WindowCoverageOutcome::Complete,
+            false,
+            true,
+            false,
+        );
+        assert!(drop.gold_covered());
+        assert!(!drop.expanded());
+        assert_eq!(drop.reason(), "no_expansion_demonstrated");
     }
 }
