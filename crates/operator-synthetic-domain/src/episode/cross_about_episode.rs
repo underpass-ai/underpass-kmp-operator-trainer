@@ -133,10 +133,7 @@ mod tests {
     #[test]
     fn has_gold_is_false_when_a_target_lacks_gold() {
         let episode = CrossAboutEpisode::new(
-            vec![
-                target("about:eu", &["node:eu1"]),
-                target("about:us", &[]),
-            ],
+            vec![target("about:eu", &["node:eu1"]), target("about:us", &[])],
             TrajectoryGoal::parse("Count.").unwrap(),
             spec(),
             8192,

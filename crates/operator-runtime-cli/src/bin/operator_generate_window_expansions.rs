@@ -135,7 +135,9 @@ fn run(cli: &Cli) -> Result<(), String> {
     }
 
     if report.trajectories().is_empty() {
-        return Err("no trajectories produced; every episode was dropped (see reasons above)".into());
+        return Err(
+            "no trajectories produced; every episode was dropped (see reasons above)".into(),
+        );
     }
 
     std::fs::create_dir_all(&cli.output_dir)
@@ -152,7 +154,11 @@ fn run(cli: &Cli) -> Result<(), String> {
     JsonlTrajectoryDatasetWriter::new(&trajectory_path)
         .write(report.trajectories())
         .map_err(|err| err.to_string())?;
-    eprintln!("output={} trajectories_file={}", dataset_path.display(), trajectory_path.display());
+    eprintln!(
+        "output={} trajectories_file={}",
+        dataset_path.display(),
+        trajectory_path.display()
+    );
 
     if report.drop_rate() > cli.max_drop_rate {
         return Err(format!(

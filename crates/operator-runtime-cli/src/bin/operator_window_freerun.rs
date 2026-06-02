@@ -86,9 +86,12 @@ fn run(cli: &Cli) -> Result<(), String> {
     }
     let episodes = source.read().map_err(|err| err.to_string())?;
 
-    let config = VllmOperatorConfig::new(cli.operator_endpoint.as_str(), cli.operator_adapter_id.as_str())
-        .with_accept_invalid_certs(cli.operator_accept_invalid_certs)
-        .with_max_tokens(cli.operator_max_tokens);
+    let config = VllmOperatorConfig::new(
+        cli.operator_endpoint.as_str(),
+        cli.operator_adapter_id.as_str(),
+    )
+    .with_accept_invalid_certs(cli.operator_accept_invalid_certs)
+    .with_max_tokens(cli.operator_max_tokens);
     let base_policy: Arc<dyn OperatorPolicy> = Arc::new(
         VllmOpenAiOperatorPolicy::new(&config)
             .map_err(|err| err.to_string())?
@@ -162,7 +165,9 @@ fn run(cli: &Cli) -> Result<(), String> {
     Ok(())
 }
 
-fn terminal_kind(transcript: &operator_runtime_domain::session::session_transcript::SessionTranscript) -> String {
+fn terminal_kind(
+    transcript: &operator_runtime_domain::session::session_transcript::SessionTranscript,
+) -> String {
     use operator_shared_domain::action::operator_action::OperatorAction;
     match transcript.terminal_action() {
         OperatorAction::Stop(_) => "stop".to_string(),

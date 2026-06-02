@@ -95,9 +95,9 @@ fn memory_ref(value: &str) -> MemoryRef {
 }
 
 fn wake(about: &str) -> OperatorAction {
-    OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Wake(WakeArguments::new(
-        AboutId::parse(about).unwrap(),
-    ))))
+    OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Wake(
+        WakeArguments::new(AboutId::parse(about).unwrap()),
+    )))
 }
 
 fn stop() -> OperatorAction {
@@ -163,7 +163,10 @@ fn generates_cross_about_trajectories_attributed_to_each_about() {
         vec![wake("about:eu"), wake("about:us"), stop()],
         vec![response("node:eu1"), response("node:us1")],
     )
-    .execute(&[episode(&[("about:eu", "node:eu1"), ("about:us", "node:us1")])])
+    .execute(&[episode(&[
+        ("about:eu", "node:eu1"),
+        ("about:us", "node:us1"),
+    ])])
     .expect("generation runs");
 
     assert_eq!(report.accepted_episodes(), 1);
@@ -183,7 +186,10 @@ fn drops_an_episode_that_left_an_about_short() {
     // The teacher never wakes US, so node:us1 is never retrieved: gold coverage
     // fails for about:us and the episode is dropped rather than taught.
     let report = generator(vec![wake("about:eu"), stop()], vec![response("node:eu1")])
-        .execute(&[episode(&[("about:eu", "node:eu1"), ("about:us", "node:us1")])])
+        .execute(&[episode(&[
+            ("about:eu", "node:eu1"),
+            ("about:us", "node:us1"),
+        ])])
         .expect("generation runs");
 
     assert_eq!(report.accepted_episodes(), 0);

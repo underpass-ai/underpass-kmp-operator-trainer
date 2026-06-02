@@ -93,10 +93,11 @@ impl GenerateWindowExpansionsUseCase {
             // observed a non-zero frontier. A trivial unbounded wake surfaces the
             // whole about at once (frontier always 0) and would teach "just wake",
             // so we drop it even when the gold set is incidentally covered.
-            let expanded = transcript
-                .steps()
-                .iter()
-                .any(|step| step.observation().signals().is_some_and(|s| s.frontier_size() > 0));
+            let expanded = transcript.steps().iter().any(|step| {
+                step.observation()
+                    .signals()
+                    .is_some_and(|s| s.frontier_size() > 0)
+            });
 
             if covered && !conflict_blocking && expanded {
                 let episode_trajectories = ExpandSessionTranscriptUseCase::expand(

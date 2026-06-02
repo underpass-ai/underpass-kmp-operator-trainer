@@ -111,7 +111,9 @@ fn run(cli: &Cli) -> Result<(), String> {
         Arc::new(StderrSessionEventSink::new()),
     );
     let generator = GenerateCrossAboutExpansionsUseCase::new(session, task_family);
-    let report = generator.execute(&episodes).map_err(|err| err.to_string())?;
+    let report = generator
+        .execute(&episodes)
+        .map_err(|err| err.to_string())?;
 
     std::fs::create_dir_all(&cli.output_dir)
         .map_err(|err| format!("create output dir {}: {err}", cli.output_dir.display()))?;

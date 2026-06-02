@@ -341,9 +341,9 @@ fn tool_error_is_recorded_and_fed_back_not_terminal() {
 }
 
 fn wake_action(about: &str) -> OperatorAction {
-    OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Wake(WakeArguments::new(
-        AboutId::parse(about).unwrap(),
-    ))))
+    OperatorAction::ToolCall(ToolCallAction::new(ToolArguments::Wake(
+        WakeArguments::new(AboutId::parse(about).unwrap()),
+    )))
 }
 
 /// Executor that records the `about` it was asked to scope each call to, so a

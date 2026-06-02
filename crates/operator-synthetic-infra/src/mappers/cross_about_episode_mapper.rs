@@ -94,8 +94,8 @@ mod tests {
 
     #[test]
     fn rejects_a_target_without_gold() {
-        let err = CrossAboutEpisodeMapper::to_domain(&dto(vec![target("ctrl-ws-eu", &[])]))
-            .unwrap_err();
+        let err =
+            CrossAboutEpisodeMapper::to_domain(&dto(vec![target("ctrl-ws-eu", &[])])).unwrap_err();
         assert!(matches!(
             err,
             SyntheticDomainError::CrossAboutTargetMissingGold { .. }
@@ -104,8 +104,8 @@ mod tests {
 
     #[test]
     fn rejects_a_malformed_gold_ref() {
-        let err =
-            CrossAboutEpisodeMapper::to_domain(&dto(vec![target("ctrl-ws-eu", &[""])])).unwrap_err();
+        let err = CrossAboutEpisodeMapper::to_domain(&dto(vec![target("ctrl-ws-eu", &[""])]))
+            .unwrap_err();
         assert!(matches!(err, SyntheticDomainError::Shared(_)));
     }
 }

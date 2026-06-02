@@ -49,18 +49,20 @@ impl GenerateCrossAboutExpansionsUseCase {
         let mut accepted_episodes = 0usize;
 
         for (index, episode) in episodes.iter().enumerate() {
-            let session_id = OperatorSessionId::parse(format!("xab:{index:04}")).map_err(|err| {
-                GenerateWindowExpansionsError::SessionId {
-                    index,
-                    message: err.to_string(),
-                }
-            })?;
-            let request = CrossAboutEpisodeCompiler::compile(session_id, episode).map_err(|err| {
-                GenerateWindowExpansionsError::Compile {
-                    index,
-                    message: err.to_string(),
-                }
-            })?;
+            let session_id =
+                OperatorSessionId::parse(format!("xab:{index:04}")).map_err(|err| {
+                    GenerateWindowExpansionsError::SessionId {
+                        index,
+                        message: err.to_string(),
+                    }
+                })?;
+            let request =
+                CrossAboutEpisodeCompiler::compile(session_id, episode).map_err(|err| {
+                    GenerateWindowExpansionsError::Compile {
+                        index,
+                        message: err.to_string(),
+                    }
+                })?;
 
             let transcript = self.session.execute(&request).map_err(|err| {
                 GenerateWindowExpansionsError::Session {

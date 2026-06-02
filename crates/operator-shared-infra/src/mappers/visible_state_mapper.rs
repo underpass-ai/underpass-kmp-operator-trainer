@@ -148,6 +148,9 @@ mod tests {
         assert!(dto.candidate_abouts.is_empty());
         // skip-if-empty keeps single-about wire snapshots unchanged.
         let json = serde_json::to_string(&dto).expect("serializes");
-        assert!(!json.contains("candidate_abouts"), "must not appear: {json}");
+        assert!(
+            !json.contains("candidate_abouts"),
+            "must not appear: {json}"
+        );
     }
 }

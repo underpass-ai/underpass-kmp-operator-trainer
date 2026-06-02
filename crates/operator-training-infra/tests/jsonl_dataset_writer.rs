@@ -154,7 +154,12 @@ fn trajectory_writer_emits_rich_schema_with_about_goal_and_target_action() {
     for line in &lines {
         let row: serde_json::Value = serde_json::from_str(line).expect("valid json line");
         assert_eq!(row["about"], "about:1");
-        assert!(row["goal"].as_str().unwrap().contains("dataset writer fixture"));
+        assert!(
+            row["goal"]
+                .as_str()
+                .unwrap()
+                .contains("dataset writer fixture")
+        );
         assert_eq!(row["mode"], "read");
         assert_eq!(row["task_family"], "runtime.cross_about_count");
         assert!(row["allowed_tools"].is_array());

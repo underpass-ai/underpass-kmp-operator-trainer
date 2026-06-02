@@ -104,7 +104,8 @@ mod tests {
 
     #[test]
     fn complete_when_every_about_gold_is_retrieved() {
-        let outcome = CrossAboutOracle::verify(&episode(), &transcript_knowing(&["node:eu1", "node:us1"]));
+        let outcome =
+            CrossAboutOracle::verify(&episode(), &transcript_knowing(&["node:eu1", "node:us1"]));
         assert!(outcome.is_covered());
     }
 
