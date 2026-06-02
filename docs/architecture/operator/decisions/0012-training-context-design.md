@@ -88,18 +88,20 @@ concerns the external trainer already handles.
 
 The first-pass dataset format is **JSON Lines**, one
 `TrainingTrajectory` per line, each line shaped as
-`{ "prompt": <visible_state_text>, "completion": <action_json> }`.
+`{ "prompt": <visible_state_json>, "completion": <action_json> }`.
 
 ```jsonl
-{"prompt":"role: read\\nknown_refs: [node:1]\\n...","completion":"{\\"kind\\":\\"tool_call\\",\\"tool\\":\\"kernel_inspect\\",\\"arguments\\":{...}}"}
+{"prompt":"{\\"known_refs\\":[\\"node:1\\"],\\"known_dimensions\\":[],\\"budget\\":{...}}","completion":"{\\"kind\\":\\"tool_call\\",\\"tool\\":\\"kernel_inspect\\",\\"arguments\\":{...}}"}
 ```
 
-The `prompt` is a deterministic text rendering of `VisibleState` (the
-exact prompt template the operator policy sees at decision time). The
-`completion` is the JSON serialisation of the target `OperatorAction`.
-This is the lowest-friction format for SFT trainers (HuggingFace
-SFTTrainer, axolotl, llama-factory) and matches the operator-policy
-prompt contract.
+In this first pass the `prompt` is `serde_json::to_string(&VisibleStateDto)`
+— a stable, lossless JSON serialisation of the `VisibleState` the operator
+policy sees at decision time. A deterministic natural-language renderer is
+deferred to a future `PromptRenderer` port; swapping it in keeps the SFT
+line shape the same. The `completion` is the JSON serialisation of the
+target `OperatorAction`. This is the lowest-friction format for SFT
+trainers (HuggingFace SFTTrainer, axolotl, llama-factory) and matches the
+operator-policy prompt contract.
 
 Other formats — DPO pairs, raw trajectory dumps, parquet, TFRecord —
 are deferred to dedicated follow-up PRs that introduce additional

@@ -82,8 +82,9 @@ to shape Operator's training surface.
   before it)** — `replay` bounded context: predictions, outcomes,
   execution records, report, `KmpMcpClient` port, `ExecuteReplayUseCase`,
   in-memory stub adapter, end-to-end test covering every tool plus
-  Stop/Escalate plus the failure-mode branch. Real MCP JSON-RPC client
-  ships in a follow-up PR.
+  Stop/Escalate plus the failure-mode branch. The real MCP JSON-RPC
+  client (`HttpKmpMcpClient`) has since shipped (see
+  [40-replay-context.md](40-replay-context.md)).
 
 - **Pass 5** — `training` bounded context, full stack:
   - **5A** — domain skeleton (dataset provenance, readiness gates,

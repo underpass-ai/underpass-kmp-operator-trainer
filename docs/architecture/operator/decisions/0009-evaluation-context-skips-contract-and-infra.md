@@ -1,6 +1,6 @@
 # ADR 0009 — Evaluation context skips `*-contract` and `*-infra` in the first pass
 
-Status: accepted (2026-05-18)
+Status: superseded (2026-06-02) — `operator-evaluation-infra` has landed
 Companion to: [ADR 0008](0008-no-synthetic-contract-yet.md)
 
 ## Context
@@ -21,13 +21,24 @@ surface are absent in the first pass:
 
 ## Decision
 
-The evaluation context ships with two crates only:
+> **Superseded (2026-06-02).** The first-pass deferral below no longer
+> holds: "When to revisit" trigger #1 fired when a JSONL prediction
+> reader landed. `operator-evaluation-infra` now exists
+> (`jsonl_predictions_reader.rs`, `openai_compatible_llm_baseliner.rs`,
+> plus a `dto/` module) alongside an `operator-evaluation-cli` crate. The
+> `*-contract` crate was **not** created with it — the DTOs live under
+> `operator-evaluation-infra/src/dto/` instead, a deliberate deviation
+> from the four-crate pattern (no external wire boundary yet justifies a
+> standalone contract crate). The original first-pass decision is
+> retained below for the record.
+
+The evaluation context shipped (first pass) with two crates only:
 
 - `operator-evaluation-domain`
 - `operator-evaluation-application`
 
-The `*-contract` and `*-infra` crates are deferred until at least one
-adapter requires them.
+The `*-contract` and `*-infra` crates were deferred until at least one
+adapter required them.
 
 ## Consequences
 

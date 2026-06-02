@@ -50,12 +50,15 @@ else.
 
 ### Visible state pieces (under `visible_state/`)
 
-`EvidenceRef`, `BudgetSnapshot`.
+`EvidenceRef`, `BudgetSnapshot`, `CoverageDeviationSnapshot`,
+`ContextCoverageDeviation`, `NavigationSignals`, `BudgetField`.
 
 ### Specifications (under `specifications/`)
 
 `ToolWithinModeSpec`, `ArgumentsReferenceKnownEntitiesSpec`,
-`CursorReachableFromVisibleSpec`, `BudgetAllowsActionSpec`, `AndSpec`,
+`CursorReachableFromVisibleSpec`, `BudgetAllowsActionSpec`,
+`ActionAboutMatchesTrajectorySpec`, `IngestCoordinateDimensionsKnownSpec`,
+`IngestEvidenceSupportsKnownRefsSpec`, `IngestRelationRefsKnownSpec`, `AndSpec`,
 `OrSpec`.
 
 ## Invariants enforced by domain constructors

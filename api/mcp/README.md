@@ -87,7 +87,7 @@ renamed, or its input/output keys change):
 
 | Date | Kernel SHA | Notes |
 | --- | --- | --- |
-| 2026-05-18 | `fc279eae448b` | Initial snapshot of the 9 response fixtures used by the per-tool mappers in `operator-replay-infra::mappers`. `kernel_ingest` is modelled in `KernelTool` but is intentionally not vendored here — it is outside this frozen-reference catalog. |
+| 2026-05-18 | `fc279eae448b` | Initial snapshot of 9 response fixtures, one per the 9 tools with vendored snapshots, used by the per-tool mappers in `operator-replay-infra::mappers`. `KernelTool` has 10 variants; `kernel_ingest` is modelled there (and has a mapper) but is intentionally not vendored here — it is outside this frozen-reference catalog. |
 
 ## Where MCP fits in the dependency graph
 

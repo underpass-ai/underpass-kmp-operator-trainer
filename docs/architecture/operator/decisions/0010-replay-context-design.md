@@ -51,6 +51,7 @@ team has not published `rehydration-proto`).
 
 ```rust
 pub trait KmpMcpClient: std::fmt::Debug + Send + Sync {
+    fn ingest(&self, args: &IngestArguments) -> Result<IngestOutcome, KmpClientError>;
     fn wake(&self, args: &WakeArguments) -> Result<WakeOutcome, KmpClientError>;
     fn ask(&self, args: &AskArguments) -> Result<AskOutcome, KmpClientError>;
     fn near(&self, args: &NearArguments) -> Result<NearOutcome, KmpClientError>;
@@ -69,7 +70,7 @@ typed results (primitive obsession one level up), and silently dispatches
 new tools through `match` arms rather than failing at compile time when
 an adapter does not implement a variant.
 
-Rejected: per-tool sub-traits (`Wakeable`, `Askable`, …). 9 traits
+Rejected: per-tool sub-traits (`Wakeable`, `Askable`, …). 10 traits
 multiplies type-parameter bounds everywhere downstream. Every real KMP
 server we will ever talk to implements all tools; partial implementations
 are not a real shape.
@@ -83,6 +84,7 @@ alongside its `ToolArguments` sibling under
 ```
 tool_outcomes/
 ├── mod.rs
+├── ingest_outcome.rs
 ├── wake_outcome.rs
 ├── ask_outcome.rs
 ├── near_outcome.rs
@@ -91,7 +93,8 @@ tool_outcomes/
 ├── forward_outcome.rs
 ├── trace_outcome.rs
 ├── inspect_outcome.rs
-└── write_memory_outcome.rs
+├── write_memory_outcome.rs
+└── tool_outcome.rs  (typed union over all per-tool outcomes)
 ```
 
 Why shared and not replay-domain? The KMP outcome is a vocabulary item:
@@ -137,7 +140,7 @@ Positive:
 
 Negative:
 
-- ~9 new value objects in `shared-domain` (one outcome per tool) plus
+- ~10 new value objects in `shared-domain` (one outcome per tool) plus
   associated error types. Acceptable; mirrors the existing
   `ToolArguments` arrangement.
 - Manual proto sync is a chore. Acceptable for a unit-of-one consumer.

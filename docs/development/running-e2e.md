@@ -15,9 +15,10 @@ Example output:
 ```text
 [OK  ] git state                            clean tree at <sha> <subject>
 [OK  ] cargo release build                  workspace release build completed
-[OK  ] binary freshness                     local binary is newer than or equal to HEAD
-[WARN] values drift <release>               inspect /tmp/<release>-values.diff
-12/13 checks passed (1 warn, 0 fail)
+[OK  ] operator-session-run freshness       local binary is newer than or equal to HEAD
+[OK  ] helm list                            helm list succeeded for namespace <namespace>
+[OK  ] helm release <release>               release <release> revision <n> present
+9/9 checks passed
 ```
 
 Exit codes:

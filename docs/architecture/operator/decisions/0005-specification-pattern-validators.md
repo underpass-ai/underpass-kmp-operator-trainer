@@ -46,6 +46,7 @@ pub trait ActionContractValidator {
     fn validate(
         &self,
         action: &OperatorAction,
+        about: &AboutId,
         mode: OperatorMode,
         visible: &VisibleState,
     ) -> Result<(), ContractViolations>;

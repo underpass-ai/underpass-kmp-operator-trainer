@@ -18,10 +18,12 @@ the implementer's responsibility (in `operator-shared-infra`).
 
 | Use case | File | Purpose |
 | --- | --- | --- |
-| `ValidateTrajectoryUseCase` | `validate_trajectory.rs` | Run an `ActionContractValidator` over a trajectory and report all violations. |
+| `ValidateTrajectoryUseCase` | `validate_trajectory_use_case.rs` | Run an `ActionContractValidator` over a single trajectory and report all violations. |
+| `ValidateTrajectoriesFromSourceUseCase` | `validate_trajectories_from_source_use_case.rs` | Drive an `ActionContractValidator` over every trajectory yielded by a `TrajectoryReader` and aggregate the outcomes into a `ValidationReport`. |
 
-Each use case owns its own input and output structs as siblings to its
-file (`validate_trajectory_input.rs`, `validate_trajectory_output.rs`).
+Each use case owns its own error and report structs as siblings to its
+file (`validate_trajectory_error.rs`, `validation_report.rs`,
+`trajectory_validation_failure.rs`).
 This keeps the public signature stable when implementation details change.
 
 ## Dependency injection
