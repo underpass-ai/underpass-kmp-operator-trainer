@@ -21,13 +21,21 @@ pub trait Specification<T> {
 }
 ```
 
-Specifications compose with `and` and `or`:
+Specifications take no constructor arguments — the `ActionContractSubject`
+they evaluate carries the mode, visible state and budget. They compose with
+the `AndSpec` / `OrSpec` combinators, or as a `Vec<Box<dyn Specification<...>>>`:
 
 ```rust
-let spec = ToolWithinModeSpec::new(mode)
-    .and(ArgumentsMatchToolSpec::new())
-    .and(CursorReachableFromVisibleSpec::new(visible))
-    .and(BudgetNotExceededSpec::new(budget));
+let spec = AndSpec::new(
+    Box::new(ToolWithinModeSpec::new()),
+    Box::new(AndSpec::new(
+        Box::new(ArgumentsReferenceKnownEntitiesSpec::new()),
+        Box::new(AndSpec::new(
+            Box::new(CursorReachableFromVisibleSpec::new()),
+            Box::new(BudgetAllowsActionSpec::new()),
+        )),
+    )),
+);
 ```
 
 The `ActionContractValidator` is the trait that wraps a specification
@@ -53,7 +61,7 @@ what is wrong with a candidate trajectory.
 
 - Each rule is its own file and its own test.
 - Rules are reusable across contexts (synthetic, evaluation, replay all
-  share the same `ArgumentsMatchToolSpec`).
+  share the same `ArgumentsReferenceKnownEntitiesSpec`).
 - Adding a rule is "create one file, add it to the composite". Removing or
   relaxing a rule is "delete one file, remove from composite".
 

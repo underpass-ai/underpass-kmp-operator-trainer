@@ -19,8 +19,9 @@ The kernel exposes two distinct surfaces:
   Operations are operator-shaped: `kernel_wake`, `kernel_ask`,
   `kernel_near`, `kernel_goto`, `kernel_rewind`, `kernel_forward`,
   `kernel_trace`, `kernel_inspect`, `kernel_write_memory`. The kernel
-  also exposes `kernel_ingest`, which lives outside Operator's
-  first-pass tool surface and is not modelled in `KernelTool`.
+  also exposes `kernel_ingest`, which is modelled in `KernelTool` but
+  has no vendored response fixture in this directory (it is outside the
+  frozen-reference table below).
 
 The Operator product is built around the operator-shaped surface (see
 the `KernelTool` enum in `operator-shared-domain`). Talking gRPC
@@ -86,7 +87,7 @@ renamed, or its input/output keys change):
 
 | Date | Kernel SHA | Notes |
 | --- | --- | --- |
-| 2026-05-18 | `fc279eae448b` | Initial snapshot of the 9 response fixtures for tools modelled in `KernelTool`, used by the per-tool mappers in `operator-replay-infra::mappers`. `kernel_ingest` is intentionally not vendored — it is outside Operator's first-pass surface. |
+| 2026-05-18 | `fc279eae448b` | Initial snapshot of the 9 response fixtures used by the per-tool mappers in `operator-replay-infra::mappers`. `kernel_ingest` is modelled in `KernelTool` but is intentionally not vendored here — it is outside this frozen-reference catalog. |
 
 ## Where MCP fits in the dependency graph
 

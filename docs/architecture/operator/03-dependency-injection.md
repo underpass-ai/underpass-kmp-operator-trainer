@@ -8,17 +8,16 @@ thread-local "current" anything.
 
 ```rust
 // in application crate
-pub struct ValidateTrajectoryUseCase<V: ActionContractValidator, R: TrajectoryReader> {
+pub struct ValidateTrajectoryUseCase<V: ActionContractValidator> {
     validator: V,
-    reader: R,
 }
 
-impl<V: ActionContractValidator, R: TrajectoryReader> ValidateTrajectoryUseCase<V, R> {
-    pub fn new(validator: V, reader: R) -> Self {
-        Self { validator, reader }
+impl<V: ActionContractValidator> ValidateTrajectoryUseCase<V> {
+    pub fn new(validator: V) -> Self {
+        Self { validator }
     }
 
-    pub fn execute(&self, input: ValidateTrajectoryInput) -> Result<ValidateTrajectoryOutput, ValidateTrajectoryError> {
+    pub fn execute(&self, trajectory: &TrainingTrajectory) -> Result<(), ValidateTrajectoryError> {
         // pure orchestration on domain types
     }
 }
@@ -28,8 +27,7 @@ impl<V: ActionContractValidator, R: TrajectoryReader> ValidateTrajectoryUseCase<
 // in cli crate (composition root)
 fn main() -> std::process::ExitCode {
     let validator = CompositeActionContractValidator::default_for_shared_context();
-    let reader = JsonlTrajectoryReader::open(path)?;
-    let use_case = ValidateTrajectoryUseCase::new(validator, reader);
+    let use_case = ValidateTrajectoryUseCase::new(validator);
     match use_case.execute(input) {
         Ok(_) => std::process::ExitCode::SUCCESS,
         Err(e) => { eprintln!("{e}"); std::process::ExitCode::FAILURE }

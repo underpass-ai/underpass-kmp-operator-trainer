@@ -6,9 +6,10 @@ fix the rule or change this document first.
 
 ## 1. Hexagonal (ports and adapters)
 
-Every bounded context is split into four crates: `*-contract`, `*-domain`,
-`*-application`, `*-infra`. CLIs, when they exist, live in dedicated `*-cli`
-crates.
+Every bounded context is split into the `*-domain`, `*-application` and
+`*-infra` crates. CLIs, when they exist, live in dedicated `*-cli` crates. The
+`*-contract` crate lives only in the `shared` context (`operator-shared-contract`);
+the other contexts have no contract crate of their own.
 
 - **Domain** never imports any other crate of the bounded context. It contains
   pure types and pure functions.

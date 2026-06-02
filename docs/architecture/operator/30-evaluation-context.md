@@ -5,21 +5,25 @@ truths**. It does not generate trajectories, replay them, or train
 anything: it consumes pairs of (ground-truth `TrainingTrajectory`,
 `PredictedAction`) and emits a report.
 
-The first pass keeps the surface in-memory: the application use case
-receives a slice of `EvaluationPair` values and returns a
-`EvaluationReport`. Adapters that stream predictions from JSONL files
-or push reports to dashboards belong in a later pass.
+The domain and application surface stays in-memory: the application use
+case receives a slice of `EvaluationPair` values and returns a
+`EvaluationReport`. The `*-infra` crate now supplies the adapter that
+streams predictions from JSONL files; an adapter that pushes reports to
+dashboards still belongs in a later pass.
 
 ## Crates
 
 ```
 operator-evaluation-domain      prediction pair, outcome, report, per-tool metric
 operator-evaluation-application EvaluateOperatorPolicyUseCase
+operator-evaluation-infra       JSONL predictions reader, OpenAI-compatible LLM baseliner, DTOs
+operator-evaluation-cli         operator-policy-eval, operator-contract-coverage, operator-llm-baseline bins
 ```
 
-No `operator-evaluation-contract` and no `operator-evaluation-infra`
-crate today. See
-[decisions/0009-evaluation-context-skips-contract-and-infra.md](decisions/0009-evaluation-context-skips-contract-and-infra.md).
+There is still no `operator-evaluation-contract` crate. The `*-infra`
+and `*-cli` crates, deferred in the first pass, have since landed; see
+[decisions/0009-evaluation-context-skips-contract-and-infra.md](decisions/0009-evaluation-context-skips-contract-and-infra.md)
+for the original rationale.
 
 ## Domain map
 
@@ -77,8 +81,6 @@ crate today. See
 
 ## Pending for later passes
 
-- Adapter port + JSONL adapter to load predictions emitted by a model
-  runner.
 - Adapter port + writer to persist `EvaluationReport` as a JSON
   document for dashboards.
 - Per-`OperatorMode` aggregation (read vs. write vs. writer-pre-read).

@@ -7,11 +7,14 @@
 > `prepared_action` or the model-predicted action. Do not treat `requested_*`
 > as a live mechanism. See the runbook's field-wiring section.
 >
-> **Prompt-parity note:** the runtime `DEFAULT_SYSTEM_PROMPT`
-> (`vllm_openai_operator_policy.rs:22`) is a 163-char generic string with no tool
-> schema, while training uses the full schema-bearing prompt. This is latent
-> (the replay harness re-injects the training prompt) but must be closed before
-> any live deployment — see
+> **Prompt-parity note (resolved):** the runtime `DEFAULT_SYSTEM_PROMPT`
+> (`vllm_openai_operator_policy.rs:29`) is now the full schema-bearing prompt,
+> loaded via `include_str!("../../prompts/operator_system_prompt_full_v1.txt")`.
+> It is the single source of truth shared byte-for-byte with training: the
+> Python SFT prep pipeline (`prepare_operator_sft_dataset.py`) asserts its
+> `FULL_SYSTEM_PROMPT` byte-equals that same asset. The earlier 163-char
+> schemaless string (which, with schemaless eval rows, produced the v8.1.8
+> read-nav "cliff") is gone, so the train/serve parity gap is closed — see
 > [`../../training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md`](../../training/DIVERGENCE_AND_CORRECTIVE_PLAN_2026-05-29.md).
 
 The `runtime` bounded context composes the trained Operator policy, the

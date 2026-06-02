@@ -72,9 +72,12 @@ hallucinates the action envelope (`{"action":"call_memory"…}`,
 `{"action":"navigate_to"…}`). **Proven by isolation:** re-predicting the unchanged
 v8.1.8 adapter on a prompt-corrected eval (raw refs, no anonymization, no retrain)
 took read-nav structural validity from 0% to 100% (parse failures 51→5; NEW exact
-16.9%→64.9%). The **same defect exists at runtime**: `DEFAULT_SYSTEM_PROMPT`
-(`vllm_openai_operator_policy.rs:22`) is 163 chars with no schema. This is
-Directive B, and it is the load-bearing fix. Evidence:
+16.9%→64.9%). The **same defect previously existed at runtime** (a 163-char
+schemaless `DEFAULT_SYSTEM_PROMPT`); it is now fixed — `vllm_openai_operator_policy.rs`
+serves the canonical full-schema prompt (`include_str!` of
+`prompts/operator_system_prompt_full_v1.txt`), kept byte-equal to the prep
+pipeline's `FULL_SYSTEM_PROMPT`. This is Directive B, and it is the load-bearing
+fix. Evidence:
 `operator-experiments/audits/DIAGNOSTIC_promptfix_20260529.md`.
 
 ### RANK 2 — un-anonymized domain-ref leakage (real design divergence; NOT the cliff)
@@ -102,10 +105,12 @@ opaque refs).
    Fix the Tier 2/3 builders (they used a 356-char schemaless prompt) and add a
    prep-time/parity check that every SFT row's system prompt byte-equals the
    profile's canonical prompt. This alone recovered read-nav (0%→100% struct).
-2. ⏳ **Runtime:** replace the 163-char `DEFAULT_SYSTEM_PROMPT`
-   (`vllm_openai_operator_policy.rs:22`) with the canonical schema-bearing prompt
-   (single source of truth shared by the prep script and the runtime) before any
-   live (non-replay) deployment; add a byte-equality parity test.
+2. ✅ **Runtime:** `DEFAULT_SYSTEM_PROMPT` (`vllm_openai_operator_policy.rs`) is now
+   the canonical schema-bearing prompt, `include_str!`-ed from
+   `prompts/operator_system_prompt_full_v1.txt` (single source of truth shared by
+   the prep script and the runtime). The prep pipeline enforces parity:
+   `prepare_operator_sft_dataset.py` `FULL_SYSTEM_PROMPT` byte-equals that asset via
+   `assert_full_prompt_matches_runtime_asset()`.
 3. ⏳ **Remaining real gaps** (small, argument-value policy, not schema collapse):
    `near.limit-pressure` (limit), `near.dimension-filter` (dimension selection),
    `kernel_trace.full-mode` (page). These are the genuine next training targets.
@@ -120,6 +125,7 @@ opaque refs).
    mandatory per the design plan, but the diagnostic shows it is not required to
    close the cliff; sequence it after the schema-prompt fix.
 
-Sequencing: items 4-5 (anonymization hygiene) are **done**. The urgent fix is now
-Directive B item 1-2 (schema in context everywhere). Do not draw model-quality
-conclusions from any eval whose rows lack the full-schema prompt.
+Sequencing: items 4-5 (anonymization hygiene) and Directive B item 2 (runtime
+prompt parity) are **done**. The urgent remaining fix is Directive B item 1 (schema
+in context for every corpus row). Do not draw model-quality conclusions from any
+eval whose rows lack the full-schema prompt.

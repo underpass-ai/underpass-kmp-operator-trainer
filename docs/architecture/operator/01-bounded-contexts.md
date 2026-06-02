@@ -69,9 +69,12 @@ network boundary.
 ## runtime
 
 Owns the composition of an LLM, the Operator policy, the KMP/MCP client and
-the budget/escalation policy at serving time. The current implementation is
-single-step only: predict, validate, optionally execute one MCP call, observe,
-and persist the outcome.
+the budget/escalation policy at serving time. The implementation supports two
+shapes: a single-step calibration use case (predict, validate, optionally
+execute one MCP call, observe, and persist the outcome), and a multi-step
+session loop that keeps predicting and executing until the policy stops or
+escalates (window-expansion and cross-about expansion use cases, plus the
+`operator_window_freerun` CLI).
 
 ## Allowed dependency edges
 
@@ -82,7 +85,9 @@ evaluation       ──▶  shared
 training         ──▶  shared, evaluation (only for readiness gates)
 replay           ──▶  shared
 runtime          ──▶  shared, replay infra (MCP DTOs/mappers),
-                      synthetic DTOs/mappers (replay input parsing)
+                      synthetic domain (CalibrationSubject for the
+                      multi-step session loop) plus synthetic
+                      app/infra mappers (replay input parsing)
 ```
 
 Edges not listed above are forbidden. In particular:
@@ -91,5 +96,8 @@ Edges not listed above are forbidden. In particular:
   how it will be scored).
 - `evaluation` does **not** depend on `synthetic` (scoring must work on any
   conformant trajectory regardless of how it was generated).
-- `runtime` does **not** depend on `synthetic` or `training`.
+- `runtime` does **not** depend on `training`. It *does* depend on
+  `synthetic` (its application layer imports `CalibrationSubject` from
+  `synthetic` domain for the multi-step session loop, and its infra reuses
+  `synthetic` app/infra mappers for replay input parsing).
 - No context depends on `rehydration-*` crates.

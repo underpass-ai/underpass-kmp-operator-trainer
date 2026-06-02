@@ -32,8 +32,10 @@ What's intentionally **not** here:
 
 ## Prerequisites
 
-- Kubernetes cluster with at least one GPU node and the NVIDIA device
-  plugin installed (the templates request `nvidia.com/gpu: 1`).
+- Kubernetes cluster with GPU node(s) and the NVIDIA device plugin
+  installed. The **train** template requests `nvidia.com/gpu: 4` and
+  runs `torchrun --nproc_per_node=4` (DDP); the **predict** template
+  requests `nvidia.com/gpu: 1`.
 - The repo cloned at `/home/tirso/ai/developents/operator` (or edit
   the `volumes.repo.hostPath` in both templates to point at your
   checkout).
