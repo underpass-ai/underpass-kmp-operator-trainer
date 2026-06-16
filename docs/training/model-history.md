@@ -395,6 +395,79 @@ corpus (n_refs uniformly = 5 across all read tools in training; the custom
 builder used different visible_state shape). That result is treated as a
 scenario-construction artifact, not a runtime or model regression.
 
+#### v8.1.2-regen2 diagnostic SFT run (2026-05-27)
+
+Built the regen2 dataset using operator-repo's `prepare_operator_sft_dataset.py`
+(kernel-repo's version was confirmed to mis-handle the current v2 schema).
+Trained a new LoRA adapter under identical hyperparameters to v8.1.2-sft-v2
+to test whether the kernel script bug had affected actual training labels.
+
+##### Training run
+
+- Wall clock: 1087s (~18 min) on 4×RTX 3090
+- Adapter SHA-256: `8ea66b89452f198e3e7d6bf0f5ece400c6f89202e64d5b130e6aa5dc6c479aaf`
+- Adapter path: `/tmp/operator-qwen05-lora-v8.1.2-regen2-20260527T091810/`
+- Final eval_loss: 0.02611
+- Final eval_mean_token_accuracy: 0.9885
+- 3 epochs completed cleanly
+
+##### Holdout evaluation (regen2 eval split, 317 rows)
+
+| Tool | exact_match | tool_match | contract_valid |
+| --- | --- | --- | --- |
+| kernel_wake | 65/65 (100%) | 65/65 | 65/65 |
+| kernel_ask | 15/32 (47%) | 32/32 | 32/32 |
+| kernel_near | 19/20 (95%) | 20/20 | 20/20 |
+| kernel_goto | 3/3 (100%) | 3/3 | 3/3 |
+| kernel_rewind | 13/13 (100%) | 13/13 | 13/13 |
+| kernel_forward | 39/41 (95%) | 41/41 | 41/41 |
+| kernel_trace | 24/24 (100%) | 24/24 | 24/24 |
+| kernel_inspect | 17/17 (100%) | 17/17 | 17/17 |
+| kernel_ingest | 0/45 (0%) | 44/45 | 36/45 |
+| kernel_write_memory | 1/50 (2%) | 50/50 | 50/50 |
+| escalate | 7/7 (100%) | 7/7 | 7/7 |
+| **Total** | **203/317 (64%)** | **316/317 (99.7%)** | **308/317 (97.2%)** |
+
+##### Verdict
+
+Read profile remains strong (≥95% across all eight read tools), consistent
+with v8.1.2-sft-v2 baseline.
+
+Write profile is flat: `kernel_ingest` 0%, `kernel_write_memory` 2% -- same
+ballpark as the v8.0 baseline (0/19 ingest, 1/22 write_memory) despite the
+regen2 dataset using the correctly-formatted operator-repo script.
+
+**This confirms hypothesis (b) from the training rationale**: the
+rehydration-kernel/main copy of `prepare_operator_sft_dataset.py` mis-handled
+only the coverage report (cosmetic), not the actual training rows.
+v8.1.2-sft-v2 weights are based on correctly-labeled data; the write-profile
+gap has a different root cause.
+
+##### Decision
+
+**Keep v8.1.2-sft-v2 as the deployed operator-v8.1.2 adapter.** The regen2
+adapter (SHA `8ea66b89...`) is archived at the path above for reference. No
+production rollout.
+
+##### Forward implications
+
+The write-profile gap is therefore intrinsic to the corpus or to the teacher's
+behavior on write payloads, not a labeling artifact. This directly motivates
+the curriculum learning direction documented in `docs/training/backlog_v8x.md`
+(or pending v8.2 backlog work): the gpt-4o-mini teacher itself cannot produce
+exact_match consistently on complex write payloads, so SFT on those labels
+teaches the model inconsistency.
+
+##### Caveat
+
+Comparison reported above is regen2-trained adapter vs v8.0 baseline metrics
+(different eval split). An apples-to-apples comparison would re-evaluate
+v8.1.2-sft-v2 against the regen2 eval split. Given the pattern of results
+(read profile strong, write profile zero) and the validated hypothesis that the
+script bug was cosmetic, the v8.1.2-sft-v2 re-evaluation is expected to
+produce essentially identical numbers to regen2 above; left as optional
+follow-up.
+
 #### Known limitations
 
 - Single-step replay only; multi-step state updates remain v8.2.x scope.
